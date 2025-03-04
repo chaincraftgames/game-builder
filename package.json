@@ -1,0 +1,44 @@
+{
+  "name": "game-builder",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./dist/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "node ./dist/index.js",
+    "start:discord": "npm run build && node dist/integrations/clients/discord/index.js",
+    "watch": "tsc-watch --onSuccess \"npm run start\"",
+    "run-design-test": "tsc && node ./dist/ai/design/__tests__/design-workflow.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "tsc-watch": "^6.0.4",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^0.3.14",
+    "@langchain/core": "^0.3.40",
+    "@langchain/langgraph": "^0.2.49",
+    "@langchain/langgraph-checkpoint-sqlite": "^0.1.4",
+    "@langchain/openai": "^0.4.4",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "langchain": "^0.3.19",
+    "node-fetch": "^3.3.2",
+    "pinata-web3": "^0.5.4",
+    "simple-git": "^3.27.0",
+    "zod": "^3.24.2",
+    "zod-to-json-schema": "^3.22.4"
+  },
+  "imports": {
+    "#chaincraft/*": "./dist/*"
+  }
+}
