@@ -13,5 +13,11 @@ export const GameDesignState = Annotation.Root({
   systemPromptVersion: Annotation<string>({
     reducer: (_, y) => y, // Always take the newest version
   }),
+  specRequested: Annotation<boolean>({
+    reducer: (_, y) => y,
+  }),
+  currentGameSpec: Annotation<string | null>({
+    reducer: (_, y) => y,
+  }),
 });
 

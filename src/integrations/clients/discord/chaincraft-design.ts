@@ -125,10 +125,10 @@ export async function startChaincraftDesign(interaction: CommandInteraction) {
         });
       });
 
-    _updateThread(designResponse, thread, updatedTitle);
+    const threadMessageText = `**${gameDescription}** - ${interaction.user.toString()}`;
+    _updateThread(`${threadMessageText}\n\n${designResponse}`, thread, updatedTitle);
 
     // Send confirmation message with thread link
-    const threadMessageText = `**${gameDescription}** - ${interaction.user.toString()}`;
     thread = thread as ThreadChannel<boolean>;
     await thread.join();
 
@@ -136,7 +136,7 @@ export async function startChaincraftDesign(interaction: CommandInteraction) {
       `${threadMessageText}. Thread created for your game design. [Click here to jump to the thread.](<${thread.url}>)")`
     );
   } catch (e) {
-    await _handleChaincraftDesignError(thread ?? interaction, e as Error, {
+    await _handleChaincraftDesignError( interaction, e as Error, {
       operation: "start",
       threadToDelete: thread,
     });
@@ -159,7 +159,7 @@ export async function continueChaincraftDesign(message: Message) {
       updatedTitle
     );
   } catch (e) {
-    await _handleChaincraftDesignError(message, e as Error, {
+    await _handleChaincraftDesignError(message.channel as ThreadChannel, e as Error, {
       operation: "continue",
     });
   }
@@ -483,6 +483,7 @@ async function _handleChaincraftDesignError(
 
   // Determine error message
   const errorMessage = _getErrorMessage(error);
+  console.debug('[ChainCraft Discord] In handleChaincraftDesignError Error message: %s', errorMessage);
 
   try {
     // Handle thread cleanup first if needed
@@ -496,7 +497,6 @@ async function _handleChaincraftDesignError(
         // Thread likely doesn't exist anymore, ignore the error
         console.debug("Thread already deleted or not accessible:", threadError);
       }
-      return;
     }
 
     // Handle response based on target type
