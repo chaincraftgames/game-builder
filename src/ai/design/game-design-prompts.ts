@@ -44,7 +44,11 @@ export const gameDesignSpecificationPrompt = `
   as possible about the gae design to allow others to understand and implement the game, 
   including the gameplay and the assets needed to create the game.
 
-  Your role is to provide a detailed specification of the game design based on the conversation history.  
+  Your role is to provide a detailed specification of the game design based on the game design discussion below.
+  
+  Design Context:
+  {designConversation}
+
   You should include all the necessary information to fully describe the game design, including the game 
   components, the gameplay, the game mechanics, the game rules, and the game assets.  You should be able to
   provide a complete specification of the game design that can be used to implement the game.

@@ -5,8 +5,8 @@ import {
   StateGraph,
   END,
   START,
-  MemorySaver,
   BaseCheckpointSaver,
+  CompiledStateGraph,
 } from "@langchain/langgraph";
 import {
   AIMessage,
@@ -24,24 +24,29 @@ import {
   gameDesignSpecificationRequestTag,
 } from "#chaincraft/ai/design/game-design-prompts.js";
 import { getModel } from "#chaincraft/ai/model.js";
-import { getSaver } from "#chaincraft/ai/util/sqlite-memory.js";
+import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
 import { getFileCommitHash } from "#chaincraft/util.js";
 import { isActiveConversation as _isActiveConversation, registerConversationId } from "#chaincraft/ai/conversation.js";
 import { imageGenTool } from "../tools.js";
+import { GraphCache } from "../graph-cache.js";
+import { get } from "http";
+import { getConfig } from "#chaincraft/config.js";
 
 console.log("[design-conversation] env: %o", process.env);
 
-const graphType = "game-design";
+const graphType = getConfig("design-graph-type");
 
-const model = await getModel(process.env.GAME_DESIGN_MODEL_NAME);
+const model = await getModel(process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME);
+
+const designGraphCache = new GraphCache(
+  createDesignGraph,
+  parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100")
+);
 
 // Create the system message for game design
 const conversationSystemMessage =
   SystemMessagePromptTemplate.fromTemplate(gameDesignConversationPrompt);
-
-const specificationSystemMessage =
-  SystemMessagePromptTemplate.fromTemplate(gameDesignSpecificationPrompt);
 
 const gameTitleRegex = new RegExp(
   `.*?${gameTitleTag}(.*?)${gameTitleTag.replace('<', '</')}`,
@@ -62,13 +67,14 @@ export type DesignResponse = {
 export async function continueDesignConversation(
   conversationId: string,
   userMessage: string,
-  gameDescription?: string
+  gameDescription?: string,
 ): Promise<DesignResponse> {
   // Save the conversation id
   registerConversationId(graphType, conversationId);
 
-  const saver = await getSaver(conversationId, graphType);
-  const graph = await _createDesignGraph(saver);
+  // const saver = await getSaver(conversationId, graphType);
+  // const graph = await _createDesignGraph(saver);
+  const graph = await designGraphCache.getGraph(conversationId);
   const config = { configurable: { thread_id: conversationId } };
 
   // Format initial game description with XML tags if provided
@@ -225,11 +231,17 @@ async function _createDesignSpecificationNode(): Promise<
   };
 }
 
+async function createDesignGraph(
+  conversationId: string
+): Promise<CompiledStateGraph<typeof GameDesignState.State, Partial<typeof GameDesignState.State>>> {
+  const saver = await getSaver(conversationId, graphType);
+  return await _createDesignGraph(saver);
+}
+
 async function _createDesignGraph(
-  saver: BaseCheckpointSaver,
-  { mechanicsRegistry = "" }: { mechanicsRegistry?: string } = {}
+  saver: BaseCheckpointSaver
 ) {
-  const conversationNode = await _createDesignConversationNode(mechanicsRegistry);
+  const conversationNode = await _createDesignConversationNode("");
   const specificationNode = await _createDesignSpecificationNode();
 
   const workflow = new StateGraph(GameDesignState);
