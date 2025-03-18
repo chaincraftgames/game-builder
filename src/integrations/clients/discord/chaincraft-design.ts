@@ -9,7 +9,7 @@ import {
   Message,
   TextChannel,
   ThreadChannel,
-  AttachmentBuilder
+  AttachmentBuilder,
 } from "discord.js";
 
 import { chainCraftGameDescriptionOptionName } from "#chaincraft/integrations/clients/discord/commands/chaincraft-commands.js";
@@ -27,9 +27,18 @@ import {
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
+import {
+  getLinkedThread,
+  storeThreadLink,
+} from "#chaincraft/integrations/clients/discord/thread-link.js";
+import {
+  continueSimulation,
+  initializeSimulation,
+} from "#chaincraft/integrations/clients/discord/chaincraft-simulate.js";
 
 const designChannelId = process.env.CHAINCRAFT_DESIGN_CHANNEL_ID;
 const designShareChannelId = process.env.CHAINCRAFT_DESIGN_SHARE_CHANNEL_ID;
+const simulationChannelId = process.env.CHAINCRAFT_SIMULATION_CHANNEL_ID;
 
 const shareButton = new ButtonBuilder()
   .setCustomId("chaincraft_share_design")
@@ -41,9 +50,15 @@ const generateTokenButton = new ButtonBuilder()
   .setLabel("Generate Token")
   .setStyle(ButtonStyle.Secondary);
 
+const simulateButton = new ButtonBuilder()
+  .setCustomId("chaincraft_simulate_design")
+  .setLabel("Simulate")
+  .setStyle(ButtonStyle.Secondary);
+
 const buttonActionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
   shareButton,
-  generateTokenButton
+  generateTokenButton,
+  simulateButton
 );
 
 // Add error types
@@ -55,20 +70,12 @@ type ErrorContext = {
   error: Error;
 };
 
-export async function isMessageInChaincraftDesignActiveThread(
+export async function handleDesignMessage(
   message: Message
-) {  
-  // Check if the message is sent in a thread
-  if (!message.channel.isThread()) {
-    return false;
-  }
-
-  // Ensure the thread is within the specific design channel
-  if (message.channel.parentId !== designChannelId) {
-    return false;
-  }
-
-  return await isActiveConversation(message.channelId);
+) {
+  if (await isActiveConversation(message.channelId)) {
+    continueChaincraftDesign(message);
+  } 
 }
 
 // Start generation of a game design based on a given prompt
@@ -126,7 +133,11 @@ export async function startChaincraftDesign(interaction: CommandInteraction) {
       });
 
     const threadMessageText = `**${gameDescription}** - ${interaction.user.toString()}`;
-    _updateThread(`${threadMessageText}\n\n${designResponse}`, thread, updatedTitle);
+    _updateThread(
+      `${threadMessageText}\n\n${designResponse}`,
+      thread,
+      updatedTitle
+    );
 
     // Send confirmation message with thread link
     thread = thread as ThreadChannel<boolean>;
@@ -136,7 +147,7 @@ export async function startChaincraftDesign(interaction: CommandInteraction) {
       `${threadMessageText}. Thread created for your game design. [Click here to jump to the thread.](<${thread.url}>)")`
     );
   } catch (e) {
-    await _handleChaincraftDesignError( interaction, e as Error, {
+    await _handleChaincraftDesignError(interaction, e as Error, {
       operation: "start",
       threadToDelete: thread,
     });
@@ -159,9 +170,13 @@ export async function continueChaincraftDesign(message: Message) {
       updatedTitle
     );
   } catch (e) {
-    await _handleChaincraftDesignError(message.channel as ThreadChannel, e as Error, {
-      operation: "continue",
-    });
+    await _handleChaincraftDesignError(
+      message.channel as ThreadChannel,
+      e as Error,
+      {
+        operation: "continue",
+      }
+    );
   }
 }
 
@@ -289,6 +304,64 @@ export async function uploadChaincraftDesign(interaction: ButtonInteraction) {
   }
 }
 
+export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const designThread = interaction.channel as ThreadChannel;
+
+    // Get full game specification
+    await interaction.editReply({
+      content: "📝 Getting game specification...",
+    });
+
+    const gameSpec = await getFullDesignSpecification(designThread.id);
+
+    // Check if simulation already exists
+    const existingSimThread = await getLinkedThread(designThread, "simulation");
+    if (existingSimThread) {
+      await interaction.editReply({
+        content: `Continuing existing simulation. [Click to join](<${existingSimThread.url}>)`,
+      });
+      continueSimulation(existingSimThread, gameSpec);
+      return;
+    }
+
+    // Create simulation thread
+    await interaction.editReply({
+      content: "🎮 Creating simulation thread...",
+    });
+
+    const simThread = await createThreadInChannel(
+      interaction.client,
+      simulationChannelId as string,
+      `🎲 ${designThread.name} Simulation`,
+      true
+    );
+
+    if (!simThread) {
+      throw new Error("Failed to create simulation thread");
+    }
+
+    // Store bidirectional links
+    await storeThreadLink(designThread, simThread.id, "simulation");
+    await storeThreadLink(simThread, designThread.id, "design");
+
+    // Initialize simulation in the new thread
+    await initializeSimulation(simThread, gameSpec);
+
+    await interaction.editReply({
+      content: `Simulation created! [Click to join](<${simThread.url}>)`,
+    });
+  } catch (error) {
+    console.error("Error handling simulate button:", error);
+    await interaction.editReply({
+      content:
+        "There was an error setting up the simulation. Please try again.",
+    });
+  }
+}
+
 async function _getStoredPostId(thread: ThreadChannel) {
   // Get the pinned message from the thread
   const pinnedMessages = (await thread.messages.fetchPinned()).filter(
@@ -318,28 +391,8 @@ async function _storePostId(
   designThread: ThreadChannel,
   post: ThreadChannel
 ) {
-  // Defer the response to avoid leaving the interaction hanging
-  if (!interaction.deferred) {
-    await interaction.deferReply();
-  }
-  // Add a pinned message to the thread with a link to the post
-  const messageContent = `Shared in ${post.url}`;
-  const pinnedMessages = await designThread.messages.fetchPinned();
-  const existingPostMessage = pinnedMessages.find(
-    (m) => m.content.includes("Shared in") && m.author.bot
-  );
+  await storeThreadLink(designThread, post.id, "shared");
 
-  if (existingPostMessage) {
-    // If an existing pinned message is found, edit it
-    await existingPostMessage.edit(messageContent);
-    // No need to pin again if it's already pinned
-  } else {
-    // If no existing message is found, create a new one and pin it
-    const sentMessage = await designThread.send(messageContent);
-    await sentMessage.pin();
-  }
-
-  // Ensure the interaction is replied to, to avoid leaving the interaction hanging
   if (!interaction.replied) {
     await interaction.followUp({
       content: "The updated game design has been shared.",
@@ -368,31 +421,32 @@ async function _updateThread(
 
 // Adds the image to the first message in the thread
 async function _updateMessageWithImage(
-    message: Message,
-    imageUrl: string,
-    content?: string
-  ) {
-    try {
+  message: Message,
+  imageUrl: string,
+  content?: string
+) {
+  try {
     // Download image from URL
     const response = await fetch(imageUrl);
     const imageBuffer = await response.arrayBuffer();
-    
+
     // Create Discord attachment
-    const attachment = new AttachmentBuilder(Buffer.from(imageBuffer))
-      .setName('game-art.png');
+    const attachment = new AttachmentBuilder(Buffer.from(imageBuffer)).setName(
+      "game-art.png"
+    );
 
     // Update the original message with the attachment
     await message.edit({
       content: content ?? "🎨 Game Art",
-      files: [attachment]
+      files: [attachment],
     });
-    } catch (e) {
-      console.error(`Error handling image: ${e}`);
-      await message.edit({
-        content: "❌ Failed to process game art",
-      });
-    }
+  } catch (e) {
+    console.error(`Error handling image: ${e}`);
+    await message.edit({
+      content: "❌ Failed to process game art",
+    });
   }
+}
 
 async function _validateInteraction(
   interaction: CommandInteraction
@@ -444,25 +498,25 @@ async function _invokeGenerateImage(conversationId: string): Promise<string> {
 }
 
 async function _getImageUrlFromThread(
-    thread: ThreadChannel
-  ): Promise<string | undefined> {
-    // Get total message count from thread
-    const messageCount = thread.messageCount;
-    if (!messageCount) {
-      console.error("No messages found in thread.");
-      return;
-    }
-    console.debug('[chaincraft-design] Total messages in thread:', messageCount);
-
-    // Fetch all messages in the thread
-    const messages = await thread.messages.fetch({ limit: messageCount });
-    const firstMessage = messages.last();
-    console.debug('[chaincraft-design] First message in thread:', firstMessage);
-
-    const attachment = firstMessage!.attachments.first();
-    console.debug('[chaincraft-design] Attachment:', attachment);
-    return attachment?.url;
+  thread: ThreadChannel
+): Promise<string | undefined> {
+  // Get total message count from thread
+  const messageCount = thread.messageCount;
+  if (!messageCount) {
+    console.error("No messages found in thread.");
+    return;
   }
+  console.debug("[chaincraft-design] Total messages in thread:", messageCount);
+
+  // Fetch all messages in the thread
+  const messages = await thread.messages.fetch({ limit: messageCount });
+  const firstMessage = messages.last();
+  console.debug("[chaincraft-design] First message in thread:", firstMessage);
+
+  const attachment = firstMessage!.attachments.first();
+  console.debug("[chaincraft-design] Attachment:", attachment);
+  return attachment?.url;
+}
 
 async function _handleChaincraftDesignError(
   target: Message | CommandInteraction | ButtonInteraction | ThreadChannel,
@@ -483,7 +537,10 @@ async function _handleChaincraftDesignError(
 
   // Determine error message
   const errorMessage = _getErrorMessage(error);
-  console.debug('[ChainCraft Discord] In handleChaincraftDesignError Error message: %s', errorMessage);
+  console.debug(
+    "[ChainCraft Discord] In handleChaincraftDesignError Error message: %s",
+    errorMessage
+  );
 
   try {
     // Handle thread cleanup first if needed

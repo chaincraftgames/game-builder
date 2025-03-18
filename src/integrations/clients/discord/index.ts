@@ -6,6 +6,7 @@ import {
     ChaincraftOnMessage,
     // ChaincraftOnApprove,
     ChaincraftOnShare,
+    ChaincraftOnSimulate,
     ChaincraftOnThreadDelete,
     ChaincraftOnUpload
 } from "#chaincraft/integrations/clients/discord/events/chaincraft-events.js";
@@ -77,4 +78,5 @@ client.on(Events.MessageCreate, (message) => ChaincraftOnMessage.execute(message
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnShare.execute(interaction));
 client.on(Events.ThreadDelete, (thread) => ChaincraftOnThreadDelete.execute(thread));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnUpload.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimulate.execute(interaction));
 
