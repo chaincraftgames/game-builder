@@ -348,8 +348,9 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
     await storeThreadLink(simThread, designThread.id, "design");
 
     // Initialize simulation in the new thread
-    await initializeSimulation(simThread, gameSpec);
+    await initializeSimulation(simThread, interaction.user, gameSpec);
 
+    await simThread.join();
     await interaction.editReply({
       content: `Simulation created! [Click to join](<${simThread.url}>)`,
     });

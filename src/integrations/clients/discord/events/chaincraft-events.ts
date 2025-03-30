@@ -5,7 +5,15 @@ import {
   simulateChaincraftDesign,
   handleDesignMessage,
 } from "#chaincraft/integrations/clients/discord/chaincraft-design.js";
-import { handleSimulationMessage } from "#chaincraft/integrations/clients/discord/chaincraft-simulate.js";
+import { 
+  resetSimulation,
+  assumePlayerRole as simAssumePlayerRole,
+  startGame as simStartGame,
+  handlePlayerAction as simHandlePlayerAction,
+  // handleSimulationMessage 
+} from "#chaincraft/integrations/clients/discord/chaincraft-simulate.js";
+import { handleActionModalSubmit } from "#chaincraft/integrations/clients/discord/action-handler.js";
+import { clearStatus as clearSimStatus } from "#chaincraft/integrations/clients/discord/status-manager.js";
 
 const designChannelId = process.env.CHAINCRAFT_DESIGN_CHANNEL_ID;
 const simulationChannelId = process.env.CHAINCRAFT_SIMULATION_CHANNEL_ID;
@@ -23,9 +31,9 @@ const ChaincraftOnMessage = {
       if (message.channel.parentId === designChannelId) {
         handleDesignMessage(message);
         // simulation message
-      } else if (message.channel.parentId === simulationChannelId) {
-        handleSimulationMessage(message);
-      }
+      } //else if (message.channel.parentId === simulationChannelId) {
+      //   handleSimulationMessage(message);
+      // }
     } catch (error) {
       console.error("Unhandled error in ChaincraftOnMessage: ", error);
     }
@@ -38,6 +46,10 @@ const ChaincraftOnThreadDelete = {
     try {
       // TODO remove the conversation from memory
       // removeDesignConversation(thread.id);
+      // Clear sim status if the thread is a sim thread.
+      if (thread.parentId === simulationChannelId) {
+        clearSimStatus(thread.id);
+      }
     } catch (error) {
       console.error("Unhandled error in ChaincraftOnThreadDelete: ", error);
     }
@@ -108,6 +120,86 @@ const ChaincraftOnSimulate = {
   },
 };
 
+const ChainCraftOnResetSimulation = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId === "chaincraft_reset_simulation"
+      ) {
+        await resetSimulation(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChainCraftOnResetSimulation: ", error);
+    }
+  },
+};
+
+const ChainCraftOnSimAssumeRole = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId.startsWith("chaincraft_sim_assume_role")
+      ) {
+        await simAssumePlayerRole(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChainCraftOnAssumeRole: ", error);
+    }
+  },
+};
+
+const ChainCraftOnSimStartGame = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId === "chaincraft_sim_start_game"
+      ) {
+        await simStartGame(interaction);
+      } 
+    } catch (error) {
+      console.error("Unhandled error in ChainCraftOnStartGame: ", error);
+    }
+  },
+};
+
+const ChaincraftOnSimPlayerAction = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId.startsWith("chaincraft_sim_action")
+      ) {
+        await simHandlePlayerAction(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChaincraftOnSimPlayerAction: ", error);
+    }
+  },
+};
+
+const ChaincraftOnSimActionModalSubmit = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith("chaincraft_sim_action_modal")
+      ) {
+        await handleActionModalSubmit(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChaincraftOnSimActionModalSubmit ", error);
+    }
+  },
+};
+
 export {
   ChaincraftOnMessage,
   //   ChaincraftOnApprove,
@@ -115,4 +207,9 @@ export {
   ChaincraftOnThreadDelete,
   ChaincraftOnUpload,
   ChaincraftOnSimulate,
+  ChainCraftOnResetSimulation,
+  ChainCraftOnSimAssumeRole,
+  ChainCraftOnSimStartGame,
+  ChaincraftOnSimPlayerAction,
+  ChaincraftOnSimActionModalSubmit
 };

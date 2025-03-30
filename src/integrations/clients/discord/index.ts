@@ -4,8 +4,13 @@ import { Client, Collection, Events, GatewayIntentBits } from "discord.js";
 
 import { 
     ChaincraftOnMessage,
+    ChainCraftOnResetSimulation,
     // ChaincraftOnApprove,
     ChaincraftOnShare,
+    ChaincraftOnSimActionModalSubmit,
+    ChainCraftOnSimAssumeRole,
+    ChaincraftOnSimPlayerAction,
+    ChainCraftOnSimStartGame,
     ChaincraftOnSimulate,
     ChaincraftOnThreadDelete,
     ChaincraftOnUpload
@@ -79,4 +84,9 @@ client.on(Events.InteractionCreate, (interaction) => ChaincraftOnShare.execute(i
 client.on(Events.ThreadDelete, (thread) => ChaincraftOnThreadDelete.execute(thread));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnUpload.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimulate.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChainCraftOnResetSimulation.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimAssumeRole.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimStartGame.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerAction.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimActionModalSubmit.execute(interaction));
 

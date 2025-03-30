@@ -9,12 +9,38 @@ export const RUNTIME_VERSION = "1.0";
 
 // Runtime extensions for game and player state
 const runtimeGameStateSchemaExtension = z.object({
-  gameEnded: z.boolean().default(false),
+  gameEnded: z
+    .boolean()
+    .default(false)
+    .describe("Whether the game has ended"),
+  publicMessage: z
+    .string()
+    .optional()
+    .describe("Public game state, instructions, etc... to all players"),
 });
 
 const runtimePlayerStateSchemaExtension = z.object({
-  illegalActionCount: z.number().default(0),
-  messageToPlayer: z.string().optional(),
+  illegalActionCount: z
+    .number()
+    .default(0)
+    .describe("Number of illegal actions taken by the player"),
+  privateMessage: z
+    .string()
+    .optional()
+    .describe(`
+Private message to the player. Should only be used to communicate information that 
+a) ABSOLUTELY CANNOT be included in the public message
+b) contains EXCLUSIVELY player-specific information that others should never see
+c) would break the game or violate fairness without this specific private message
+    `),
+  actionsAllowed: z
+    .boolean()
+    .default(true)
+    .describe("Whether the player is allowed to take actions, e.g. they have not yet completed all their allowed actions for the current game phase or they are allowed to react to or counter an action by another player."),
+  actionRequired: z
+    .boolean()
+    .default(false)
+    .describe("If true, no further actions can be taken by any player and the game cannot proceed until this player takes an action."),
 });
 
 type RuntimePlayerState = z.infer<typeof runtimePlayerStateSchemaExtension>;

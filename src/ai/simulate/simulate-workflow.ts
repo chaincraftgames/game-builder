@@ -37,23 +37,19 @@ const simGraphCache = new GraphCache(
   parseInt(process.env.CHAINCRAFT_SIMULATION_GRAPH_CACHE_SIZE ?? "100")
 );
 
-interface BaseRuntimeState {
-  gameState: {
-    gameEnded: boolean;
-  };
-  players: Record<string, RuntimePlayerState>;
-}
-
-interface RuntimePlayerState {
+export interface RuntimePlayerState {
   illegalActionCount: number;
-  messageToPlayer?: string;
+  privateMessage?: string;
+  actionsAllowed: boolean;
+  actionRequired: boolean;
 }
 
 /** Messages to the players.  Key is player id, value is message. */
-type MessagesToPlayers = Map<string, string>;
+export type PlayerStates = Map<string, RuntimePlayerState>;
 
-type SimResponse = {
-  playerMessages: MessagesToPlayers;
+export type SimResponse = {
+  publicMessage?: string;
+  playerStates: PlayerStates;
   gameEnded: boolean;
 };
 
@@ -127,26 +123,33 @@ export async function createSimulation(
 export async function initializeSimulation(
   gameId: string,
   players: string[]
-): Promise<MessagesToPlayers> {
+): Promise<{
+    publicMessage?: string;
+    playerStates: PlayerStates
+  }> {
   try {
     console.log("[simulate] Initializing simulation for game %s", gameId);
     const graph = await simGraphCache.getGraph(gameId);
     const config = { configurable: { thread_id: gameId } };
-    let playerMessages!: MessagesToPlayers;
+    let publicMessage!: string | undefined;
+    let playerStates!: PlayerStates;
 
     const inputs = {
       players,
+      isInitialized: false,
     };
     for await (const state of await graph.stream(inputs, {
       ...config,
       streamMode: "values",
     })) {
       if (state.isInitialized) {
-        playerMessages = getSimResponse(state).playerMessages;
+        const simResponse = getSimResponse(state);
+        publicMessage = simResponse.publicMessage;
+        playerStates = simResponse.playerStates;
       }
     }
 
-    return playerMessages;
+    return { publicMessage, playerStates };
   } catch (error) {
     handleError("Failed to initialize simulation", error);
     return Promise.reject(error);
@@ -167,7 +170,7 @@ export async function processAction(
     const inputs = {
       playerAction: {
         playerId,
-        action,
+        playerAction: action,
       },
     };
     for await (const state of await graph.stream(inputs, {
@@ -236,8 +239,6 @@ function createRuntimeInitNode() {
       currentGameSpecVersion = state.currentGameSpecVersion;
     }
 
-    type GameState = z.infer<typeof schema> & BaseRuntimeState;
-
     const response = await chain.invoke({
       gameStateSchema: schema,
       players: state.players,
@@ -277,10 +278,8 @@ function createActionProcessingNode() {
       currentGameSpecVersion = state.currentGameSpecVersion;
     }
 
-    type GameState = z.infer<typeof schema> & BaseRuntimeState;
-
     const response = await chain.invoke({
-      playerAction: state.playerAction,
+      ...state.playerAction,
       gameState: state.gameState,
     });
 
@@ -312,6 +311,15 @@ async function createRuntimeChain(
   });
 
   const chain = partialChain.pipe(model).pipe(parser);
+  const chainWitRetry = chain.withRetry({
+    stopAfterAttempt: 2,
+    onFailedAttempt: (error) => {
+      console.error(
+        "[simulate] Chain failed to process. Error: %s",
+        error.message
+      );
+    }
+  });
 
   return {
     chain,
@@ -398,20 +406,26 @@ function getSimResponse(state: SimulationStateType): SimResponse {
   console.debug("[simulate] Getting player messages");
   const gameState = getGameState(state);
 
-  const playerMessages = new Map<string, string>();
+  // Extract player states
+  const playerStates: PlayerStates = new Map<string, RuntimePlayerState>();
   for (const [playerId, playerData] of Object.entries(
     gameState.players as Record<string, RuntimePlayerState>
   )) {
-    const playerMessage = playerData?.messageToPlayer;
-    if (playerMessage) {
-      playerMessages.set(playerId, playerMessage);
+    const playerState: RuntimePlayerState = {} as RuntimePlayerState;
+    playerState.illegalActionCount = playerData.illegalActionCount;
+    playerState.actionsAllowed = playerData.actionsAllowed;
+    playerState.actionRequired = playerData.actionRequired;
+    const playerMessage = playerData?.privateMessage;
+    if (playerMessage && playerMessage.length > 0) {
+      playerState.privateMessage = playerMessage;
     }
+    playerStates.set(playerId, playerState);
   }
 
-  const gameEnded = gameState.game.gameEnded;
   return {
-    playerMessages,
-    gameEnded,
+    publicMessage: gameState.game.publicMessage,  
+    playerStates,
+    gameEnded: gameState.game.gameEnded
   };
 }
 
