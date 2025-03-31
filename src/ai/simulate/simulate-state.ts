@@ -11,7 +11,10 @@ export const SimulationState = Annotation.Root({
   gameSpecification: Annotation<string>({  
     reducer: (_, y) => y,
   }),
-  playerAction: Annotation<string>({
+  playerAction: Annotation<{
+    playerId: string;
+    playerAction: string
+  }| undefined>({
     reducer: (_, y) => y,
   }),
   players: Annotation<string[]>({

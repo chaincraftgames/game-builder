@@ -2,6 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import {
   createSimulation,
   initializeSimulation,
+  PlayerStates,
   processAction,
 } from "#chaincraft/ai/simulate/simulate-workflow.js";
 import { setConfig } from "#chaincraft/config.js";
@@ -31,20 +32,23 @@ describe("Simulation Workflow", () => {
     expect(gameRules.length).toBeGreaterThan(0);
   });
 
-  if (false) {
   test("Should initialize the state when the required number of players join", async () => {
-    const playerMessages = await initializeSimulation(gameId, [
+    const { publicMessage, playerStates } = await initializeSimulation(gameId, [
       "player1",
       "player2",
       "player3",
     ]);
 
-    console.debug("playerMessages", playerMessages);
+    console.debug("publicMessage", publicMessage);
+    console.debug("playerStates", playerStates);
 
-    expect(playerMessages.size).toEqual(3);
-    expect(playerMessages.get("player1")).not.toBeUndefined();
-    expect(playerMessages.get("player2")).not.toBeUndefined();
-    expect(playerMessages.get("player3")).not.toBeUndefined();
+    expect(publicMessage).toBeDefined();
+    Array.from(playerStates.values()).forEach(
+      ps => expect(ps.privateMessage).toBeUndefined()
+    );
+    // expect(privateMessages.get("player1")).not.toBeUndefined();
+    // expect(privateMessages.get("player2")).not.toBeUndefined();
+    // expect(privateMessages.get("player3")).not.toBeUndefined();
   });
 
   test(
@@ -57,27 +61,25 @@ describe("Simulation Workflow", () => {
       ];
       for (let round = 1; round <= 3; round++) {
         for (let playerIndex = 1; playerIndex <= 3; playerIndex++) {
-          let { playerMessages, gameEnded } = await processAction(
+          const playerId = `player${playerIndex}`;
+          let { publicMessage, playerStates, gameEnded } = await processAction(
             gameId,
-            `player${playerIndex}`,
+            playerId,
             playerMoves[round - 1][playerIndex - 1]
           ).catch((error) => {
             console.log("Received error in test %o.  Failing test.", error);
             fail(error.message);
           });
-          validatePlayerMessages(playerMessages);
+          validatePlayerStates(playerId, playerStates);
+          expect(publicMessage).toBeDefined();
           expect(gameEnded).toEqual(round == 3 && playerIndex == 3);
         }
       }
     },
     9 * 60 * 1000
   );
-  }
 });
 
-function validatePlayerMessages(playerMessages: Map<string, string>) {
-  expect(playerMessages.size).toEqual(3);
-  expect(playerMessages.get("player1")).not.toBeUndefined();
-  expect(playerMessages.get("player2")).not.toBeUndefined();
-  expect(playerMessages.get("player3")).not.toBeUndefined();
+function validatePlayerStates(playerId: string, playerStates: PlayerStates) {
+  expect(playerStates.get(playerId)?.privateMessage).toBeDefined();
 }

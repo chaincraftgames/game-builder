@@ -138,12 +138,14 @@ export const runtimeInitializeTemplate = `
   <game_analysis>
   1. Looking at the properties in the schema and the game specification, list out starting values
      for each player and the game state.
-  2. List out messages to send to the players including:
+  2. List out a public message that should be broadcast to all players.
       - Welcome messages
       - The starting game state
       - Initial instructions and the actions that are valid for the players to take
         at game start.
       - Any input needed from the players to start the game.
+  3. You should not need to provide any private information to individual players, so you
+     can leave the privateMessage field empty.
   </game_analysis>
 
   Based on the analysis, initialize the game state and provide welcome messages including 
@@ -175,30 +177,55 @@ export const runtimeProcessActionTemplate = `
 
   Here is the action taken by a player:
   <player_action>
-  {playerAction}
+  {playerId}: {playerAction}
   </player_action>
 
   You MUST think carefully about the current state of the game and the player action 
-  and perform a thorough analysis of the situation. Conduct your analysis inside 
-  <game_analysis> tags.
+  and perform a thorough analysis of the situation. You MUST complete EVERY numbered 
+  point in the analysis framework IN ORDER.   For each numbered item, begin your response 
+  with that exact number followed by a detailed analysis addressing that specific point. DO 
+  NOT skip or combine steps.  FAILURE TO COMPLETE ANY STEP will result in INCORRECT 
+  game state updates.Conduct your analysis inside <game_analysis> tags.
 
   <game_analysis>
   Current State Analysis
   1. Break down the current game state, listing key information for each player.
   2. List all possible valid actions for each player in the current state.
   3. Analyze the player's action:
-    - Is it valid? If not, explain why.
-    - How does it affect the current round and overall game state?
+     - If the player is not allowed an action, has used all their actions for the current game
+       phase, or action processing is blocked waiting on another player, politely  inform
+       the player that their action cannot be processed.  This should not count as an illegal
+       action.
+     - Is it valid? If not, explain why.
+     - How does it affect the current round and overall game state?
+     - Before answering a question from the player, you MUST determine if answering the question 
+       would give the player any unfair advantage in the game, such as knowing their opponents 
+       private action, the contents of an opponent's private inventory, or unrevealed game 
+       inventories.
+       -- If YES, warn the player about asking for private information and increment illegal 
+          action count
+       -- If no, answer the question, but this will not count as the players action.
   4. Write out the exact updates needed for the game state based on the player action.
-  5.  List the messages that should be sent to each player based on the state updates, including
-      - Informing players of their opponents actions.  IMPORTANT - never reveal the specific 
-        actions of other players unless the game rules specify that the player action is public (
-        e.g. by specifying that a card is played face up or a player choice is shown to other players).
-      - Updates to the game state.
-      - The valid actions and/or input required from each player.
-  6. Check for any special game conditions or rules that might apply in the current situation.
-  7. For each player, write down their current score and status, numbering each player as you go.
-  8. If any player has made an illegal move, note how many illegal moves they've made so far.
+  5. List the public game state information visible to all players:
+     - Priority 1: Time-critical game state changes (round/phase transitions)
+     - Priority 2: Public action results and impacts
+     - Priority 3: General game state updates
+     - Never reveal private information in public messages
+  6. List the private messages that should be sent to {playerId} including:
+     - Confirmation of their action
+     - Results of their action (if known)
+     - Any updates to their private information (e.g. inventories, scores, available actions)
+     - Any additional instructions or information they need for subsequent actions
+  7. For EACH player other then {playerId} (list them individually by ID):
+     - Player X: [Needs private message: YES/NO]
+       -- If YES, provide exact content and explain why this message MUST be private by proving:
+         a) It contains information that ABSOLUTELY CANNOT be included in the public message
+         b) It contains EXCLUSIVELY player-specific information that others should never see
+         c) The game would function incorrectly without this specific private message
+     - The default assumption should be NO private message unless proven necessary
+  8. Check for any special game conditions or rules that might apply in the current situation.
+  9. For each player, write down their current score and status, numbering each player as you go.
+  10. If any player has made an illegal move, note how many illegal moves they've made so far.
 
   Next State Analysis
   1.  Determine if the player action should result in a transition to another phase or round.
@@ -207,9 +234,23 @@ export const runtimeProcessActionTemplate = `
       - Incrementing the round number
       - Updating the game phase
       - Resetting any temporary state for the game or players (such as actions or choices)
-  3.  List the messages that should be sent to the players 
+      - Updating player status (e.g., can take action)
+  3.  List the public messages that should be sent to all players: 
       - Informing the player that the next round, phase, etc... has begun 
-      - Inform players of the legal actions and request their choice for the next round 
+      - Inform players of the legal actions and request their choice for the next round
+      - NEVER reveal private information in public messages.
+  4.  For each player, identify whether actions are ALLOWED or REQUIRED moving forward.
+      - If the game cannot move forward, i.e. no actions by other players can be processed
+        until this player takes an action, set REQUIRED to true, otherwise set to false.
+      - If all of the fllowing are true:
+          a) the state of the game allows actions, 
+          b) it is either the player's turn or players in the game can take simultaneous 
+             actions, 
+          c) action processing for this player is not blocked due to a required action 
+             by another player, and 
+          d) the player has not used all their allowed actions for the current game phase, 
+        set ALLOWED to true, otherwise set to false.
+      
 
   End Game Analysis
   1.  Determine if the player action completes the final round, phase, etc... of the game
@@ -219,8 +260,35 @@ export const runtimeProcessActionTemplate = `
       - Informing the players of the final results of the game
 
   Final Analysis
-  1.  List out the combined state taking into account Current State Analysis, Next State Analysis, and End Game Analysis
-  2.  List out the combined messages to each player taking into account Current State Analysis, Next State Analysis, and End Game Analysis
+  1.  List out the combined state taking into account Current State Analysis, Next State 
+      Analysis, and End Game Analysis
+  2.  List out the combined public messages to all players taking into account Current State 
+      Analysis, Next State Analysis, and End Game Analysis.  Make sure there is no private
+      information in the public messages.
+  3.  List the private message content for {playerId}  taking into account 
+      Current State Analysis, Next State Analysis, and End Game Analysis
+  4.  For EACH player other than {playerId} (list them individually by ID):
+      - Player X: [Needs private message: YES/NO]
+      - Apply strict necessity test: Would removing this private message break the game or 
+        create information inequality?
+      - Unless the answer is clearly "yes," set privateMessage to empty string
+
+  Validation Checklist:
+  1. All required state fields are populated
+  2. Player states are consistent with game phase
+  3. Message content matches privacy requirements
+  4. Action permissions align with game rules
+  5. Private Message Redundancy Check:
+     - For each player other than {playerId} with a private message:
+       1. Write "PLAYER X PRIVATE MESSAGE TEST:"
+       2. List ALL information in the proposed message
+       3. Check each piece of information against the public message for redundancy
+       4. Explicitly justify WHY this information must be private or conclude it should not be
+       a) Why is this private message STRICTLY NECESSARY and confirm that the information is not in the public message 
+       b) Why does this player need immediate private communication that CANNOT be communicated 
+          publicly?
+       c) Would the game function correctly if this private message were empty?
+       5.  If any of these justifications fail, remove the private message and replace it with an empty string
   </game_analysis>
 
   After your analysis, follow these steps:
@@ -233,13 +301,19 @@ export const runtimeProcessActionTemplate = `
     c. Clear player choices
     d. Advance to the next round or end the game if all rounds are complete
 
-  3. Provide messages for all players. These messages must include:
-    - What happened (results of the action and/or round)
-    - What to do next (instructions for the next action or round)
-    - Specific options or choices available to the player
+  3. Provide public messages to all players based on the final analysis.  
 
-  4. Format your response as a JSON object that adheres to the provided schema.  
-  CRITICAL: Provide ALL state updates and messages in a SINGLE JSON response.
+  4. Provide private message to {playerId} and to other affected players
+     (only if needed) based on the final analysis.
+
+  5. Update the actions allowed for each player based on the current state.
+ 
+  6. Format your response as a JSON object that adheres to the provided schema.  
+     **CRITICAL REQUIREMENT**: Provide ALL state updates and messages in a SINGLE JSON response.
+     **CRITICAL REQUIREMENT**: For any player who doesn't need a private message according to your 
+     analysis, you MUST set privateMessage: "" (empty string). Avoid duplicating public information 
+     in private messages. Private messages are ONLY for unique, player-specific, time-critical 
+     information that cannot be communicated publicly.
 
   Important Rules:
   - If a player makes an invalid move, remind them of the rules and valid actions.
@@ -251,6 +325,12 @@ export const runtimeProcessActionTemplate = `
     ensure the game doesn't get stuck.
   - If the current round is complete, update the state to reflect that we are in the next 
     round within the same execution.
+
+  Before providing your final response, you MUST complete this checklist:
+  [ ] Every numbered analysis point was addressed in order
+  [ ] All private messages were tested for necessity
+  [ ] Game state transition logic was fully verified
+  [ ] All player states were individually checked
   
   Provide updated game state and player messages according to the following format:
   {formattingInstructions}
