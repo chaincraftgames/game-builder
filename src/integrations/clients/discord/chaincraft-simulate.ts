@@ -15,29 +15,25 @@ import {
   createSimulation,
   initializeSimulation as initSimState,
   processAction,
+  RuntimePlayerState,
 } from "#chaincraft/ai/simulate/simulate-workflow.js";
 import { getLinkedThread } from "#chaincraft/integrations/clients/discord/thread-link.js";
 import {
-  createInitialPlayerStatus,
+  initStatus,
   getStatus,
   updateStatus,
-  PlayerStatusType,
-  mapPlayerStatesToStatus,
   SimStatus,
+  updateFromSimResponse,
+  getAssignedUser,
 } from "#chaincraft/integrations/clients/discord/status-manager.js";
 import {
-  ActionHandler,
-  clearActionHandlers,
-  createActionHandler,
-  getActionHandler,
+  showActionModal
 } from "#chaincraft/integrations/clients/discord/action-handler.js";
-import { get } from "http";
 
 const resetSimId = "chaincraft_reset_simulation";
 const returnToDesignId = "chaincraft_return_to_design";
 const startGameId = "chaincraft_sim_start_game";
 const assumeRoleIdPrefix = "chaincraft_sim_assume_role_player";
-const playerActionIdPrefix = "chaincraft_sim_action_player";
 
 const resetSimButton = new ButtonBuilder()
   .setCustomId(resetSimId)
@@ -96,7 +92,13 @@ ${gameRules}
 
   // Send initial setup message
   await simThread.send({
-    content,
+    content
+  });
+
+  // Send message with buttons as a separate message to avoid the interaction
+  // messages from having a summary of the game rules
+  await simThread.send({
+    content: "",
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(...playerButtons),
       new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -108,11 +110,10 @@ ${gameRules}
   });
 
   // Initialize status with unassigned players
-  await updateStatus(
+  await initStatus(
     simThread,
-    SimStatus.WAITING_FOR_PLAYERS,
-    createInitialPlayerStatus(playerCount.maxPlayers)
-  );
+    Math.min(playerCount.maxPlayers, 5) 
+  )
 }
 
 export async function continueSimulation(
@@ -123,7 +124,6 @@ export async function continueSimulation(
 export async function resetSimulation(interaction: ButtonInteraction) {
   console.debug("[chaincraft-simulate] resetSimulation");
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  clearActionHandlers(interaction.channelId!);
   // Get setup and status messages
   const setupMessage = await getSetupMessage(
     interaction.channel as ThreadChannel
@@ -139,49 +139,25 @@ export async function resetSimulation(interaction: ButtonInteraction) {
     return;
   }
 
-  const status = await updateStatus(interaction.channel as ThreadChannel);
-  if (!status) {
-    await interaction.editReply({
-      content: "Sim must be initialized before it can be reset",
+  const status = await initStatus(
+    interaction.channel as ThreadChannel
+  )
+    .catch(async (err) => {
+      await interaction.editReply({
+        content: "Sim must be initialized before it can be reset",
+      });
+      return;
     });
+  
+  if (!status) {
     return;
   }
 
-  // Enable all player selection buttons
-  const newComponents = setupMessage.components.map((row) => {
-    const newRow = new ActionRowBuilder<ButtonBuilder>();
-    row.components.forEach((component) => {
-      if (component instanceof ButtonComponent) {
-        const updatedComponent = new ButtonBuilder()
-          .setCustomId(component.customId!)
-          .setLabel(component.label!)
-          .setStyle(component.style)
-          .setDisabled(component.customId === startGameId);
-        newRow.addComponents(updatedComponent);
-      }
-    });
-    return newRow;
-  });
-
-  await setupMessage.edit({
-    content: setupMessage.content,
-    components: newComponents,
-  });
-
-  // Delete all player messages
-  console.debug(
-    "[chaincraft-simulate] resetSimulation: deleting player messages"
+  await updateButtonEnabledStates(
+    setupMessage,
+    false,
+    Array.from({ length: status.playerCount }, () => true)
   );
-  const messages = (await interaction.channel?.messages.fetch()) ?? [];
-  for (const [, message] of messages) {
-    if (
-      message.author.bot &&
-      message.id !== status.message.id &&
-      message.id !== setupMessage.id
-    ) {
-      await message.delete();
-    }
-  }
 
   await interaction.editReply({
     content:
@@ -199,13 +175,6 @@ export async function assumePlayerRole(interaction: ButtonInteraction) {
   if (!match) return;
   const playerNumber = parseInt(match[1]);
 
-  createActionHandler(
-    interaction.channelId!,
-    `player${playerNumber}`,
-    (playerId: string, action: string) =>
-      processPlayerAction(playerId, interaction, action)
-  );
-
   // Get status message to check all players are selected
   const status = await getStatus(interaction.channel as ThreadChannel);
   if (!status) {
@@ -219,48 +188,36 @@ export async function assumePlayerRole(interaction: ButtonInteraction) {
     return;
   }
 
-  const updatedPlayerStatus = status.playerStatus.slice();
-  updatedPlayerStatus[playerNumber - 1] = PlayerStatusType.ASSIGNED;
+  const updatedPlayerStatus = [...status.playerStatus];
+  updatedPlayerStatus[playerNumber - 1].assignedUserId = interaction.user.id;
   const allReady = updatedPlayerStatus.every(
-    (status) => status === PlayerStatusType.ASSIGNED
+    (status) => status.assignedUserId !== undefined
   );
 
   // Update status message
   await updateStatus(
     interaction.channel as ThreadChannel,
-    allReady ? SimStatus.READY_TO_START : SimStatus.WAITING_FOR_PLAYERS,
-    updatedPlayerStatus
+    {
+      ...status,
+      status: allReady ? SimStatus.READY_TO_START : SimStatus.WAITING_FOR_PLAYERS,
+      playerStatus: updatedPlayerStatus,
+    }
+  );
+
+  const playerButtonsEnabled = updatedPlayerStatus.map(
+    status => status.assignedUserId === undefined 
   );
 
   // Update button states
-  const newComponents = setupMessage.components.map((row) => {
-    const newRow = new ActionRowBuilder<ButtonBuilder>();
-    row.components.forEach((component) => {
-      if (component instanceof ButtonComponent) {
-        const disabled = component.customId?.startsWith(assumeRoleIdPrefix) // Player selection buttons
-          ? component.disabled || // Already selected
-            component.customId === interaction.customId // Newly selected
-          : component.customId === startGameId && !allReady;
-        !component.disabled || // Already enabled
-          component.customId === interaction.customId ||
-          (component.customId === startGameId && allReady);
-        const updatedComponent = new ButtonBuilder()
-          .setCustomId(component.customId!)
-          .setLabel(component.label!)
-          .setStyle(component.style)
-          .setDisabled(disabled);
-        newRow.addComponents(updatedComponent);
-      }
-    });
-    return newRow;
-  });
-
-  await setupMessage.edit({ components: newComponents });
+  await updateButtonEnabledStates(
+    setupMessage,
+    allReady,
+    playerButtonsEnabled
+  )
 
   // Send ephemeral message to user with action button
   await interaction.editReply({
-    content: `You have assumed the role of Player ${playerNumber}. Use the button below to take actions in the game.`,
-    components: createActionComponents(playerNumber),
+    content: `You have assumed the role of Player ${playerNumber}. Use the buttons in the Game State message to take actions.`,
   });
 }
 
@@ -277,39 +234,46 @@ export async function startGame(interaction: ButtonInteraction) {
     return;
   }
 
+  await updateButtonEnabledStates(
+    interaction.message,
+    false,
+    Array.from({ length: status.playerCount }, () => false)
+  );
+
   const thread = interaction.channel as ThreadChannel;
 
   // Initialize game state
-  const players = [];
-  for (let i = 0; i < status.playerStatus.length; i++) {
-    if (status.playerStatus[i] !== PlayerStatusType.UNASSIGNED) {
-      players.push(`player${i + 1}`);
-    }
-  }
-  const { publicMessage, playerStates } = await initSimState(
+  const players = Array.from(
+    { length: status.playerStatus.length },
+    (_, i) => `player${i + 1}`
+  );
+  const simResponse = await initSimState(
     thread.id,
     players
   );
 
   // Update status with game state
-  await updateStatus(
+  await updateFromSimResponse(
     thread,
-    SimStatus.RUNNING,
-    mapPlayerStatesToStatus(playerStates),
-    publicMessage
-  );
-
-  // await interaction.update({});
+    {
+      gameEnded: false,
+      ...simResponse
+    }
+  )
 }
 
 export async function handlePlayerAction(interaction: ButtonInteraction) {
   console.debug("[chaincraft-simulate] handlePlayerAction");
-  const match = interaction.customId.match(
-    new RegExp(`${playerActionIdPrefix}_(\\d+)`)
+  const assignedUser = await getAssignedUser(
+    interaction as ButtonInteraction
   );
-  if (!match) return;
-
-  const playerNumber = parseInt(match[1]);
+  if (!assignedUser || assignedUser.assignedUserId != interaction.user.id) {
+    await interaction.reply({
+      content: `You are not assigned to the player ${assignedUser?.playerNumber} role.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
 
   // Make sure the game is started
   const status = await getStatus(interaction.channel as ThreadChannel);
@@ -321,30 +285,23 @@ export async function handlePlayerAction(interaction: ButtonInteraction) {
     return;
   }
 
-  if (status.playerStatus[playerNumber - 1] === PlayerStatusType.NO_ACTION_REQUIRED) {
+  if (!status.playerStatus[assignedUser.playerNumber - 1].actionsAllowed) {
     await interaction.reply({
-      content: "No action is required for your player at this time.",
+      content: "No action is allowed for your player at this time.",
       flags: MessageFlags.Ephemeral,
     });
     return;
   } 
 
-  const playerId = `player${playerNumber}`;
+  const playerId = `player${assignedUser.playerNumber}`;
   const thread = interaction.channel as ThreadChannel;
 
-  // Get or create action handler for this thread
-  let actionHandler = getActionHandler(
-    thread.id,
-    playerId
-  );
-
-  await actionHandler!.showActionModal(interaction, playerId);
+  await showActionModal(interaction, playerId);
 }
 
 export async function processPlayerAction(
   playerId: string,
-  // interaction: ModalSubmitInteraction,
-  interaction: ButtonInteraction,
+  interaction: ButtonInteraction | ModalSubmitInteraction,
   action: string
 ) {
   console.debug(
@@ -354,34 +311,33 @@ export async function processPlayerAction(
   );
   const thread = interaction.channel as ThreadChannel;
   // Reply to the message with an initial response
-  await interaction.editReply({
+  await interaction.reply({
     content: `${getPlayerTag(playerId)} Processing your action...`,
-    components: createActionComponents(parseInt(playerId.slice(-1)), true),
+    flags: MessageFlags.Ephemeral,
   });
-  const { publicMessage, playerStates, gameEnded } = await processAction(
+  
+  const simResponse = await processAction(
     interaction.channelId!,
     playerId,
     action
   );
 
   // Send player messages
-  let playerMessage = playerStates.get(playerId)?.privateMessage;
+  let playerMessage = simResponse.playerStates.get(playerId)?.privateMessage;
   if (!playerMessage || playerMessage.length === 0) {
     playerMessage = "Action processed, but no message was returned.";
   }
 
   // Update status with game state
-  await updateStatus(
+  await updateFromSimResponse(
     thread,
-    gameEnded ? SimStatus.GAME_ENDED : SimStatus.RUNNING,
-    mapPlayerStatesToStatus(playerStates, playerId),
-    publicMessage
+    simResponse,
+    playerId
   );
 
   // Reply to the player who took the action
   await interaction.editReply({
-    content: `${getPlayerTag(playerId)} ${playerMessage}`,
-    components: createActionComponents(parseInt(playerId.slice(-1))),
+    content: `${getPlayerTag(playerId)} ${playerMessage}`
   });
 }
 
@@ -403,21 +359,6 @@ async function getDesignThread(
   return await getLinkedThread(interaction.channel as ThreadChannel, "design");
 }
 
-function createActionComponents(
-  playerNumber: number,
-  disabled: boolean = false
-): ActionRowBuilder<ButtonBuilder>[] {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${playerActionIdPrefix}_${playerNumber}`)
-        .setLabel("Take Action")
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled)
-    ),
-  ];
-}
-
 async function getSetupMessage(
   thread: ThreadChannel
 ): Promise<Message | undefined> {
@@ -437,6 +378,53 @@ async function getSetupMessage(
     }
   }
   return undefined;
+}
+
+async function updateButtonEnabledStates(
+  message: Message,
+  startButton: boolean,
+  playerButtons?: boolean[]
+) {
+  console.debug(
+    "[chaincraft-simulate] updateButtonEnabledStates - startButton %s, playerButtons %s",
+    startButton,
+    playerButtons
+  );
+  const newComponents = message.components.map((row) => {
+    const newRow = new ActionRowBuilder<ButtonBuilder>();
+    for (const [index, component] of row.components.entries()) {
+      if (component instanceof ButtonComponent) {
+        if (component.customId === startGameId) {
+          const enabled = startButton;
+          const updatedComponent = new ButtonBuilder()
+            .setCustomId(component.customId!)
+            .setLabel(component.label!)
+            .setStyle(component.style)
+            .setDisabled(!enabled);
+          newRow.addComponents(updatedComponent);
+        } else if (component.customId?.startsWith(assumeRoleIdPrefix) &&
+                   playerButtons) {
+          const disabled = !playerButtons[index]; 
+          const updatedComponent = new ButtonBuilder()
+            .setCustomId(component.customId!)
+            .setLabel(component.label!)
+            .setStyle(component.style)
+            .setDisabled(disabled);
+          newRow.addComponents(updatedComponent);
+        } else {
+          const updatedComponent = new ButtonBuilder()
+            .setCustomId(component.customId!)
+            .setLabel(component.label!)
+            .setStyle(component.style)
+            .setDisabled(component.disabled);
+          newRow.addComponents(updatedComponent);
+        }
+      }
+    };
+    return newRow;
+  });
+
+  await message.edit({ components: newComponents });
 }
 
 function getPlayerTag(playerId: string) {

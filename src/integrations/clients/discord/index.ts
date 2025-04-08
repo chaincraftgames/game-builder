@@ -18,7 +18,10 @@ import {
 import type { ICommand } from "#chaincraft/integrations/clients/discord/commands/command.js";
 import { ChaincraftCommand } from "#chaincraft/integrations/clients/discord/commands/chaincraft-commands.js";
 
-const token = process.env.CHAINCRAFT_DISCORD_BOT_TOKEN;
+const isDevelopment = process.env.NODE_ENV === 'development';
+const token = isDevelopment 
+  ? process.env.CHAINCRAFT_DEV_DISCORD_BOT_TOKEN 
+  : process.env.CHAINCRAFT_DISCORD_BOT_TOKEN;
 
 // Listen for unhandled rejections
 process.on("unhandledRejection", (reason, promise) => {

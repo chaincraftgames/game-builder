@@ -3,7 +3,10 @@ import type { CommandInteraction } from "discord.js";
 
 import { startChaincraftDesign } from "#chaincraft/integrations/clients/discord/chaincraft-design.js";
 
-const commandName = process.env.CHAINCRAFT_COMMAND_NAME || "chaincraft"
+const isDevelopment = process.env.NODE_ENV === 'development';
+const commandName = isDevelopment 
+  ? process.env.CHAINCRAFT_DEV_COMMAND_NAME 
+  : process.env.CHAINCRAFT_COMMAND_NAME;
 
 const chainCraftGameDescriptionOptionName = 'game_description';
 

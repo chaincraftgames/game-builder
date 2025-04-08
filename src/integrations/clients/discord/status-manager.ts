@@ -1,10 +1,45 @@
-import { Message, ThreadChannel } from "discord.js";
-import { PlayerStates } from "#chaincraft/ai/simulate/simulate-workflow.js";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonComponent,
+  ButtonInteraction,
+  ButtonStyle,
+  Message,
+  ThreadChannel,
+} from "discord.js";
+import {
+  RuntimePlayerState,
+  SimResponse,
+} from "#chaincraft/ai/simulate/simulate-workflow.js";
 
-// Single cache for status info which includes the message
+const playerActionIdPrefix = "chaincraft_sim_action_player";
+const playerMessageIdPrefix = "chaincraft_sim_message_player";
+const gameStatusPrefix = "Status:";
+const playerCountPrefix = "Player Count:";
+const statusMessagePrefix = "## Game State ##";
+const playerStatusMessagePrefix = "### Player Controls ###";
+
+// Cache for status info which includes the message
 const statusCache = new Map<string, StatusInfo>();
 
+const buttonIdRegex = new RegExp(
+  `^(${playerActionIdPrefix}|${playerMessageIdPrefix})_(\\d+)_([^\s_]+)$`
+);
+
+const statusMessageRegex = new RegExp(
+  `^${statusMessagePrefix}\\s*${playerCountPrefix}\\s*(\\d+)\\s*${gameStatusPrefix}\\s*([^\n]+)`
+);
+
+type PlayerRoleAssignment = {
+  playerNumber: number;
+  assignedUserId?: string;
+};
+
+type PlayerStatus = PlayerRoleAssignment &
+  Omit<RuntimePlayerState, "illegalActionCount" | "actionRequired">;
+
 export const SimStatus = {
+  INITIALIZING: "Initializing...",
   WAITING_FOR_PLAYERS: "Waiting for players",
   READY_TO_START: "Ready to start!",
   RUNNING:
@@ -12,111 +47,65 @@ export const SimStatus = {
   GAME_ENDED: "The game has ended.  Please reset the simulation to play again.",
 };
 
-export enum PlayerStatusType {
-  UNASSIGNED = "WAITING",
-  ASSIGNED = "SELECTED",
-  AWAITING_ACTION = "AWAITING_ACTION",
-  NO_ACTION_REQUIRED = "NO_ACTION_REQUIRED",
-  PENDING_MESSAGE = "PENDING_MESSAGE",
-}
-
-const PlayerStatus: Record<
-  PlayerStatusType,
-  { icon: string; message: string }
-> = {
-  [PlayerStatusType.UNASSIGNED]: {
-    icon: "❌",
-    message: "Unassigned. Click the Player button to take control.",
-  },
-  [PlayerStatusType.ASSIGNED]: {
-    icon: "✅",
-    message: "Selected",
-  },
-  [PlayerStatusType.AWAITING_ACTION]: {
-    icon: "🎯",
-    message: "Your turn! Click 'Take Action' to make your move.",
-  },
-  [PlayerStatusType.NO_ACTION_REQUIRED]: {
-    icon: "⏳",
-    message: "Waiting for other players",
-  },
-  [PlayerStatusType.PENDING_MESSAGE]: {
-    icon: "📫",
-    message: "Pending message. Click 'Update' to see the latest message.",
-  },
-};
-
-const playerStatusRegex = new RegExp(
-  `Player (\\d+): (${Object.values(PlayerStatus)
-    .map((status) => status.icon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|")})`,
-  "g"
-);
-
 export interface StatusInfo {
-  message: Message;
+  statusMessage?: Message;
+  playerStatusMessage?: Message;
+  playerCount: number;
   status: string;
-  playerStatus: PlayerStatusType[];
+  playerStatus: PlayerStatus[];
 }
 
-// Helper to get status message with caching
-export async function getStatusMessage(
-  thread: ThreadChannel
-): Promise<Message | undefined> {
-  const status = await getStatus(thread);
-  return status?.message;
-}
-
-// Create initial player statuses for game setup
-export function createInitialPlayerStatus(
-  playerCount: number
-): PlayerStatusType[] {
-  return Array.from({ length: playerCount }, () => PlayerStatusType.UNASSIGNED);
-}
-
-// Map runtime player states to status types after game starts
-export function mapPlayerStatesToStatus(
-  playerStates: PlayerStates,
-  currentPlayerId?: string,
-): PlayerStatusType[] {
-  const result: PlayerStatusType[] = [];
-
-  for (const [playerId, state] of playerStates) {
-    const index = parseInt(playerId.slice(-1)) - 1;
-    if (state.privateMessage && playerId !== currentPlayerId) {
-      result[index] = PlayerStatusType.PENDING_MESSAGE;
-    } else if (state.actionRequired || state.actionsAllowed) {
-      result[index] = PlayerStatusType.AWAITING_ACTION;
-    } else {
-      result[index] = PlayerStatusType.NO_ACTION_REQUIRED;
+/**
+ * Initializes the status message for the game thread.
+ * @param thread The thread channel to send the status message to.
+ * @param playerCount The number of players in the game.  If not provided, and the thread
+ * already has a status message, it will be used to determine the player count.
+ */
+export async function initStatus(
+  thread: ThreadChannel,
+  playerCount?: number
+): Promise<StatusInfo> {
+  // Check if the thread already has a status message
+  let status = await getStatus(thread);
+  if (!status) {
+    if (!playerCount) {
+      console.error(
+        "[status-manager] No player count provided and no status message found."
+      );
+      throw new Error("No player count provided and no status message found.");
     }
+    // If no status message exists, create a new one
+    const statusMessage = await thread.send({
+      content: "Initializing...",
+    });
+
+    const playerStatusMessage = await thread.send({
+      content: "### Player Controls ###",
+    });
+
+    status = {
+      statusMessage: statusMessage,
+      playerStatusMessage: playerStatusMessage,
+      playerCount,
+      status: SimStatus.WAITING_FOR_PLAYERS,
+      playerStatus: [],
+    };
+
+    // Cache the status info
+    statusCache.set(thread.id, status);
+  } else {
+    // If a status message exists, update it
+    status.status = SimStatus.WAITING_FOR_PLAYERS;
   }
 
-  return result;
-}
-
-// Format status message content
-function formatStatusContent(
-  status: string,
-  playerStatus: PlayerStatusType[],
-  publicMessage?: string
-): string {
-  let content = `Status: ${status}\n\n
-${
-  publicMessage
-    ? `Game Update:
-${publicMessage}\n\n`
-    : ""
-}
-${playerStatus
-  .map((status, i) => {
-    const { icon, message } = PlayerStatus[status];
-    return `Player ${i + 1}: ${icon} ${message}`;
-  })
-  .join("\n")}
-`;
-
-  return content;
+  // If player count is not provided, try to get it from the status message (reset scenario).
+  if (!playerCount) {
+    playerCount = status.playerCount;
+  }
+  const playerStatuses = initPlayerStatus(playerCount);
+  status.playerStatus = playerStatuses;
+  await updateStatus(thread, status, undefined);
+  return status;
 }
 
 export async function getStatus(
@@ -125,45 +114,88 @@ export async function getStatus(
   // Check cache first
   const cached = statusCache.get(thread.id);
   if (cached) {
-   return cached;
+    console.debug("[status-manager] Cache hit for thread:", thread.id);
+    return cached;
   }
 
   // Find status message if not cached
   const messages = await thread.messages.fetch({ limit: 100 });
-  const statusMessage = messages.find(message => 
-    message.content.startsWith("Status:")
-  );
-  if (!statusMessage) return;
-  
-  // Get game status
-  const statusMatch = statusMessage.content.match(/Status: (.*)/);
-  if (!statusMatch?.[1]) return;
-
-  // First pass - find highest player number to size array
-  const playerLines = Array.from(
-    statusMessage.content.matchAll(playerStatusRegex)
-  );
-
-  if (playerLines.length === 0) {
-    return;
-  }
-
-  const maxPlayer = Math.max(...playerLines.map((match) => parseInt(match[1])));
-  const playerStatus = new Array<PlayerStatusType>(maxPlayer);
-
-  // Second pass - set player statuses at correct indices
-  for (const [_, playerNum, icon] of playerLines) {
-    const index = parseInt(playerNum) - 1;
-    const status = getStatusFromIcon(icon);
-    if (status) {
-      playerStatus[index] = status;
+  let statusMessage: Message | undefined;
+  let playerStatusMessage: Message | undefined;
+  for (const message of messages.values()) {
+    if (message.author.bot) {
+      if (message.content.startsWith("## Game State ##")) {
+        statusMessage = message;
+        console.debug(
+          "[status-manager] Found status message:",
+          message.content
+        );
+      } else if (message.content.startsWith("### Player Controls ###")) {
+        playerStatusMessage = message;
+        console.debug(
+          "[status-manager] Found player status message:",
+          message.content
+        );
+      }
     }
   }
 
+  if (!statusMessage || !playerStatusMessage) {
+    console.debug(
+      "[status-manager] No status message found in thread:",
+      thread.id
+    );
+    return;
+  }
+
+  // Get game status
+  const statusMatch = statusMessage.content.match(statusMessageRegex);
+  if (!statusMatch) {
+    console.error(
+      "[status-manager] Invalid status message format:",
+      statusMessage.content
+    );
+    throw new Error("Invalid status message format");
+  }
+  const [, playerCount, status] = statusMatch;
+
+  // Get player status
+  let playerStatuses: PlayerStatus[];
+  const actionRows = playerStatusMessage.components;
+
+  // Ensure that player statuses are initialized
+  playerStatuses = initPlayerStatus(parseInt(playerCount));
+    try {
+      for (const [index, row] of actionRows.entries()) {
+        // First button is action, second is message
+        const actionButton = row.components[0] as ButtonComponent;
+        const messageButton = row.components[1] as ButtonComponent;
+        const match = actionButton?.customId?.match(buttonIdRegex);
+        if (!match) {
+          console.error(
+            "[status-manager] Invalid button ID format:",
+            actionButton.customId
+          );
+          throw new Error("Invalid button ID format");
+        }
+        const [, , playerNumber, assignedUserId] = match;
+        playerStatuses[index] = {
+          playerNumber: parseInt(playerNumber),
+          assignedUserId: assignedUserId,
+          actionsAllowed: !actionButton.disabled
+        };
+      };
+    } catch (error) {
+      console.error("[status-manager] Error parsing player statuses:", error);
+      return;
+    }
+
   const statusInfo = {
-    message: statusMessage,
-    status: statusMatch[1],
-    playerStatus,
+    statusMessage,
+    playerStatusMessage,
+    status,
+    playerCount: parseInt(playerCount),
+    playerStatus: playerStatuses,
   };
 
   // Cache the parsed status
@@ -171,42 +203,31 @@ export async function getStatus(
   return statusInfo;
 }
 
-// Single update function that handles both pre-game and in-game updates
 export async function updateStatus(
   thread: ThreadChannel,
-  status?: string,
-  playerStatus?: PlayerStatusType[],
+  status: StatusInfo,
   publicMessage?: string
-): Promise<StatusInfo | undefined> {
-  console.debug("[statusManager] updateStatus", {
-    status,
-    playerStatus,
-    publicMessage,
+): Promise<void> {
+  console.debug("[statusManager] updateStatus", thread.id, status);
+  const currentStatus = await getStatus(thread);
+  if (!currentStatus) {
+    throw new Error("Status info not found");
+  }
+  console.debug("[statusManager] currentStatus", currentStatus);
+
+  const statusMessage = currentStatus.statusMessage;
+  await statusMessage!.edit({
+    content: formatStatusContent(status, publicMessage),
   });
-  let currentStatus;
-  if (!playerStatus) {
-    currentStatus = await getStatus(thread);
-    if (!currentStatus) return;
-    playerStatus = createInitialPlayerStatus(currentStatus.playerStatus.length);
-  }
 
-  let statusMessage = currentStatus?.message ?? await getStatusMessage(thread);
-  if (!statusMessage) {
-    statusMessage = await thread.send("Status: Initializing...");
-  }
-
-  status = status ?? SimStatus.WAITING_FOR_PLAYERS;
-  const content = formatStatusContent(status, playerStatus, publicMessage);
-  await statusMessage.edit({ content });
+  const playerStatusMessage = currentStatus.playerStatusMessage;
+  await playerStatusMessage!.edit({
+    content: "### Player Controls ###",
+    components: formatPlayerStatusContent(status.playerStatus),
+  });
 
   // Update cache with new status
-  const statusInfo = {
-    message: statusMessage,
-    status,
-    playerStatus,
-  };
-  statusCache.set(thread.id, statusInfo);
-  return statusInfo;
+  statusCache.set(thread.id, status);
 }
 
 export function clearStatus(threadId: string): void {
@@ -214,8 +235,120 @@ export function clearStatus(threadId: string): void {
   console.debug("[statusManager] Cleared status cache for thread:", threadId);
 }
 
-function getStatusFromIcon(icon: string): PlayerStatusType | undefined {
-  return Object.entries(PlayerStatus).find(
-    ([_, status]) => status.icon === icon
-  )?.[0] as PlayerStatusType | undefined;
+export function getAssignedUser(
+  interaction: ButtonInteraction
+): PlayerRoleAssignment | undefined {
+  const match = interaction.customId.match(buttonIdRegex);
+  if (!match) {
+    return;
+  }
+  const [, , playerNumber, userId] = match;
+  return {
+    playerNumber: parseInt(playerNumber),
+    assignedUserId: userId,
+  };
+}
+
+export async function updateFromSimResponse(
+  thread: ThreadChannel,
+  simResponse: SimResponse,
+  currentPlayer?: string
+) {
+  const status = await getStatus(thread);
+  if (!status) {
+    throw new Error("Status info not found");
+  }
+
+  const updatedPlayerStatuses = [...status.playerStatus];
+  for (const playerStatus of status.playerStatus) {
+    const playerId = `player${playerStatus.playerNumber}`;
+    const player = simResponse.playerStates.get(playerId);
+    if (player) {
+      playerStatus.actionsAllowed = player.actionsAllowed;
+      // Set the private message only if the player is not the current player
+      // and the player has a private message
+      playerStatus.privateMessage =
+        playerId === currentPlayer ? undefined : player.privateMessage;
+    }
+  }
+
+  await updateStatus(
+    thread,
+    {
+      ...status,
+      status: simResponse.gameEnded ? SimStatus.GAME_ENDED : SimStatus.RUNNING,
+      playerStatus: updatedPlayerStatuses,
+    },
+    simResponse.publicMessage
+  );
+}
+
+// Format status message content
+function formatStatusContent(
+  status: StatusInfo,
+  publicMessage?: string
+): string {
+  let content = `
+${statusMessagePrefix}\n
+${playerCountPrefix} ${status.playerCount}\n
+${gameStatusPrefix} ${status.status}\n
+${
+  publicMessage
+    ? `### Game Update: ###
+${publicMessage}\n\n`
+    : ""
+}`;
+  return content;
+}
+
+function formatPlayerStatusContent(
+  playerStatuses: PlayerStatus[]
+): ActionRowBuilder<ButtonBuilder>[] {
+  const actionRows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (const status of playerStatuses) {
+    if (!status.assignedUserId) {
+      continue;
+    }
+
+    actionRows.push(
+      createPlayerControls(
+        status.assignedUserId,
+        playerStatuses.indexOf(status) + 1,
+        status
+      )
+    );
+  }
+
+  return actionRows;
+}
+
+function createPlayerControls(
+  userId: string,
+  playerNumber: number,
+  playerStatus: PlayerStatus
+): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${playerActionIdPrefix}_${playerNumber}_${userId}`)
+      .setLabel(`P${playerNumber} 🎲 Action`)
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!playerStatus?.actionsAllowed),
+    new ButtonBuilder()
+      .setCustomId(`${playerMessageIdPrefix}_${playerNumber}_${userId}`)
+      .setLabel(`P${playerNumber} 📫 Message`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!playerStatus?.privateMessage)
+  );
+}
+
+function initPlayerStatus(playerCount: number): PlayerStatus[] {
+  console.debug(
+    "[status-manager] Initializing player status for %d players",
+    playerCount
+  );
+  return Array.from({ length: playerCount }, (_, index) => ({
+    playerNumber: index + 1,
+    actionsAllowed: false,
+    pendingMessage: false,
+  }));
 }

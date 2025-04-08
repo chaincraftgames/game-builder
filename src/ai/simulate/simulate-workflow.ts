@@ -9,6 +9,7 @@ import {
 import { Runnable } from "@langchain/core/runnables";
 import { StructuredOutputParser } from "langchain/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { z, ZodSchema } from "zod";
 
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
@@ -30,12 +31,15 @@ import {
 } from "#chaincraft/ai/simulate/schema.js";
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
-import { get } from "http";
 
 const simGraphCache = new GraphCache(
   createSimulationGraph,
   parseInt(process.env.CHAINCRAFT_SIMULATION_GRAPH_CACHE_SIZE ?? "100")
 );
+
+const chaincraftSimTracer = new LangChainTracer(
+  { projectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME },
+)
 
 export interface RuntimePlayerState {
   illegalActionCount: number;
@@ -242,7 +246,13 @@ function createRuntimeInitNode() {
     const response = await chain.invoke({
       gameStateSchema: schema,
       players: state.players,
-    });
+    },
+    {
+      callbacks: [
+        chaincraftSimTracer,
+      ]
+    }
+  );
 
     console.debug("[simulate] In runtime init node response: %o", response);
 
@@ -278,10 +288,17 @@ function createActionProcessingNode() {
       currentGameSpecVersion = state.currentGameSpecVersion;
     }
 
-    const response = await chain.invoke({
-      ...state.playerAction,
-      gameState: state.gameState,
-    });
+    const response = await chain.invoke(
+      {
+        ...state.playerAction,
+        gameState: state.gameState,
+      },
+      {
+        callbacks: [
+          chaincraftSimTracer,
+        ]
+      }
+  );
 
     return {
       ...state,
