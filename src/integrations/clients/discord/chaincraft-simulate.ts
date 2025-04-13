@@ -35,6 +35,12 @@ const resetSimId = "chaincraft_reset_simulation";
 const returnToDesignId = "chaincraft_return_to_design";
 const startGameId = "chaincraft_sim_start_game";
 const assumeRoleIdPrefix = "chaincraft_sim_assume_role_player";
+// This displays correctly in Discord, but not in the code editor.
+const setupmMessageHeader = `
+╔══════════╗
+║   MAIN MENU     ║
+╚══════════╝
+`
 
 const resetSimButton = new ButtonBuilder()
   .setCustomId(resetSimId)
@@ -92,7 +98,8 @@ you would like to control by clicking the corresponding buttons below.
     
 The game rules are as follows: 
 ${gameRules} 
-  `;
+${setupmMessageHeader}
+`;
 
   // Send initial setup message
   await simThread.send({

@@ -17,7 +17,12 @@ const playerQuestionIdPrefix = "chaincraft_sim_question_player";
 const playerMessageIdPrefix = "chaincraft_sim_message_player";
 const gameStatusPrefix = "Status:";
 const playerCountPrefix = "Player Count:";
-const statusMessagePrefix = "## Game State ##";
+// This displays correctly in Discord, but not in the code editor
+const statusMessagePrefix = `
+╔══════════╗
+║   GAME STATE    ║
+╚══════════╝
+`;
 const playerStatusMessagePrefix = "### Player Controls ###";
 
 // Cache for status info which includes the message
@@ -291,9 +296,9 @@ function formatStatusContent(
   publicMessage?: string
 ): string {
   let content = `
-${statusMessagePrefix}\n
-${playerCountPrefix} ${status.playerCount}\n
-${gameStatusPrefix} ${status.status}\n
+${statusMessagePrefix}
+${playerCountPrefix} ${status.playerCount}
+${gameStatusPrefix} ${status.status}
 
 ### Player Assignments ###\n
 ${
