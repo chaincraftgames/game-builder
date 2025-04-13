@@ -32,6 +32,7 @@ import { imageGenTool } from "../tools.js";
 import { GraphCache } from "../graph-cache.js";
 import { get } from "http";
 import { getConfig } from "#chaincraft/config.js";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 
 console.log("[design-conversation] env: %o", process.env);
 
@@ -43,6 +44,10 @@ const designGraphCache = new GraphCache(
   createDesignGraph,
   parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100")
 );
+
+const chaincraftDesignTracer = new LangChainTracer(
+  { projectName: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT_NAME },
+)
 
 // Create the system message for game design
 const conversationSystemMessage =
@@ -95,14 +100,21 @@ export async function generateImage(conversationId: string): Promise<string> {
     throw new Error("Failed to generate image: no game design spec");
   }
 
-  const imageDesign = await model.invoke([
-    new SystemMessage(imageDesignPrompt),
-    new HumanMessage(
-      `<game_design_specification>
-      ${gameDesignSpec}
-      </game_design_specification>`
-    ),
-  ])
+  const imageDesign = await model.invoke(
+    [
+      new SystemMessage(imageDesignPrompt),
+      new HumanMessage(
+        `<game_design_specification>
+        ${gameDesignSpec}
+        </game_design_specification>`
+      ),
+    ],
+    {
+      callbacks: [
+        chaincraftDesignTracer,
+      ]
+    }
+  )
   .catch((error) => {
     if (error.type && error.type == "overloaded_error") {
       throw new OverloadedError(error.message);
@@ -157,12 +169,14 @@ async function _createDesignConversationNode(
       ...state.messages,
     ];
 
-    console.log(
-      "Messages being sent to model:",
-      messages.map((m) => m.content.toString().substring(0, 100))
-    );
-
-    const response = await model.invoke(messages).catch((error) => {
+    const response = await model.invoke(
+      messages,
+      {
+        callbacks: [
+          chaincraftDesignTracer,
+        ]
+      }
+    ).catch((error) => {
       if (error.type && error.type == "overloaded_error") {
         throw new OverloadedError(error.message);
       } else {
@@ -211,7 +225,14 @@ async function _createDesignSpecificationNode(): Promise<
       new HumanMessage("Please provide a complete specification for this game design.")
     ];
 
-    const response = await model.invoke(messages).catch((error) => {
+    const response = await model.invoke(
+      messages,
+      {
+        callbacks: [
+          chaincraftDesignTracer,
+        ]
+      }
+    ).catch((error) => {
       if (error.type && error.type == "overloaded_error") {
         throw new OverloadedError(error.message);
       } else {
