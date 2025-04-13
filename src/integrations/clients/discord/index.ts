@@ -7,9 +7,11 @@ import {
     ChainCraftOnResetSimulation,
     // ChaincraftOnApprove,
     ChaincraftOnShare,
-    ChaincraftOnSimActionModalSubmit,
     ChainCraftOnSimAssumeRole,
+    ChaincraftOnSimModalSubmit,
     ChaincraftOnSimPlayerAction,
+    ChaincraftOnSimPlayerGetMessage,
+    ChaincraftOnSimPlayerQuestion,
     ChainCraftOnSimStartGame,
     ChaincraftOnSimulate,
     ChaincraftOnThreadDelete,
@@ -80,6 +82,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// Increase the maximum number of listeners
+client.setMaxListeners(15); // Set to a number higher than the number of listeners you need
+
 // Register events
 client.on(Events.MessageCreate, (message) => ChaincraftOnMessage.execute(message));
 // client.on(Events.InteractionCreate, (interaction) => ChaincraftOnApprove.execute(interaction));
@@ -91,5 +96,7 @@ client.on(Events.InteractionCreate, (interaction) => ChainCraftOnResetSimulation
 client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimAssumeRole.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimStartGame.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerAction.execute(interaction));
-client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimActionModalSubmit.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerQuestion.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimModalSubmit.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerGetMessage.execute(interaction));
 

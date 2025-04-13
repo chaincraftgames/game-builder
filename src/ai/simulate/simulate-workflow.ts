@@ -31,15 +31,16 @@ import {
 } from "#chaincraft/ai/simulate/schema.js";
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
+import { queueAction } from "./action-queues.js";
 
 const simGraphCache = new GraphCache(
   createSimulationGraph,
   parseInt(process.env.CHAINCRAFT_SIMULATION_GRAPH_CACHE_SIZE ?? "100")
 );
 
-const chaincraftSimTracer = new LangChainTracer(
-  { projectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME },
-)
+const chaincraftSimTracer = new LangChainTracer({
+  projectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME,
+});
 
 export interface RuntimePlayerState {
   illegalActionCount: number;
@@ -128,9 +129,9 @@ export async function initializeSimulation(
   gameId: string,
   players: string[]
 ): Promise<{
-    publicMessage?: string;
-    playerStates: PlayerStates
-  }> {
+  publicMessage?: string;
+  playerStates: PlayerStates;
+}> {
   try {
     console.log("[simulate] Initializing simulation for game %s", gameId);
     const graph = await simGraphCache.getGraph(gameId);
@@ -165,28 +166,108 @@ export async function processAction(
   playerId: string,
   action: string
 ): Promise<SimResponse> {
+  // Queue the action to ensure sequential processing
+  return queueAction(gameId, async () => {
+    try {
+      console.log("[simulate] Processing action for game %s player %s: %s", gameId, playerId, action);
+      const graph = await simGraphCache.getGraph(gameId);
+      const config = { configurable: { thread_id: gameId } };
+      let simResponse!: SimResponse;
+
+      const inputs = {
+        playerAction: {
+          playerId,
+          playerAction: action,
+        },
+      };
+      
+      for await (const state of await graph.stream(inputs, {
+        ...config,
+        streamMode: "values",
+      })) {
+        // Check if state is valid before processing
+        if (!state) {
+          throw new Error("Invalid state received from graph");
+        }
+        simResponse = getSimResponse(state);
+      }
+
+      // Validate that we got a response
+      if (!simResponse) {
+        throw new Error("No response generated from game state");
+      }
+
+      return simResponse;
+    } catch (error) {
+      handleError("Failed to process action", error);
+      return Promise.reject(error);
+    }
+  });
+}
+
+/**
+ * Retrieves the current state of the game, including player messages,
+ * without modifying the game state.
+ * @param gameId The ID of the game/conversation
+ * @returns The current simulation state response with player messages
+ */
+export async function getSimulationState(gameId: string): Promise<SimResponse> {
   try {
-    console.log("[simulate] Processing action for game %s", gameId);
+    console.log("[simulate] Getting game state for %s", gameId);
+
+    // Add logging to check if we can get the graph
     const graph = await simGraphCache.getGraph(gameId);
+    console.log("[simulate] Retrieved graph from cache for %s", gameId);
+
     const config = { configurable: { thread_id: gameId } };
     let simResponse!: SimResponse;
+    let stateFound = false;
 
-    const inputs = {
-      playerAction: {
-        playerId,
-        playerAction: action,
-      },
-    };
-    for await (const state of await graph.stream(inputs, {
+    // We deliberately pass an empty object to avoid triggering any processing nodes
+    // The graph will load the state, go from START to END, and return the current state
+    const inputs = {};
+
+    console.log("[simulate] Starting graph stream for %s", gameId);
+    const stream = await graph.stream(inputs, {
       ...config,
       streamMode: "values",
-    })) {
+    });
+
+    for await (const state of stream) {
+      console.log(
+        "[simulate] Stream yielded state for %s: %o",
+        gameId,
+        Object.keys(state)
+      );
+      stateFound = true;
       simResponse = getSimResponse(state);
+      console.log("[simulate] Generated simResponse for %s", gameId);
+    }
+
+    console.log(
+      "[simulate] Stream completed for %s, state found: %s",
+      gameId,
+      stateFound
+    );
+
+    // If we get here without a state, the graph might have failed to properly load
+    if (!simResponse) {
+      console.error(
+        "[simulate] No state was processed in the stream for %s",
+        gameId
+      );
+
+      throw new Error("Failed to retrieve game state");
     }
 
     return simResponse;
   } catch (error) {
-    handleError("Failed to process action", error);
+    console.error(
+      "[simulate] Error in getSimulationState for %s: %o",
+      gameId,
+      error
+    );
+    handleError("Failed to get player messages", error);
     return Promise.reject(error);
   }
 }
@@ -213,7 +294,7 @@ function createSpecProcessorNode() {
       currentGameSpecVersion: state.updatedGameSpecVersion,
       minPlayers: response.minPlayers,
       maxPlayers: response.maxPlayers,
-      gameRules: response.gameRules
+      gameRules: response.gameRules,
     };
   };
 }
@@ -243,16 +324,15 @@ function createRuntimeInitNode() {
       currentGameSpecVersion = state.currentGameSpecVersion;
     }
 
-    const response = await chain.invoke({
-      gameStateSchema: schema,
-      players: state.players,
-    },
-    {
-      callbacks: [
-        chaincraftSimTracer,
-      ]
-    }
-  );
+    const response = await chain.invoke(
+      {
+        gameStateSchema: schema,
+        players: state.players,
+      },
+      {
+        callbacks: [chaincraftSimTracer],
+      }
+    );
 
     console.debug("[simulate] In runtime init node response: %o", response);
 
@@ -294,11 +374,9 @@ function createActionProcessingNode() {
         gameState: state.gameState,
       },
       {
-        callbacks: [
-          chaincraftSimTracer,
-        ]
+        callbacks: [chaincraftSimTracer],
       }
-  );
+    );
 
     return {
       ...state,
@@ -335,7 +413,7 @@ async function createRuntimeChain(
         "[simulate] Chain failed to process. Error: %s",
         error.message
       );
-    }
+    },
   });
 
   return {
@@ -362,11 +440,16 @@ async function createSimulationGraph(
   graph
     .addNode("process_spec", specProcessor)
     .addNode("init_runtime", runtimeInit)
-    .addNode("process_action", actionProcessor);
+    .addNode("process_action", actionProcessor)
+    .addNode("get_current_state", async (state: SimulationStateType) => {
+      console.debug("[simulate] In get_current_state node");
+      return { ...state };
+    });
 
   // Add edges with conditions
   graph
     .addConditionalEdges(START, (state) => {
+      console.debug("[simulate] In start node");
       // Start with processing if spec version changed
       if (shouldExecuteProcessSpecNode(state)) {
         return "process_spec";
@@ -377,8 +460,10 @@ async function createSimulationGraph(
       if (shouldExecuteProcessActionNode(state)) {
         return "process_action";
       }
-      return END;
+      return "get_current_state";
     })
+    //   return END;
+    // })
     .addConditionalEdges("process_spec" as any, (state) => {
       if (shouldExecuteInitRuntimeNode(state)) {
         return "init_runtime";
@@ -397,7 +482,8 @@ async function createSimulationGraph(
       );
       return END;
     })
-    .addEdge("process_action" as any, END);
+    .addEdge("process_action" as any, END)
+    .addEdge("get_current_state" as any, END);
 
   return graph.compile({ checkpointer: saver });
 }
@@ -420,29 +506,50 @@ function shouldExecuteProcessActionNode(state: SimulationStateType) {
 }
 
 function getSimResponse(state: SimulationStateType): SimResponse {
-  console.debug("[simulate] Getting player messages");
+  console.debug("[simulate] Getting sim response");
+  
+  // Check if state is undefined or null
+  if (!state) {
+    throw new Error("Cannot create response from undefined state");
+  }
+  
   const gameState = getGameState(state);
+  
+  // If gameState is undefined, return a default response
+  if (!gameState) {
+    return {
+      publicMessage: "Error: Unable to get game state",
+      playerStates: new Map(),
+      gameEnded: false
+    };
+  }
 
   // Extract player states
   const playerStates: PlayerStates = new Map<string, RuntimePlayerState>();
-  for (const [playerId, playerData] of Object.entries(
-    gameState.players as Record<string, RuntimePlayerState>
-  )) {
-    const playerState: RuntimePlayerState = {} as RuntimePlayerState;
-    playerState.illegalActionCount = playerData.illegalActionCount;
-    playerState.actionsAllowed = playerData.actionsAllowed;
-    playerState.actionRequired = playerData.actionRequired;
-    const playerMessage = playerData?.privateMessage;
-    if (playerMessage && playerMessage.length > 0) {
-      playerState.privateMessage = playerMessage;
+  
+  // Make sure players object exists
+  if (gameState.players) {
+    for (const [playerId, playerData] of Object.entries(
+      gameState.players as Record<string, RuntimePlayerState>
+    )) {
+      const playerState: RuntimePlayerState = {
+        illegalActionCount: playerData?.illegalActionCount || 0,
+        actionsAllowed: playerData?.actionsAllowed !== false,
+        actionRequired: playerData?.actionRequired === true
+      };
+      
+      const playerMessage = playerData?.privateMessage;
+      if (playerMessage && playerMessage.length > 0) {
+        playerState.privateMessage = playerMessage;
+      }
+      playerStates.set(playerId, playerState);
     }
-    playerStates.set(playerId, playerState);
   }
 
   return {
-    publicMessage: gameState.game.publicMessage,  
+    publicMessage: gameState.game?.publicMessage,
     playerStates,
-    gameEnded: gameState.game.gameEnded
+    gameEnded: gameState.game?.gameEnded === true,
   };
 }
 

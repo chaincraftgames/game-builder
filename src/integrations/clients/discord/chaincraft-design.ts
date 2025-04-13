@@ -315,7 +315,7 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
       content: "📝 Getting game specification...",
     });
 
-    const gameSpec = await getFullDesignSpecification(designThread.id);
+    const gameSpec = await getFullDesignSpecification(designThread.id);    
 
     // Check if simulation already exists
     const existingSimThread = await getLinkedThread(designThread, "simulation");
@@ -348,7 +348,7 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
     await storeThreadLink(simThread, designThread.id, "design");
 
     // Initialize simulation in the new thread
-    await initializeSimulation(simThread, interaction.user, gameSpec);
+    await initializeSimulation(simThread, interaction.user, gameSpec, true);
 
     await simThread.join();
     await interaction.editReply({

@@ -11,7 +11,9 @@
     "start:discord": "npm run build && node dist/integrations/clients/discord/index.js",
     "watch": "tsc-watch --onSuccess \"npm run start\"",
     "run-design-test": "tsc && node ./dist/ai/design/__tests__/design-workflow.test.js",
-    "test:simulation": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/__tests__/simulate-workflow.test.ts"
+    "test:simulation": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/__tests__/simulate-workflow.test.ts",
+    "test:generate": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/gen/generators/__tests__/state-machine-generator.test.ts",
+    "test:action-queues": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/__tests__/action-queues.test.ts"
   },
   "keywords": [],
   "author": "",

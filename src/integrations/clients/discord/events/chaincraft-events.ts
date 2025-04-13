@@ -10,10 +10,12 @@ import {
   assumePlayerRole as simAssumePlayerRole,
   startGame as simStartGame,
   handlePlayerAction as simHandlePlayerAction,
+  handlePlayerQuestion as simHandlePlayerQuestion,
+  handlePlayerGetMessage as simHandlePlayerGetMessage,
   // handleSimulationMessage 
 } from "#chaincraft/integrations/clients/discord/chaincraft-simulate.js";
-import { handleActionModalSubmit } from "#chaincraft/integrations/clients/discord/action-handler.js";
 import { clearStatus as clearSimStatus } from "#chaincraft/integrations/clients/discord/status-manager.js";
+import { handleModalSubmit } from "../modal-handler.js";
 
 const designChannelId = process.env.CHAINCRAFT_DESIGN_CHANNEL_ID;
 const simulationChannelId = process.env.CHAINCRAFT_SIMULATION_CHANNEL_ID;
@@ -184,18 +186,51 @@ const ChaincraftOnSimPlayerAction = {
   },
 };
 
-const ChaincraftOnSimActionModalSubmit = {
+const ChaincraftOnSimPlayerQuestion = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId.startsWith("chaincraft_sim_question")
+      ) {
+        await simHandlePlayerQuestion(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChaincraftOnSimPlayerAction: ", error);
+    }
+  },
+};
+
+const ChaincraftOnSimModalSubmit = {
   name: Events.InteractionCreate,
   execute: async (interaction: Interaction) => {
     try {
       if (
         interaction.isModalSubmit() &&
-        interaction.customId.startsWith("chaincraft_sim_action_modal")
+        (interaction.customId.startsWith("chaincraft_sim_action_modal") ||
+         interaction.customId.startsWith("chaincraft_sim_question_modal"))
       ) {
-        await handleActionModalSubmit(interaction);
+        await handleModalSubmit(interaction);
       }
     } catch (error) {
-      console.error("Unhandled error in ChaincraftOnSimActionModalSubmit ", error);
+      console.error("Unhandled error in ChaincraftOnSimModalSubmit: ", error);
+    }
+  },
+};
+
+const ChaincraftOnSimPlayerGetMessage = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId.startsWith("chaincraft_sim_message_player")
+      ) {
+        await simHandlePlayerGetMessage(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChaincraftOnSimPlayerGetMessage: ", error);
     }
   },
 };
@@ -211,5 +246,7 @@ export {
   ChainCraftOnSimAssumeRole,
   ChainCraftOnSimStartGame,
   ChaincraftOnSimPlayerAction,
-  ChaincraftOnSimActionModalSubmit
+  ChaincraftOnSimPlayerQuestion,
+  ChaincraftOnSimModalSubmit,
+  ChaincraftOnSimPlayerGetMessage,
 };

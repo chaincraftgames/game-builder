@@ -13,6 +13,7 @@ import {
 } from "#chaincraft/ai/simulate/simulate-workflow.js";
 
 const playerActionIdPrefix = "chaincraft_sim_action_player";
+const playerQuestionIdPrefix = "chaincraft_sim_question_player";
 const playerMessageIdPrefix = "chaincraft_sim_message_player";
 const gameStatusPrefix = "Status:";
 const playerCountPrefix = "Player Count:";
@@ -23,7 +24,7 @@ const playerStatusMessagePrefix = "### Player Controls ###";
 const statusCache = new Map<string, StatusInfo>();
 
 const buttonIdRegex = new RegExp(
-  `^(${playerActionIdPrefix}|${playerMessageIdPrefix})_(\\d+)_([^\s_]+)$`
+  `^(${playerActionIdPrefix}|${playerQuestionIdPrefix}|${playerMessageIdPrefix})_(\\d+)_([^\s_]+)$`
 );
 
 const statusMessageRegex = new RegExp(
@@ -42,6 +43,7 @@ export const SimStatus = {
   INITIALIZING: "Initializing...",
   WAITING_FOR_PLAYERS: "Waiting for players",
   READY_TO_START: "Ready to start!",
+  STARTING: "Game is starting.  Please wait...",
   RUNNING:
     "Game started! Check your ephemeral messages for your player information.",
   GAME_ENDED: "The game has ended.  Please reset the simulation to play again.",
@@ -80,7 +82,7 @@ export async function initStatus(
     });
 
     const playerStatusMessage = await thread.send({
-      content: "### Player Controls ###",
+      content: playerStatusMessagePrefix,
     });
 
     status = {
@@ -130,7 +132,7 @@ export async function getStatus(
           "[status-manager] Found status message:",
           message.content
         );
-      } else if (message.content.startsWith("### Player Controls ###")) {
+      } else if (message.content.startsWith(playerStatusMessagePrefix)) {
         playerStatusMessage = message;
         console.debug(
           "[status-manager] Found player status message:",
@@ -223,7 +225,7 @@ export async function updateStatus(
   const playerStatusMessage = currentStatus.playerStatusMessage;
   await playerStatusMessage!.edit({
     content: "### Player Controls ###",
-    components: formatPlayerStatusContent(status.playerStatus),
+    components: formatPlayerStatusContent(status.status, status.playerStatus),
   });
 
   // Update cache with new status
@@ -292,16 +294,29 @@ function formatStatusContent(
 ${statusMessagePrefix}\n
 ${playerCountPrefix} ${status.playerCount}\n
 ${gameStatusPrefix} ${status.status}\n
+
+### Player Assignments ###\n
+${
+  status.playerStatus.map((player) => {
+    const playerAssignment = player.assignedUserId 
+      ? `<@${player.assignedUserId}>` 
+      : "Not assigned";
+    
+    return `Player ${player.playerNumber}: ${playerAssignment}`;
+  }).join("\n")
+}
 ${
   publicMessage
     ? `### Game Update: ###
 ${publicMessage}\n\n`
     : ""
 }`;
+
   return content;
 }
 
 function formatPlayerStatusContent(
+  simStatus: string,
   playerStatuses: PlayerStatus[]
 ): ActionRowBuilder<ButtonBuilder>[] {
   const actionRows: ActionRowBuilder<ButtonBuilder>[] = [];
@@ -313,6 +328,7 @@ function formatPlayerStatusContent(
     actionRows.push(
       createPlayerControls(
         status.assignedUserId,
+        simStatus,
         playerStatuses.indexOf(status) + 1,
         status
       )
@@ -324,6 +340,7 @@ function formatPlayerStatusContent(
 
 function createPlayerControls(
   userId: string,
+  simStatus: string,
   playerNumber: number,
   playerStatus: PlayerStatus
 ): ActionRowBuilder<ButtonBuilder> {
@@ -334,8 +351,13 @@ function createPlayerControls(
       .setStyle(ButtonStyle.Primary)
       .setDisabled(!playerStatus?.actionsAllowed),
     new ButtonBuilder()
+      .setCustomId(`${playerQuestionIdPrefix}_${playerNumber}_${userId}`)
+      .setLabel(`P${playerNumber} ❓ Question`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(simStatus !== SimStatus.RUNNING),
+    new ButtonBuilder()
       .setCustomId(`${playerMessageIdPrefix}_${playerNumber}_${userId}`)
-      .setLabel(`P${playerNumber} 📫 Message`)
+      .setLabel(`P${playerNumber} 📫 Get Message`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!playerStatus?.privateMessage)
   );
