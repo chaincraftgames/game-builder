@@ -10,8 +10,6 @@ import { processGameSpecificationTemplate } from "#chaincraft/ai/simulate/simula
 let processingChain: Runnable | undefined;
 
 export type GameDefinition = {
-  minPlayers: number;
-  maxPlayers: number;
   gameRules: string;
   schemaFields: SchemaField[];
 };
@@ -24,8 +22,6 @@ export async function processGameSpecification(
   const response = await processingChain?.invoke({ gameSpecification });
 
   return {
-    minPlayers: response.minPlayers,
-    maxPlayers: response.maxPlayers,
     gameRules: response.gameRules,
     schemaFields: response.stateSchema.fields,
   }
@@ -39,12 +35,6 @@ async function initialize() {
   const prompt = ChatPromptTemplate.fromTemplate(processGameSpecificationTemplate);
 
   const responseSchema = z.object({
-    minPlayers: z
-      .number()
-      .describe("The number of players required to start the game"),
-    maxPlayers: z
-      .number()
-      .describe("The maximum number of players that can play the game"),
     gameRules: z
       .string()
       .describe("A description of the game rules. e.g. how to play the game, what are the game phases, states, ...etc, what you can do on your turn, how a winner is determined."),

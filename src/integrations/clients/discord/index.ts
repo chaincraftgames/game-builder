@@ -3,10 +3,11 @@ import "dotenv/config.js";
 import { Client, Collection, Events, GatewayIntentBits } from "discord.js";
 
 import { 
+  ChaincraftOnGameLibraryPlay,
     ChaincraftOnMessage,
+    ChaincraftOnPublish,
     ChainCraftOnResetSimulation,
     // ChaincraftOnApprove,
-    ChaincraftOnShare,
     ChainCraftOnSimAssumeRole,
     ChaincraftOnSimModalSubmit,
     ChaincraftOnSimPlayerAction,
@@ -14,8 +15,7 @@ import {
     ChaincraftOnSimPlayerQuestion,
     ChainCraftOnSimStartGame,
     ChaincraftOnSimulate,
-    ChaincraftOnThreadDelete,
-    ChaincraftOnUpload
+    ChaincraftOnThreadDelete
 } from "#chaincraft/integrations/clients/discord/events/chaincraft-events.js";
 import type { ICommand } from "#chaincraft/integrations/clients/discord/commands/command.js";
 import { ChaincraftCommand } from "#chaincraft/integrations/clients/discord/commands/chaincraft-commands.js";
@@ -87,10 +87,8 @@ client.setMaxListeners(15); // Set to a number higher than the number of listene
 
 // Register events
 client.on(Events.MessageCreate, (message) => ChaincraftOnMessage.execute(message));
-// client.on(Events.InteractionCreate, (interaction) => ChaincraftOnApprove.execute(interaction));
-client.on(Events.InteractionCreate, (interaction) => ChaincraftOnShare.execute(interaction));
 client.on(Events.ThreadDelete, (thread) => ChaincraftOnThreadDelete.execute(thread));
-client.on(Events.InteractionCreate, (interaction) => ChaincraftOnUpload.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnPublish.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimulate.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChainCraftOnResetSimulation.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimAssumeRole.execute(interaction));
@@ -99,4 +97,4 @@ client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerAction
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerQuestion.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimModalSubmit.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerGetMessage.execute(interaction));
-
+client.on(Events.InteractionCreate, (interaction) => ChaincraftOnGameLibraryPlay.execute(interaction));

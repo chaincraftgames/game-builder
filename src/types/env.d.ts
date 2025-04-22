@@ -8,6 +8,9 @@ declare global {
       CHAINCRAFT_COMMAND_NAME: string;
       CHAINCRAFT_DEV_DISCORD_BOT_TOKEN: string;
       CHAINCRAFT_DISCORD_BOT_TOKEN: string;
+      CHAINCRAFT_GAME_LIBRARY_CHANNEL_ID: string;
+      CHAINCRAFT_DESIGN_CHANNEL_ID: string;
+      CHAINCRAFT_SIMULATION_CHANNEL_ID: string;
     }
   }
 }

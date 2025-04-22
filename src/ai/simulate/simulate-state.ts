@@ -28,12 +28,6 @@ export const SimulationState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
     reducer: (x, y) => [...x, ...y],
   }),
-  minPlayers: Annotation<number>({
-    reducer: (_, y) => y,
-  }),
-  maxPlayers: Annotation<number>({
-    reducer: (_, y) => y,
-  }),
   gameRules: Annotation<string>({
     reducer: (_, y) => y,
   }),

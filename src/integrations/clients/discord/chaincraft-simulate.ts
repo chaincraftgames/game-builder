@@ -30,6 +30,7 @@ import {
   showActionModal,
   showQuestionModal,
  } from "#chaincraft/integrations/clients/discord/modal-handler.js";
+import { GameDesignSpecification } from "#chaincraft/ai/design/game-design-state.js";
 
 const resetSimId = "chaincraft_reset_simulation";
 const returnToDesignId = "chaincraft_return_to_design";
@@ -38,13 +39,12 @@ const assumeRoleIdPrefix = "chaincraft_sim_assume_role_player";
 // This displays correctly in Discord, but not in the code editor.
 const setupmMessageHeader = `
 ╔══════════╗
-║   MAIN MENU     ║
+       MAIN MENU
 ╚══════════╝
 `
 
 const resetSimButton = new ButtonBuilder()
   .setCustomId(resetSimId)
-  .setLabel("Reset Simulation")
   .setStyle(ButtonStyle.Secondary);
 
 // const returnToDesignButton = new ButtonBuilder()
@@ -52,7 +52,6 @@ const resetSimButton = new ButtonBuilder()
 //   .setLabel("Return to Design")
 //   .setStyle(ButtonStyle.Secondary);
 
-// Add these at the top with other button definitions
 const startGameButton = new ButtonBuilder()
   .setCustomId(startGameId)
   .setLabel("Start Game")
@@ -67,25 +66,28 @@ export interface GameConfiguration {
 export async function initializeSimulation(
   simThread: ThreadChannel,
   creatingUser: User,
-  gameSpec: string,
-  isPlayTest: boolean
+  gameSpec: GameDesignSpecification,
+  specVersion: number,
+  isPlayTest = false,
 ): Promise<void> {
-  const { playerCount, gameRules } = await createSimulation(
+  const { gameRules } = await createSimulation(
     simThread.id,
-    gameSpec,
-    1
+    gameSpec.designSpecification,
+    specVersion
   );
 
   // Tag the user who started the simulation
   const userTag = creatingUser.toString();
-  simThread.send(
-    `${userTag} has started a ${isPlayTest ? "simulation" : "game"} with ${
-      playerCount.minPlayers
-    } to ${playerCount.maxPlayers} players.`
+  const versionInfo = `(Specification v${specVersion})`;
+  const { playerCount } = gameSpec;
+  simThread.send(`
+${setupmMessageHeader}
+${userTag} has started a ${isPlayTest ? "simulation" : "game"} with ${playerCount.min} to ${playerCount.max} players. ${versionInfo}
+`
   );
 
   // Create player selection buttons
-  const playerButtons = Array.from({ length: playerCount.maxPlayers }, (_, i) =>
+  const playerButtons = Array.from({ length: playerCount.max }, (_, i) =>
     new ButtonBuilder()
       .setCustomId(`${assumeRoleIdPrefix}_${i + 1}`)
       .setLabel(`Play as Player ${i + 1}`)
@@ -93,12 +95,11 @@ export async function initializeSimulation(
   );
 
   const content = `
-This game supports ${playerCount.maxPlayers} players. Select which player(s) 
+This game supports ${playerCount.min} to ${playerCount.max} players. Select which player(s) 
 you would like to control by clicking the corresponding buttons below.
     
 The game rules are as follows: 
 ${gameRules} 
-${setupmMessageHeader}
 `;
 
   // Send initial setup message
@@ -115,18 +116,20 @@ ${setupmMessageHeader}
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         startGameButton,
         resetSimButton
+        .setLabel(isPlayTest ? "Reset Simulation" : "Restart Game")
         // returnToDesignButton
       ),
     ],
   });
 
   // Initialize status with unassigned players
-  await initStatus(simThread, Math.min(playerCount.maxPlayers, 5));
+  await initStatus(simThread, Math.min(playerCount.max, 5));
 }
 
 export async function continueSimulation(
   simThread: ThreadChannel,
-  gameSpec: string
+  gameSpec: GameDesignSpecification,
+  gameSpecVersion: number,
 ): Promise<void> {}
 
 export async function resetSimulation(interaction: ButtonInteraction) {

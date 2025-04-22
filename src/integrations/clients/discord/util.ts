@@ -136,15 +136,4 @@ async function _sendChunks(
   }
 }
 
-export async function pinataSDK() {
-  if (!pinataJwt) {
-    throw new Error("Pinata JWT key is not set in environment variables.");
-  }
 
-  const pinata = new PinataSDK({
-    pinataJwt: `${pinataJwt}`,
-    pinataGateway: `${pinataGateway}`,
-  });
-
-  return pinata;
-}
