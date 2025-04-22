@@ -2,4 +2,5 @@
 dist/**
 node_modules/**
 *.tsbuildinfo
-data/**
+data/*
+!data/design/
