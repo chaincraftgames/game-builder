@@ -32,6 +32,7 @@ import {
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
 import { queueAction } from "./action-queues.js";
+import { GameDesignSpecification } from "../design/game-design-state.js";
 
 const simGraphCache = new GraphCache(
   createSimulationGraph,
@@ -84,12 +85,10 @@ export async function createSimulation(
   gameSpecification: string,
   gameSpecificationVersion: number
 ): Promise<{
-  playerCount: PlayerCount;
   gameRules: string;
 }> {
   try {
     console.log("[simulate] Creating simulation for game %s", gameId);
-    let numPlayers = { minPlayers: 0, maxPlayers: 0 };
     let gameRulesResponse = "The model failed to provide rules for this game.";
     const graph = await simGraphCache.getGraph(gameId);
     const config = { configurable: { thread_id: gameId } };
@@ -99,24 +98,15 @@ export async function createSimulation(
       updatedGameSpecVersion: gameSpecificationVersion,
     };
     for await (const {
-      minPlayers,
-      maxPlayers,
       gameRules,
     } of await graph.stream(inputs, {
       ...config,
       streamMode: "values",
     })) {
-      console.debug(
-        "[simulate] in createSimulation - min %d max %d:",
-        minPlayers,
-        maxPlayers
-      );
-      numPlayers = { minPlayers, maxPlayers };
       gameRulesResponse = gameRules;
     }
 
     return {
-      playerCount: numPlayers,
       gameRules: gameRulesResponse,
     };
   } catch (error) {
@@ -292,8 +282,6 @@ function createSpecProcessorNode() {
       ...state,
       schema: serializeSchema(response.schemaFields),
       currentGameSpecVersion: state.updatedGameSpecVersion,
-      minPlayers: response.minPlayers,
-      maxPlayers: response.maxPlayers,
       gameRules: response.gameRules,
     };
   };
@@ -493,10 +481,9 @@ function shouldExecuteProcessSpecNode(state: SimulationStateType) {
 }
 
 function shouldExecuteInitRuntimeNode(state: SimulationStateType) {
+  // Init if we are not initialized and we have players.
   return (
     state.players?.length &&
-    state.players.length <= state.maxPlayers &&
-    state.players.length >= state.minPlayers &&
     !state.isInitialized
   );
 }

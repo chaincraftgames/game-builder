@@ -1,7 +1,6 @@
 import fetch from "node-fetch";
 import {
   ActionRowBuilder,
-  APIEmbed,
   ButtonBuilder,
   ButtonInteraction,
   ButtonStyle,
@@ -16,14 +15,11 @@ import { chainCraftGameDescriptionOptionName } from "#chaincraft/integrations/cl
 import {
   createThreadInChannel,
   sendToThread,
-  createPost,
-  pinataSDK,
 } from "#chaincraft/integrations/clients/discord/util.js";
 import {
   continueDesignConversation,
   DesignResponse,
   generateImage,
-  getFullDesignSpecification,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
@@ -35,40 +31,33 @@ import {
   continueSimulation,
   initializeSimulation,
 } from "#chaincraft/integrations/clients/discord/chaincraft-simulate.js";
+import {
+  clearSpecification,
+  getSpecificationForThread,
+  setSpecificationForThread,
+} from "#chaincraft/integrations/clients/discord/specification_manager.js";
+
 
 const designChannelId = process.env.CHAINCRAFT_DESIGN_CHANNEL_ID;
-const designShareChannelId = process.env.CHAINCRAFT_DESIGN_SHARE_CHANNEL_ID;
 const simulationChannelId = process.env.CHAINCRAFT_SIMULATION_CHANNEL_ID;
 
-const shareButton = new ButtonBuilder()
-  .setCustomId("chaincraft_share_design")
-  .setLabel("Share")
-  .setStyle(ButtonStyle.Secondary);
-
-const generateTokenButton = new ButtonBuilder()
-  .setCustomId("chaincraft_upload_design")
-  .setLabel("Generate Token")
-  .setStyle(ButtonStyle.Secondary);
+const publishGameButton = new ButtonBuilder()
+  .setCustomId("chaincraft_publish_design")
+  .setLabel("Publish Game")
+  .setStyle(ButtonStyle.Primary);
 
 const simulateButton = new ButtonBuilder()
   .setCustomId("chaincraft_simulate_design")
-  .setLabel("Simulate")
-  .setStyle(ButtonStyle.Secondary);
+  .setLabel("Simulate Game")
+  .setStyle(ButtonStyle.Primary);
 
 const buttonActionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-  shareButton,
-  generateTokenButton,
+  publishGameButton,
   simulateButton
 );
 
 // Add error types
-type OperationType = "start" | "continue" | "share" | "upload";
-type ErrorContext = {
-  operation: OperationType;
-  threadId?: string;
-  userId?: string;
-  error: Error;
-};
+type OperationType = "start" | "continue" | "publish" | "simulate";
 
 export async function handleDesignMessage(
   message: Message
@@ -109,7 +98,7 @@ export async function startChaincraftDesign(interaction: CommandInteraction) {
     });
 
     // The initial message we send is ony used to get the thread ID.  The actual
-    // message sent to the AI will be the gae description so the contents do not
+    // message sent to the AI will be the game description so the contents do not
     // matter in this case.
     const { updatedTitle, designResponse } = await _continueChaincraftDesign(
       imageMessage,
@@ -160,14 +149,27 @@ export async function continueChaincraftDesign(message: Message) {
     message.content
   );
   try {
-    const { updatedTitle, designResponse } = await _continueChaincraftDesign(
+    const response = await _continueChaincraftDesign(
       message
     );
 
+    if (response.specification) {
+      console.debug('[chaincraft-design] Updated spec returned from design agent.')
+      setSpecificationForThread(
+        message.channel as ThreadChannel,
+        response.specification,
+      )
+    } else {
+      console.debug('[chaincraft-design] Design changed, invalidating spec.')
+      clearSpecification(
+        message.channel as ThreadChannel,
+      )
+    }
+
     _updateThread(
-      designResponse,
+      response.designResponse,
       message.channel as ThreadChannel<boolean>,
-      updatedTitle
+      response.updatedTitle
     );
   } catch (e) {
     await _handleChaincraftDesignError(
@@ -180,131 +182,8 @@ export async function continueChaincraftDesign(message: Message) {
   }
 }
 
-export async function shareChaincraftDesign(interaction: ButtonInteraction) {
-  try {
-    if (
-      !interaction.channel ||
-      !(interaction.channel instanceof ThreadChannel)
-    ) {
-      await interaction.reply({
-        content: "This interaction can only occur in a thread.",
-        ephemeral: true,
-      });
-      return;
-    }
-
-    // Acknowledge the interaction immediately
-    await interaction.deferReply({ ephemeral: true });
-    await interaction.editReply({
-      content: "Share Design - 🔄 Retrieving the full design specification...",
-    });
-
-    const gameSpecification = await getFullDesignSpecification(
-      interaction.channelId as string
-    );
-
-    await interaction.editReply({
-      content: "Share Desgin - 📝 Processing design and preparing to share...",
-    });
-
-    const gameTitle = interaction.channel.name;
-    const imageUrl = await _getImageUrlFromThread(interaction.channel);
-
-    const postMessage = `**Game Title:** ${gameTitle}\n\n**Game Design Specification:** \n${gameSpecification}`;
-    let imageEmbed: APIEmbed | undefined = imageUrl
-      ? { image: { url: imageUrl } }
-      : undefined;
-
-    // Has the game design already been shared?
-    const channel = interaction.channel as ThreadChannel;
-    let postId = await _getStoredPostId(channel);
-    let post;
-    try {
-      post = postId && (await interaction.client.channels.fetch(postId));
-    } catch (error) {
-      // Do nothing if the post is not found
-    }
-    if (!postId || !post) {
-      const post = await createPost(
-        interaction.client,
-        designShareChannelId as string,
-        gameTitle,
-        postMessage,
-        imageEmbed
-      );
-      _storePostId(interaction, channel, post);
-      await interaction.editReply({
-        content: "The game design has been shared.",
-      });
-    } else {
-      // Fetch the post channel by ID
-      sendToThread(post as ThreadChannel, gameSpecification);
-      await interaction.editReply({
-        content: "The game design has been updated.",
-      });
-    }
-  } catch (error) {
-    await _handleChaincraftDesignError(interaction, error as Error, {
-      operation: "share",
-    });
-  }
-}
-
-export async function uploadChaincraftDesign(interaction: ButtonInteraction) {
-  try {
-    if (
-      !interaction.channel ||
-      !(interaction.channel instanceof ThreadChannel)
-    ) {
-      await interaction.reply({
-        content: "This interaction can only occur in a thread.",
-      });
-      return;
-    }
-    const gameTitle = interaction.channel?.name;
-    const name = `PAIT_${interaction.user.id}_${gameTitle.replace(/\s/g, "_")}`;
-
-    // Acknowledge the interaction immediately
-    await interaction.deferReply({ ephemeral: true });
-    await interaction.editReply({
-      content:
-        "Generate Token - 🔄 Retrieving the full design specification...",
-    });
-
-    const gameSpecification = await getFullDesignSpecification(
-      interaction.channelId as string
-    );
-
-    await interaction.editReply({
-      content: "Generate Token - 📤 Preparing to upload to IPFS...",
-    });
-
-    const state = {
-      game_title: gameTitle,
-      game_specification: gameSpecification,
-      image_url: await _getImageUrlFromThread(interaction.channel),
-    };
-
-    await interaction.editReply({
-      content: "Generate Token - ⏳ Uploading to IPFS...",
-    });
-
-    // Initialize Pinata client (adjust based on your SDK setup)
-    const pinata = await pinataSDK();
-    const upload = await pinata.upload.json(state).addMetadata({ name });
-    //console.log(upload);
-
-    await interaction.editReply({
-      content: `✅ Design uploaded to IPFS!\nView at: https://ipfs.io/ipfs/${upload.IpfsHash}`,
-    });
-  } catch (error) {
-    await _handleChaincraftDesignError(interaction, error as Error, {
-      operation: "upload",
-    });
-  }
-}
-
 export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
+  console.debug('[chaincraft-design] - Initializing simulation...');
   await interaction.deferReply({ ephemeral: true });
 
   try {
@@ -315,7 +194,14 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
       content: "📝 Getting game specification...",
     });
 
-    const gameSpec = await getFullDesignSpecification(designThread.id);    
+    const specResult = await getSpecificationForThread(designThread);
+    
+    if (!specResult) {
+      await interaction.editReply({
+        content: "Failed to retrieve the game specification. Please try again later.",
+      });
+      return;
+    }
 
     // Check if simulation already exists
     const existingSimThread = await getLinkedThread(designThread, "simulation");
@@ -323,7 +209,7 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
       await interaction.editReply({
         content: `Continuing existing simulation. [Click to join](<${existingSimThread.url}>)`,
       });
-      continueSimulation(existingSimThread, gameSpec);
+      continueSimulation(existingSimThread, specResult.specification, specResult.version);
       return;
     }
 
@@ -347,8 +233,14 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
     await storeThreadLink(designThread, simThread.id, "simulation");
     await storeThreadLink(simThread, designThread.id, "design");
 
-    // Initialize simulation in the new thread
-    await initializeSimulation(simThread, interaction.user, gameSpec, true);
+    // Initialize simulation in the new thread with specification version
+    await initializeSimulation(
+      simThread, 
+      interaction.user, 
+      specResult.specification, 
+      specResult.version,
+      true
+    );
 
     await simThread.join();
     await interaction.editReply({
@@ -359,45 +251,6 @@ export async function simulateChaincraftDesign(interaction: ButtonInteraction) {
     await interaction.editReply({
       content:
         "There was an error setting up the simulation. Please try again.",
-    });
-  }
-}
-
-async function _getStoredPostId(thread: ThreadChannel) {
-  // Get the pinned message from the thread
-  const pinnedMessages = (await thread.messages.fetchPinned()).filter(
-    (m: Message) => m.author.bot
-  );
-
-  // If there are no pinned messages, return
-  if (pinnedMessages.size === 0) {
-    return;
-  }
-
-  const postMessage = pinnedMessages.first();
-  const match = postMessage?.content.match(
-    /https:\/\/discord\.com\/channels\/\d+\/(\d+)(?:\/(\d+))?/
-  );
-  if (!match) {
-    console.error(
-      "Did not find a post link in the pinned message.",
-      postMessage
-    );
-  }
-  return match ? match[1] : undefined;
-}
-
-async function _storePostId(
-  interaction: ButtonInteraction,
-  designThread: ThreadChannel,
-  post: ThreadChannel
-) {
-  await storeThreadLink(designThread, post.id, "shared");
-
-  if (!interaction.replied) {
-    await interaction.followUp({
-      content: "The updated game design has been shared.",
-      ephemeral: true,
     });
   }
 }
@@ -427,24 +280,44 @@ async function _updateMessageWithImage(
   content?: string
 ) {
   try {
-    // Download image from URL
-    const response = await fetch(imageUrl);
-    const imageBuffer = await response.arrayBuffer();
-
-    // Create Discord attachment
-    const attachment = new AttachmentBuilder(Buffer.from(imageBuffer)).setName(
-      "game-art.png"
-    );
-
-    // Update the original message with the attachment
-    await message.edit({
-      content: content ?? "🎨 Game Art",
-      files: [attachment],
-    });
-  } catch (e) {
+    // Create an AbortController with a timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 seconds
+    
+    try {
+      // Download image from URL with abort signal
+      const response = await fetch(imageUrl, {
+        signal: controller.signal
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      
+      const imageBuffer = await response.arrayBuffer();
+      
+      // Create Discord attachment
+      const attachment = new AttachmentBuilder(Buffer.from(imageBuffer)).setName(
+        "game-art.png"
+      );
+      
+      // Update the original message with the attachment
+      await message.edit({
+        content: content ?? "🎨 Game Art",
+        files: [attachment],
+      });
+    } finally {
+      clearTimeout(timeoutId); // Clean up the timeout
+    }
+  } catch (e: any) {
     console.error(`Error handling image: ${e}`);
+    // More specific error message based on error type
+    const errorMessage = e.name === 'AbortError' 
+      ? "❌ Image download timed out. The image might be too large or the server is slow."
+      : "❌ Failed to process game art";
+      
     await message.edit({
-      content: "❌ Failed to process game art",
+      content: errorMessage,
     });
   }
 }
@@ -496,27 +369,6 @@ async function _invokeGenerateImage(conversationId: string): Promise<string> {
   } catch (error) {
     throw new Error(`Error initializing chaincraft design agent: ${error}`);
   }
-}
-
-async function _getImageUrlFromThread(
-  thread: ThreadChannel
-): Promise<string | undefined> {
-  // Get total message count from thread
-  const messageCount = thread.messageCount;
-  if (!messageCount) {
-    console.error("No messages found in thread.");
-    return;
-  }
-  console.debug("[chaincraft-design] Total messages in thread:", messageCount);
-
-  // Fetch all messages in the thread
-  const messages = await thread.messages.fetch({ limit: messageCount });
-  const firstMessage = messages.last();
-  console.debug("[chaincraft-design] First message in thread:", firstMessage);
-
-  const attachment = firstMessage!.attachments.first();
-  console.debug("[chaincraft-design] Attachment:", attachment);
-  return attachment?.url;
 }
 
 async function _handleChaincraftDesignError(

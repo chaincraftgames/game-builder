@@ -1,7 +1,5 @@
 import { Events, Interaction, Message, ThreadChannel } from "discord.js";
 import {
-  shareChaincraftDesign,
-  uploadChaincraftDesign,
   simulateChaincraftDesign,
   handleDesignMessage,
 } from "#chaincraft/integrations/clients/discord/chaincraft-design.js";
@@ -15,7 +13,8 @@ import {
   // handleSimulationMessage 
 } from "#chaincraft/integrations/clients/discord/chaincraft-simulate.js";
 import { clearStatus as clearSimStatus } from "#chaincraft/integrations/clients/discord/status-manager.js";
-import { handleModalSubmit } from "../modal-handler.js";
+import { handleModalSubmit } from "#chaincraft/integrations/clients/discord/modal-handler.js";
+import { handlePlayGameButton, publishChaincraftDesign } from "#chaincraft/integrations/clients/discord/chaincraft-game-library.js";
 
 const designChannelId = process.env.CHAINCRAFT_DESIGN_CHANNEL_ID;
 const simulationChannelId = process.env.CHAINCRAFT_SIMULATION_CHANNEL_ID;
@@ -74,34 +73,18 @@ const ChaincraftOnThreadDelete = {
 //   },
 // };
 
-const ChaincraftOnShare = {
+const ChaincraftOnPublish = {
   name: Events.InteractionCreate,
   execute: async (interaction: Interaction) => {
     try {
       if (
         interaction.isButton() &&
-        interaction.customId === "chaincraft_share_design"
+        interaction.customId === "chaincraft_publish_design"
       ) {
-        await shareChaincraftDesign(interaction);
+        await publishChaincraftDesign(interaction);
       }
     } catch (error) {
       console.error("Unhandled error in ChaincraftOnShare: ", error);
-    }
-  },
-};
-
-const ChaincraftOnUpload = {
-  name: Events.InteractionCreate,
-  execute: async (interaction: Interaction) => {
-    try {
-      if (
-        interaction.isButton() &&
-        interaction.customId === "chaincraft_upload_design"
-      ) {
-        await uploadChaincraftDesign(interaction);
-      }
-    } catch (error) {
-      console.error("Unhandled error in ChaincraftOnUpload: ", error);
     }
   },
 };
@@ -235,12 +218,27 @@ const ChaincraftOnSimPlayerGetMessage = {
   },
 };
 
+const ChaincraftOnGameLibraryPlay = {
+  name: Events.InteractionCreate,
+  execute: async (interaction: Interaction) => {
+    try {
+      if (
+        interaction.isButton() &&
+        interaction.customId == "chaincraft_game_library_play"
+      ) {
+        await handlePlayGameButton(interaction);
+      }
+    } catch (error) {
+      console.error("Unhandled error in ChaincraftOnGameLibraryPlay: ", error);
+    }
+  },
+};
+
 export {
   ChaincraftOnMessage,
   //   ChaincraftOnApprove,
-  ChaincraftOnShare,
+  ChaincraftOnPublish,
   ChaincraftOnThreadDelete,
-  ChaincraftOnUpload,
   ChaincraftOnSimulate,
   ChainCraftOnResetSimulation,
   ChainCraftOnSimAssumeRole,
@@ -249,4 +247,5 @@ export {
   ChaincraftOnSimPlayerQuestion,
   ChaincraftOnSimModalSubmit,
   ChaincraftOnSimPlayerGetMessage,
+  ChaincraftOnGameLibraryPlay,
 };

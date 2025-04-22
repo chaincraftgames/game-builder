@@ -20,14 +20,12 @@ describe("Simulation Workflow", () => {
   `;
 
   test("should create a simulation and return the player count", async () => {
-    const { playerCount, gameRules } = await createSimulation(
+    const { gameRules } = await createSimulation(
       gameId,
       initialGameSpec,
       1 // Initial version
     );
 
-    expect(playerCount.minPlayers).toEqual(3);
-    expect(playerCount.maxPlayers).toEqual(3);
     expect(gameRules).toBeDefined();
     expect(gameRules.length).toBeGreaterThan(0);
   });

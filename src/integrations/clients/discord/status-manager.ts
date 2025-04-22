@@ -20,7 +20,7 @@ const playerCountPrefix = "Player Count:";
 // This displays correctly in Discord, but not in the code editor
 const statusMessagePrefix = `
 ╔══════════╗
-║   GAME STATE    ║
+       GAME STATE    
 ╚══════════╝
 `;
 const playerStatusMessagePrefix = "### Player Controls ###";
@@ -50,7 +50,7 @@ export const SimStatus = {
   READY_TO_START: "Ready to start!",
   STARTING: "Game is starting.  Please wait...",
   RUNNING:
-    "Game started! Check your ephemeral messages for your player information.",
+    "Game started! Use the action button for your player to take an action.",
   GAME_ENDED: "The game has ended.  Please reset the simulation to play again.",
 };
 
