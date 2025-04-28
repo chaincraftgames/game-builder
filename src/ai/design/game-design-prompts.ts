@@ -117,26 +117,22 @@ export const imageDesignPrompt = `
   makes it unique and fun.  Make the image interesting and engaging, something that would make someone want to pick up the game and play it.   
   Your task is to describe the image to be created in detail so that an generative AI can create the image.  
   Make sure to include all the details that are important to the image, e.g. the setting, the characters, the mood, the colors, etc...
+
+  Please limit the description to 600 characters.
 `;
 
 export const imageGenPrompt = `
-  A 4:3 landscape image of a worn, gray plastic video game cartridge from the 1990s, 
-  designed for a fictional console called 'CHAINCRAFT.' The cartridge is centered 
-  in the frame and photographed in a close-up shot with a straight-on camera angle. 
-  It sits on a perfectly flat, uniform background with a solid dark color: #1d1d21 
-  (dark charcoal grey). The cartridge shows realistic texture, surface wear, and light 
-  scratches. The large central label takes up most of the visible front face and features 
-  scuffed, chipped edges to show aging. The label artwork displays a faded 1990s-style 
-  video game cover illustration themed around the following game summary:
-  {game_summary}
+A 4:3 landscape image of a gray plastic video game cartridge from the 1990s for 
+the fictional console 'CHAINCRAFT.' The cartridge is wide, centered, and 
+front-facing. It floats on a flat, solid dark gray background, with no shadows 
+or gradients. The plastic is worn with scratches and grooves.
 
-  The game’s title {game_title} is in distressed retro typography at the top or center 
-  of the label.  Shorten or summarize the title as needed to make it fit. The cartridge 
-  includes subtle grooves and notches on both sides, with an embossed 'CHAINCRAFT' logo 
-  molded into the plastic below the label. The cartridge is centered and takes up most 
-  of the image frame, filling approximately 80–90% of the image width in a 4:3 landscape 
-  format, resembling a close-up photo of a SNES cartridge with a consistent distance and 
-  margin in every generation. Use cinematic soft lighting, shallow depth of field, and 
-  natural shadows under the cartridge. The overall style should feel nostalgic, gritty, 
-  and authentic to the SNES or Genesis era, but custom-made for ChainCraft.
+A large, retro-style label with chipped edges covers most of the front. The label 
+features colorful 1990s-style game cover art inspired by:
+
+{image_description}
+
+The game title {game_title} is clearly printed at the top of the label in bold text. 
+The title is fully visible, with no distortion. Below the label is an embossed “CHAINCRAFT” logo 
+molded into the plastic cartridge.
 `

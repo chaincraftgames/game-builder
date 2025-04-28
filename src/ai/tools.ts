@@ -57,14 +57,14 @@ class LeonardoAPIWrapper extends Tool {
           authorization: `Bearer ${this.apiKey}`
         },
         body: JSON.stringify({
-          alchemy: true,
           height: 768,
-          modelId: 'de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3',
+          // modelId: 'de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3', // Phoenix 1.0
+          modelId: 'b2614463-296c-462a-9586-aafdb8f00e36', // Flux dev
           num_images: 1,
           presetStyle: 'DYNAMIC',
-          // prompt: 'A 4:3 landscape image of a worn, gray plastic video game cartridge from the 1990s,    designed for a fictional console called \'CHAINCRAFT.\' The cartridge is centered    in the frame and photographed in a close-up shot with a straight-on camera angle.    It sits on a perfectly flat, uniform background with a solid dark color: #1d1d21    (dark charcoal grey). The cartridge shows realistic texture, surface wear, and light    scratches. The large central label takes up most of the visible front face and features    scuffed, chipped edges to show aging. The label artwork displays a faded 1990s-style    video game cover illustration themed around the following game summary:   Taco Tycoon is a strategic restaurant management game where players compete to build the most successful taco business by crafting unique recipes, attracting customers, and expanding their culinary empire.    The game’s title Taco Tycoon is in distressed retro typography at the top or center    of the label.  Shorten or summarize the title as needed to make it fit. The cartridge    includes subtle grooves and notches on both sides, with an embossed \'CHAINCRAFT\' logo    molded into the plastic below the label. The cartridge is centered and takes up most    of the image frame, filling approximately 80–90% of the image width in a 4:3 landscape    format, resembling a close-up photo of a SNES cartridge with a consistent distance and    margin in every generation.',
           prompt,
-          width: 1024
+          width: 1024,
+          userElements: [{userLoraId: 59955, weight: 0.8}] // Cartridge v2
         })
       };
       console.debug("[Leonardo Tool] Generating image with prompt: %s, payload: %s, headers: %o", prompt, options.body, options.headers);

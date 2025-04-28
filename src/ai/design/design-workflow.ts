@@ -137,34 +137,35 @@ export async function generateImage(conversationId: string): Promise<string> {
 
   const { summary, title } = specAndTitle;
 
-  // const imageDesign = await model.invoke(
-  //   [
-  //     new SystemMessage(imageDesignPrompt),
-  //     new HumanMessage(
-  //       `<game_design_specification>
-  //       ${gameDesignSpec.designSpecification}
-  //       </game_design_specification>`
-  //     ),
-  //   ],
-  //   {
-  //     callbacks: [
-  //       chaincraftDesignTracer,
-  //     ]
-  //   }
-  // )
-  // .catch((error) => {
-  //   if (error.type && error.type == "overloaded_error") {
-  //     throw new OverloadedError(error.message);
-  //   } else {
-  //     throw error;
-  //   }
-  // });
-  // if (!imageDesign.content) {
-  //   throw new Error("Failed to generate image: no content");
-  // }
+  const imageDesign = await model.invoke(
+    [
+      new SystemMessage(imageDesignPrompt),
+      new HumanMessage(
+        `<game_design_specification>
+        ${summary}
+        </game_design_specification>`
+      ),
+    ],
+    {
+      callbacks: [
+        chaincraftDesignTracer,
+      ]
+    }
+  )
+  .catch((error) => {
+    if (error.type && error.type == "overloaded_error") {
+      throw new OverloadedError(error.message);
+    } else {
+      throw error;
+    }
+  });
+  if (!imageDesign.content) {
+    throw new Error("Failed to generate image: no content");
+  }
 
   const imageGenPrompt = await imageGenSystemMessage.format({
-    game_summary: summary,
+    // game_summary: summary,
+    image_description: imageDesign.content.toString().substring(0, 600),
     game_title: title,
   });
   const imageUrl = await imageGenTool
