@@ -18,8 +18,7 @@ const playerMessageIdPrefix = "chaincraft_sim_message_player";
 const gameStatusPrefix = "Status:";
 const playerCountPrefix = "Player Count:";
 // This displays correctly in Discord, but not in the code editor
-const statusMessagePrefix = `
-╔══════════╗
+const statusMessagePrefix = `╔══════════╗
        GAME STATE    
 ╚══════════╝
 `;
@@ -126,12 +125,16 @@ export async function getStatus(
   }
 
   // Find status message if not cached
-  const messages = await thread.messages.fetch({ limit: 100 });
+  const messages = await thread.messages.fetch({ 
+    limit: 10,
+    after: '0',
+  });
   let statusMessage: Message | undefined;
   let playerStatusMessage: Message | undefined;
   for (const message of messages.values()) {
     if (message.author.bot) {
-      if (message.content.startsWith("## Game State ##")) {
+      console.debug('[status-manager] checking message for status message:', message.content);
+      if (message.content.startsWith(statusMessagePrefix)) {
         statusMessage = message;
         console.debug(
           "[status-manager] Found status message:",

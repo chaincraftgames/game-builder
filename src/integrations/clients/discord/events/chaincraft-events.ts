@@ -6,7 +6,7 @@ import {
 import { 
   resetSimulation,
   assumePlayerRole as simAssumePlayerRole,
-  startGame as simStartGame,
+  handleStartOrContinueGame as simStartGame,
   handlePlayerAction as simHandlePlayerAction,
   handlePlayerQuestion as simHandlePlayerQuestion,
   handlePlayerGetMessage as simHandlePlayerGetMessage,
@@ -137,13 +137,14 @@ const ChainCraftOnSimAssumeRole = {
   },
 };
 
-const ChainCraftOnSimStartGame = {
+const ChainCraftOnSimStartOrContinueGame = {
   name: Events.InteractionCreate,
   execute: async (interaction: Interaction) => {
     try {
       if (
         interaction.isButton() &&
-        interaction.customId === "chaincraft_sim_start_game"
+        (interaction.customId === "chaincraft_sim_start_game" ||
+        interaction.customId === "chaincraft_sim_continue_game")
       ) {
         await simStartGame(interaction);
       } 
@@ -242,7 +243,7 @@ export {
   ChaincraftOnSimulate,
   ChainCraftOnResetSimulation,
   ChainCraftOnSimAssumeRole,
-  ChainCraftOnSimStartGame,
+  ChainCraftOnSimStartOrContinueGame,
   ChaincraftOnSimPlayerAction,
   ChaincraftOnSimPlayerQuestion,
   ChaincraftOnSimModalSubmit,

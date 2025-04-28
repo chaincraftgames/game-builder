@@ -205,6 +205,10 @@ export const runtimeProcessActionTemplate = `
        -- If YES, warn the player about asking for private information and increment illegal 
           action count
        -- If no, answer the question, but this will not count as the players action.
+     -- If players are requesting the game to progress you MUST either inform the players of the 
+        action they need to take OR take the appropriate game level actions to 
+        continue the game, e.g. judging, scoring, generating narrative, resolving 
+        non-player or ai controlled player actions.
   4. Write out the exact updates needed for the game state based on the player action.
   5. List the public game state information visible to all players:
      - Priority 1: Time-critical game state changes (round/phase transitions)
@@ -289,6 +293,10 @@ export const runtimeProcessActionTemplate = `
           publicly?
        c) Would the game function correctly if this private message were empty?
        5.  If any of these justifications fail, remove the private message and replace it with an empty string
+  6. If the players requested the game to progress, have you either informed the players of
+     the action they need to take OR taken the appropriate game level actions to 
+     continue the game, e.g. judging, scoring, generating narrative, resolving 
+     non-player or ai controlled player actions.
   </game_analysis>
 
   After your analysis, follow these steps:
@@ -331,6 +339,8 @@ export const runtimeProcessActionTemplate = `
   [ ] All private messages were tested for necessity
   [ ] Game state transition logic was fully verified
   [ ] All player states were individually checked
+  [ ] Either the actions required from the players to progress have been made
+      clear or the state and messaging have been updated to allow the game to progress.
   
   Provide updated game state and player messages according to the following format:
   {formattingInstructions}
