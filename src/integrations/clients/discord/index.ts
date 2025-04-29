@@ -13,7 +13,7 @@ import {
     ChaincraftOnSimPlayerAction,
     ChaincraftOnSimPlayerGetMessage,
     ChaincraftOnSimPlayerQuestion,
-    ChainCraftOnSimStartGame,
+    ChainCraftOnSimStartOrContinueGame,
     ChaincraftOnSimulate,
     ChaincraftOnThreadDelete
 } from "#chaincraft/integrations/clients/discord/events/chaincraft-events.js";
@@ -92,7 +92,7 @@ client.on(Events.InteractionCreate, (interaction) => ChaincraftOnPublish.execute
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimulate.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChainCraftOnResetSimulation.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimAssumeRole.execute(interaction));
-client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimStartGame.execute(interaction));
+client.on(Events.InteractionCreate, (interaction) => ChainCraftOnSimStartOrContinueGame.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerAction.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimPlayerQuestion.execute(interaction));
 client.on(Events.InteractionCreate, (interaction) => ChaincraftOnSimModalSubmit.execute(interaction));
