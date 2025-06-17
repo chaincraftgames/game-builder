@@ -140,7 +140,7 @@ export const extractFunctionsFromDesign = (designText: string): FunctionDefiniti
 };
 
 /**
- * Stage 4: Design function library based on the runtime plan
+ * Stage 4: Design function library based on the game specification and state schema
  * @param {BaseChatModel} model - The language model to use
  * @param {FunctionDesignOptions} options - Options object
  * @returns {Promise<FunctionDesignResult>} Function design and timing information
@@ -152,14 +152,28 @@ export const designFunctionLibrary = async (
   console.log("📚 Stage 4: Designing function library...");
   const startTime = Date.now();
   
+  // Check if we have a valid runtime plan or if we're using the bypass
+  const isRuntimePlanBypassed = runtimePlan.includes("bypassed") || runtimePlan.length < 100;
+  
   const prompt = `
     You are an AI game master designing a minimalist function library for the ${gameSpecification} game.
     
-    Runtime Plan:
-    ${runtimePlan}
+    ${!isRuntimePlanBypassed ? `Runtime Plan:\n${runtimePlan}\n` : ''}
     
     State Schema:
     ${stateSchema}
+    
+    ${isRuntimePlanBypassed ? `
+    Game Specification:
+    ${gameSpecification}
+    
+    TASK: Review the game specification and state schema carefully to understand:
+    1. The core game mechanics and rules
+    2. The key state transitions that occur during gameplay
+    3. The decision points and outcome calculations
+    
+    Based on this understanding, identify the essential functions needed to implement the game.
+    ` : ''}
     
     IMPORTANT: As an AI system, you can naturally handle many aspects of game management through your conversation, 
     like explaining rules, formatting messages, and managing basic game flow. You only need functions for operations 

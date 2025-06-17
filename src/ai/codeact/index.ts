@@ -3,7 +3,11 @@ import { createStateSchema, StateSchemaResult, StateSchemaError } from './schema
 import { createRuntimePlan, RuntimePlanningResult } from './runtime-planner.js';
 import { designFunctionLibrary, FunctionDesignResult } from './function-designer.js';
 import { implementFunctions, ImplementationResult } from './function-implementer.js';
-import { generateTests, TestGenerationResult } from './test-generator.js';
+import { 
+  // generateTests, 
+  generateBlackBoxTests, 
+  TestGenerationResult 
+} from './test-generator.js';
 import { runTests, TestResult } from './test-runner.js';
 import { formatProjectResults, ProjectResults } from './reporter.js';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
@@ -136,6 +140,8 @@ export const codeActGenerator = async ({
   const stateSchema = results.stateSchema;
   
   // Stage 3: Create runtime interaction plan
+  // COMMENTED OUT: Bypassing runtime interaction planning step (but keeping for future reference)
+  /*
   log("🔄 Stage 3: Creating runtime interaction plan...");
   onProgress({ stage: 3, message: "Creating runtime interaction plan..." });
   
@@ -149,6 +155,18 @@ export const codeActGenerator = async ({
   
   log(`✅ Runtime plan completed in ${results.timings.runtimePlanTime}ms`);
   log("Runtime plan:", results.runtimePlan);
+  */
+  
+  // Create a placeholder runtime plan to maintain compatibility with downstream steps
+  results.timings.runtimePlanTime = 0;
+  results.runtimePlan = {
+    runtimePlan: {
+      fullText: "Runtime planning step bypassed. Relying on game analysis and state schema directly."
+    },
+    runtimePlanTime: 0
+  };
+  log("⏭️ Runtime planning step bypassed");
+  onProgress({ stage: 3, message: "Runtime planning step bypassed", isComplete: true });
   
   // Stage 4: Design functions
   log("🧩 Stage 4: Designing functions...");
@@ -184,14 +202,16 @@ export const codeActGenerator = async ({
   log("Implementation:", results.implementation.code.substring(0, 200) + "...");
   
   // Stage 6: Generate tests
-  log("🧪 Stage 6: Generating tests...");
-  onProgress({ stage: 6, message: "Generating tests..." });
+  log("🧪 Stage 6: Generating black-box tests...");
+  onProgress({ stage: 6, message: "Generating black-box tests..." });
   
   const testGenerationStartTime = Date.now();
-  results.tests = await generateTests(model, {
+  // Use black-box tests that only rely on function design, not implementation
+  results.tests = await generateBlackBoxTests(model, {
     gameSpecification,
     stateSchema: stateSchema,
-    implementation: results.implementation.code
+    functionDesign: results.functionDesign.functionDesign,
+    functionSignatures: results.implementation.signatures // Optional: use signatures if available
   });
   results.timings.testGenerationTime = Date.now() - testGenerationStartTime;
   

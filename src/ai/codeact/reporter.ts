@@ -14,8 +14,25 @@ export interface TestResults {
     diagnosis: string;
     suggestion?: string;
     snippet?: string;
+    lineNumber?: number | null;
+    errorLocation?: string;
+    codeSection?: 'implementation' | 'tests' | 'combined';
+    relevantCode?: string;
+    debugFilePath?: string;
   };
   logs?: string[];
+  testRuntime?: number;
+  codeInfo?: {
+    implementationLength: number;
+    testLength: number;
+    implementationFirstLines?: string;
+    testFirstLines?: string;
+  };
+  debugFiles?: {
+    implementation?: string;
+    test?: string;
+    combined?: string;
+  };
 }
 
 /**
@@ -204,9 +221,8 @@ export const formatImplementation = (implementation?: Implementation): string =>
   return `
 ## Implementation
 
-\`\`\`javascript
-${implementation.code}
-\`\`\`
+Implementation code has been saved to a temporary file for inspection.
+${implementation.implementationTime ? `\nImplementation completed in ${implementation.implementationTime}ms.` : ''}
   `;
 };
 
@@ -218,37 +234,88 @@ ${implementation.code}
 export const formatTestResults = (testResults?: TestResults): string => {
   if (!testResults) return "No test results available";
   
-  const { success, error, errorDetails, logs = [] } = testResults;
+  const { success, error, errorDetails, logs = [], codeInfo, debugFiles } = testResults;
   
   let output = `
 ## Test Results
 
-${success ? "✅ Tests passed successfully" : "❌ Tests failed"}
-`;
+${success 
+  ? "✅ Tests passed successfully" 
+  : "❌ Tests failed"}`;
 
+  // Add debug files information if available
+  if (debugFiles) {
+    output += `\n\n### Debug Files
+Files with the complete code have been saved for debugging:
+${debugFiles.implementation ? `- Implementation code: \`${debugFiles.implementation}\`` : ''}
+${debugFiles.test ? `- Test code: \`${debugFiles.test}\`` : ''}
+${debugFiles.combined ? `- Combined code: \`${debugFiles.combined}\`` : ''}`;
+  }
+  
+  // Show code info when there's an error to give more context
+  if (!success && codeInfo) {
+    output += `\n\n### Code Statistics
+- Implementation code: ${codeInfo.implementationLength} lines
+- Test code: ${codeInfo.testLength} lines`;
+  }
+  
   if (error) {
-    output += `\n### Error\n${error}\n`;
+    output += `\n\n### Error Summary\n${error}`;
     
     if (errorDetails) {
-      output += `\n#### Diagnosis\n${errorDetails.diagnosis}\n`;
-      
-      if (errorDetails.suggestion) {
-        output += `\n#### Suggestion\n${errorDetails.suggestion}\n`;
+      // Display which section has the error
+      if (errorDetails.codeSection) {
+        const sectionName = {
+          'implementation': 'Implementation Code',
+          'tests': 'Test Code', 
+          'combined': 'Combined Code'
+        }[errorDetails.codeSection];
+        
+        output += `\n\n### Error Location\nThe error is in the **${sectionName}** section`;
+        
+        if (errorDetails.lineNumber !== null && errorDetails.lineNumber !== undefined) {
+          output += ` at line ${errorDetails.lineNumber}`;
+        }
+        
+        // Add debug file path information
+        if (errorDetails.debugFilePath) {
+          output += `\n\nComplete code available at: \`${errorDetails.debugFilePath}\``;
+        }
       }
       
+      // Add detailed diagnosis section
+      output += `\n\n### Error Diagnosis\n${errorDetails.diagnosis}`;
+      
+      // Add code snippet showing the error if available
       if (errorDetails.snippet) {
-        output += `\n#### Error Location\n\`\`\`\n${errorDetails.snippet}\n\`\`\`\n`;
+        output += `\n\n### Code Context\n\`\`\`javascript\n${errorDetails.snippet}\n\`\`\``;
+      } else if (errorDetails.relevantCode) {
+        output += `\n\n### Relevant Code\n\`\`\`javascript\n${errorDetails.relevantCode}\n\`\`\``;
+      }
+      
+      // Add detailed error location from stack trace if available
+      if (errorDetails.errorLocation) {
+        output += `\n\n### Error Stack Trace\n\`\`\`\n${errorDetails.errorLocation}\n\`\`\``;
+      }
+      
+      // Add suggestions for fixing the error
+      if (errorDetails.suggestion) {
+        output += `\n\n### Suggestions for Fixing the Error\n${errorDetails.suggestion}`;
+      }
+
+      // For black-box testing errors, add specific section for these
+      if (errorDetails.codeSection === 'tests') {
+        output += `\n\n### Black-Box Testing Reminders
+- Black-box tests should rely only on function signatures and documentation
+- Make sure test function calls match implementation function names exactly
+- Validate input/output behavior without knowledge of implementation details
+- Ensure tests verify the function contract rather than implementation specifics`;
       }
     }
   }
 
   if (logs && logs.length > 0) {
-    output += `
-### Test Logs
-\`\`\`
-${logs.join('\n')}
-\`\`\`
-`;
+    output += `\n\n### Test Logs\n\`\`\`\n${logs.join('\n')}\n\`\`\``;
   }
   
   return output;

@@ -26,6 +26,7 @@ export interface FunctionRecoveryResult {
 export interface ImplementationResult {
   code: string;
   implementationTime: number;
+  signatures: string; // Function signatures extracted from implementation or design
 }
 
 /**
@@ -136,6 +137,30 @@ export const recoverMissingFunction = async (
 };
 
 /**
+ * Extracts function signatures from function design information 
+ * @param {FunctionDefinition[]} functions - Array of function definitions
+ * @returns {string} Extracted function signatures as a string
+ */
+export const extractFunctionSignatures = (functions: FunctionDefinition[]): string => {
+  return functions
+    .map(fn => {
+      // If the signature is already available in the function design, use it
+      if (fn.signature) {
+        return fn.signature;
+      }
+      
+      // Otherwise construct a basic signature from the name and purpose
+      const params = "/* params determined from purpose */";
+      const returnType = "/* return type determined from purpose */";
+      return `/**
+ * ${fn.purpose || 'No description available'}
+ */
+function ${fn.name}(${params}): ${returnType};`;
+    })
+    .join('\n\n');
+};
+
+/**
  * Stage 5: Implement the function library using a streaming approach
  * @param {BaseChatModel} model - The language model to use
  * @param {ImplementationOptions} options - Options object
@@ -152,6 +177,10 @@ export const implementFunctions = async (
   const functionsToImplement = functionDesign.functions;
   
   console.log(`Found ${functionsToImplement.length} functions to implement`);
+  
+  // Extract function signatures for black-box testing
+  const signatures = extractFunctionSignatures(functionsToImplement);
+  console.log(`Extracted ${functionsToImplement.length} function signatures for black-box testing`);
   
   // Track implementation progress
   let implementedCode = "";
@@ -241,6 +270,7 @@ export const implementFunctions = async (
   
   return { 
     code: implementedCode,
-    implementationTime
+    implementationTime,
+    signatures // Return extracted signatures for black-box testing
   };
 };
