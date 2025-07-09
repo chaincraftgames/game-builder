@@ -43,8 +43,10 @@ import { imageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
 import { constraintsRegistry, getConstraintsRegistry } from "./design-data.js";
+import { logSafeEnvironmentInfo } from "#chaincraft/util/safe-logging.js";
 
-console.log("[design-conversation] env: %o", process.env);
+// Log safe environment info only (no secrets)
+logSafeEnvironmentInfo();
 
 const graphType = getConfig("design-graph-type");
 

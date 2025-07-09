@@ -73,7 +73,7 @@ async function initialize() {
   });
 
   const parser = StructuredOutputParser.fromZodSchema(responseSchema);
-  console.debug('[gameSpecificationProcessor] Initializing chain with model: %s', process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME);
+  console.debug('[gameSpecificationProcessor] Initializing chain with model');
   const model = await getModel(process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME);
 
   const partialChain = await prompt.partial({

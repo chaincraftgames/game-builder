@@ -25,8 +25,8 @@ const start = async () => {
     await registerApiRoutes(server);
     
     const port = parseInt(process.env.CHAINCRAFT_WEB_API_PORT || '3000', 10);
-    const host = process.env.HOST || '0.0.0.0';
-    
+    const host = process.env.CHAINCRAFT_WEB_API_HOST || '0.0.0.0';
+
     await server.listen({ port, host });
     console.info(`Server listening on ${host}:${port}`);
   } catch (err) {
