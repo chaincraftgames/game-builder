@@ -2,6 +2,7 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import { authenticate } from '#chaincraft/middleware/auth.js';
 import { registerApiRoutes } from '#chaincraft/api/routes.js';
+import { logApplicationEvent } from '#chaincraft/util/safe-logging.js';
 
 const server = Fastify({
   logger: true
@@ -19,7 +20,7 @@ server.get('/health', async () => {
 });
 
 const start = async () => {
-  console.info('Starting ChainCraft GameBuilder server...');
+  logApplicationEvent('web-api', 'starting');
   try {
     // Register API routes
     await registerApiRoutes(server);
@@ -28,7 +29,7 @@ const start = async () => {
     const host = process.env.CHAINCRAFT_WEB_API_HOST || '0.0.0.0';
 
     await server.listen({ port, host });
-    console.info(`Server listening on ${host}:${port}`);
+    logApplicationEvent('web-api', 'started', { port, host });
   } catch (err) {
     server.log.error(err);
     process.exit(1);
