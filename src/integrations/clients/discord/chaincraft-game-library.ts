@@ -198,7 +198,7 @@ export async function handlePlayGameButton(
             });
             return;
         }
-        console.debug("[chaincraft-game-library] - Token: %s", token);
+        console.debug("[chaincraft-game-library] - Token found, starting game");
 
         const { game_title, game_specification, spec_version } = token as PAIT;
 

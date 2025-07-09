@@ -43,8 +43,15 @@ import { imageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
 import { constraintsRegistry, getConstraintsRegistry } from "./design-data.js";
+import { logApplicationEvent, logSecretStatus } from "#chaincraft/util/safe-logging.js";
 
-console.log("[design-conversation] env: %o", process.env);
+// Log safe application startup info
+logApplicationEvent('design-workflow', 'initializing', { 
+  cacheSize: parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100") 
+});
+
+// Check that required secrets are available without logging their values
+logSecretStatus('CHAINCRAFT_GAME_DESIGN_MODEL_NAME', process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME);
 
 const graphType = getConfig("design-graph-type");
 
