@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // Player count schema
 export const PlayerCountSchema = z.object({
@@ -48,13 +48,44 @@ export const GetFullSpecificationResponseSchema = z.object({
   designSpecification: z.string(),
 });
 
+// Get conversation history schemas
+export const GetConversationHistoryRequestSchema = z.object({
+  conversationId: z.string().min(1),
+});
+
+export const MessageSchema = z.object({
+  type: z.enum(["human", "ai", "system"]),
+  content: z.string(),
+  timestamp: z.string().optional(),
+});
+
+export const GetConversationHistoryResponseSchema = z.object({
+  conversationId: z.string(),
+  messages: z.array(MessageSchema),
+  totalMessages: z.number(),
+});
+
 // Type exports
 export type PlayerCount = z.infer<typeof PlayerCountSchema>;
 export type GameSpecification = z.infer<typeof GameSpecificationSchema>;
-export type ContinueDesignConversationRequest = z.infer<typeof ContinueDesignConversationRequestSchema>;
-export type ContinueDesignConversationResponse = z.infer<typeof ContinueDesignConversationResponseSchema>;
+export type ContinueDesignConversationRequest = z.infer<
+  typeof ContinueDesignConversationRequestSchema
+>;
+export type ContinueDesignConversationResponse = z.infer<
+  typeof ContinueDesignConversationResponseSchema
+>;
 export type GenerateImageRequest = z.infer<typeof GenerateImageRequestSchema>;
 export type GenerateImageResponse = z.infer<typeof GenerateImageResponseSchema>;
-export type GetFullSpecificationRequest = z.infer<typeof GetFullSpecificationRequestSchema>;
-export type GetFullSpecificationResponse = z.infer<typeof GetFullSpecificationResponseSchema>;
-
+export type GetFullSpecificationRequest = z.infer<
+  typeof GetFullSpecificationRequestSchema
+>;
+export type GetFullSpecificationResponse = z.infer<
+  typeof GetFullSpecificationResponseSchema
+>;
+export type GetConversationHistoryRequest = z.infer<
+  typeof GetConversationHistoryRequestSchema
+>;
+export type GetConversationHistoryResponse = z.infer<
+  typeof GetConversationHistoryResponseSchema
+>;
+export type Message = z.infer<typeof MessageSchema>;
