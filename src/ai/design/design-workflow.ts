@@ -43,15 +43,21 @@ import { imageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
 import { constraintsRegistry, getConstraintsRegistry } from "./design-data.js";
-import { logApplicationEvent, logSecretStatus } from "#chaincraft/util/safe-logging.js";
+import {
+  logApplicationEvent,
+  logSecretStatus,
+} from "#chaincraft/util/safe-logging.js";
 
 // Log safe application startup info
-logApplicationEvent('design-workflow', 'initializing', { 
-  cacheSize: parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100") 
+logApplicationEvent("design-workflow", "initializing", {
+  cacheSize: parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100"),
 });
 
 // Check that required secrets are available without logging their values
-logSecretStatus('CHAINCRAFT_GAME_DESIGN_MODEL_NAME', process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME);
+logSecretStatus(
+  "CHAINCRAFT_GAME_DESIGN_MODEL_NAME",
+  process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME
+);
 
 const graphType = getConfig("design-graph-type");
 
@@ -144,28 +150,27 @@ export async function generateImage(conversationId: string): Promise<string> {
 
   const { summary, title } = specAndTitle;
 
-  const imageDesign = await model.invoke(
-    [
-      new SystemMessage(imageDesignPrompt),
-      new HumanMessage(
-        `<game_design_specification>
+  const imageDesign = await model
+    .invoke(
+      [
+        new SystemMessage(imageDesignPrompt),
+        new HumanMessage(
+          `<game_design_specification>
         ${summary}
         </game_design_specification>`
-      ),
-    ],
-    {
-      callbacks: [
-        chaincraftDesignTracer,
-      ]
-    }
-  )
-  .catch((error) => {
-    if (error.type && error.type == "overloaded_error") {
-      throw new OverloadedError(error.message);
-    } else {
-      throw error;
-    }
-  });
+        ),
+      ],
+      {
+        callbacks: [chaincraftDesignTracer],
+      }
+    )
+    .catch((error) => {
+      if (error.type && error.type == "overloaded_error") {
+        throw new OverloadedError(error.message);
+      } else {
+        throw error;
+      }
+    });
   if (!imageDesign.content) {
     throw new Error("Failed to generate image: no content");
   }
@@ -207,6 +212,182 @@ export async function getFullDesignSpecification(
   return {
     ...designResponse.specification,
     title: designResponse.updatedTitle ?? "",
+  };
+}
+
+export async function getConversationHistory(conversationId: string): Promise<{
+  conversationId: string;
+  messages: Array<{
+    type: "human" | "ai" | "system";
+    content: string;
+    timestamp?: string;
+  }>;
+  totalMessages: number;
+}> {
+  // Check if conversation exists
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
+
+  // Get the saver directly to access checkpoints
+  const saver = await getSaver(conversationId, graphType);
+  const config = { configurable: { thread_id: conversationId } };
+
+  console.log(
+    "[getConversationHistory] Getting checkpoints for conversation:",
+    conversationId
+  );
+
+  // Get all checkpoints for this conversation
+  const checkpoints = [];
+  for await (const checkpoint of saver.list(config, {})) {
+    checkpoints.push(checkpoint);
+  }
+
+  console.log(
+    "[getConversationHistory] Found checkpoints:",
+    checkpoints.length
+  );
+
+  if (checkpoints.length === 0) {
+    return {
+      conversationId,
+      messages: [],
+      totalMessages: 0,
+    };
+  }
+
+  // Get the latest checkpoint which should have all messages
+  const latestCheckpoint = checkpoints[0]; // checkpoints are usually ordered newest first
+
+  if (!latestCheckpoint.checkpoint.channel_values) {
+    console.log("[getConversationHistory] No channel_values in checkpoint");
+    return {
+      conversationId,
+      messages: [],
+      totalMessages: 0,
+    };
+  }
+
+  // Extract messages from the checkpoint
+  const channelValues = latestCheckpoint.checkpoint.channel_values as any;
+  const rawMessages = channelValues.messages;
+
+  console.log(
+    "[getConversationHistory] Raw messages from checkpoint:",
+    rawMessages
+      ? Array.isArray(rawMessages)
+        ? rawMessages.length
+        : "not array"
+      : "undefined"
+  );
+
+  // Ensure messages is an array
+  if (!rawMessages || !Array.isArray(rawMessages)) {
+    console.log("[getConversationHistory] No valid messages array found");
+    return {
+      conversationId,
+      messages: [],
+      totalMessages: 0,
+    };
+  }
+
+  // Convert LangChain messages to our format
+  const formattedMessages = rawMessages
+    .map((msg: any) => {
+      let type: "human" | "ai" | "system";
+
+      // Check the message type based on the _type field or constructor
+      if (
+        msg._type === "human" ||
+        msg.constructor?.name === "HumanMessage" ||
+        msg.type === "human"
+      ) {
+        type = "human";
+      } else if (
+        msg._type === "ai" ||
+        msg.constructor?.name === "AIMessage" ||
+        msg.type === "ai"
+      ) {
+        type = "ai";
+      } else if (
+        msg._type === "system" ||
+        msg.constructor?.name === "SystemMessage" ||
+        msg.type === "system"
+      ) {
+        type = "system";
+      } else {
+        // Fallback: try to determine from content or default to ai
+        type = "ai";
+      }
+
+      let content = "";
+      if (typeof msg.content === "string") {
+        content = msg.content;
+      } else if (msg.content && typeof msg.content === "object") {
+        content = JSON.stringify(msg.content);
+      } else if (msg.kwargs && msg.kwargs.content) {
+        content =
+          typeof msg.kwargs.content === "string"
+            ? msg.kwargs.content
+            : JSON.stringify(msg.kwargs.content);
+      }
+
+      return {
+        type,
+        content,
+        // Add timestamp if available
+        timestamp: msg.timestamp || msg.created_at,
+      };
+    })
+    .filter((msg: any) => {
+      // Filter out empty messages
+      if (!msg.content || msg.content.length === 0) return false;
+
+      // Filter out system messages (these are internal prompts)
+      if (msg.type === "system") return false;
+
+      // Filter out automatic spec request messages (exact match)
+      if (
+        msg.type === "human" &&
+        msg.content.trim() ===
+          "Please provide the full detailed specification of the game design so far."
+      ) {
+        return false;
+      }
+
+      // Filter out spec response messages (they contain the XML tags)
+      if (
+        msg.type === "ai" &&
+        msg.content.includes("<game_specification_requested>")
+      ) {
+        return false;
+      }
+
+      // Filter out messages that are ONLY XML tags (not content wrapped in XML)
+      const trimmedContent = msg.content.trim();
+      if (
+        trimmedContent.startsWith("<") &&
+        trimmedContent.endsWith(">") &&
+        !trimmedContent.includes("\n") &&
+        trimmedContent.length < 100
+      ) {
+        // Only filter very short XML-only messages
+        return false;
+      }
+
+      return true;
+    });
+
+  console.log(
+    "[getConversationHistory] Extracted messages after filtering:",
+    formattedMessages.length
+  );
+
+  return {
+    conversationId,
+    messages: formattedMessages,
+    totalMessages: formattedMessages.length,
   };
 }
 

@@ -1,9 +1,10 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from "fastify";
 import {
   handleContinueDesignConversation,
   handleGenerateImage,
   handleGetFullSpecification,
-} from './handler.js';
+  handleGetConversationHistory,
+} from "./handler.js";
 import {
   ContinueDesignConversationRequestSchema,
   ContinueDesignConversationResponseSchema,
@@ -11,40 +12,74 @@ import {
   GenerateImageResponseSchema,
   GetFullSpecificationRequestSchema,
   GetFullSpecificationResponseSchema,
-} from '#chaincraft/api/design/schemas.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+  GetConversationHistoryRequestSchema,
+  GetConversationHistoryResponseSchema,
+} from "#chaincraft/api/design/schemas.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 export async function registerDesignRoutes(server: FastifyInstance) {
   // Continue design conversation
-  server.post('/conversation/continue', {
+  server.post("/conversation/continue", {
     schema: {
-      body: zodToJsonSchema(ContinueDesignConversationRequestSchema, 'continueDesignConversationRequest'),
+      body: zodToJsonSchema(
+        ContinueDesignConversationRequestSchema,
+        "continueDesignConversationRequest"
+      ),
       response: {
-        200: zodToJsonSchema(ContinueDesignConversationResponseSchema, 'continueDesignConversationResponse')
-      }
+        200: zodToJsonSchema(
+          ContinueDesignConversationResponseSchema,
+          "continueDesignConversationResponse"
+        ),
+      },
     },
     handler: handleContinueDesignConversation,
   });
 
   // Generate image for game design
-  server.post('/conversation/generate-image', {
+  server.post("/conversation/generate-image", {
     schema: {
-      body: zodToJsonSchema(GenerateImageRequestSchema, 'generateImageRequest'),
+      body: zodToJsonSchema(GenerateImageRequestSchema, "generateImageRequest"),
       response: {
-        200: zodToJsonSchema(GenerateImageResponseSchema, 'generateImageResponse')
-      }
+        200: zodToJsonSchema(
+          GenerateImageResponseSchema,
+          "generateImageResponse"
+        ),
+      },
     },
     handler: handleGenerateImage,
   });
 
   // Get full specification
-  server.post('/conversation/specification', {
+  server.post("/conversation/specification", {
     schema: {
-      body: zodToJsonSchema(GetFullSpecificationRequestSchema, 'getFullSpecificationRequest'),
+      body: zodToJsonSchema(
+        GetFullSpecificationRequestSchema,
+        "getFullSpecificationRequest"
+      ),
       response: {
-        200: zodToJsonSchema(GetFullSpecificationResponseSchema, 'getFullSpecificationResponse')
-      }
+        200: zodToJsonSchema(
+          GetFullSpecificationResponseSchema,
+          "getFullSpecificationResponse"
+        ),
+      },
     },
     handler: handleGetFullSpecification,
+  });
+
+  // Get conversation history
+  server.post("/conversation/history", {
+    schema: {
+      body: zodToJsonSchema(
+        GetConversationHistoryRequestSchema,
+        "getConversationHistoryRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          GetConversationHistoryResponseSchema,
+          "getConversationHistoryResponse"
+        ),
+      },
+    },
+    handler: handleGetConversationHistory,
   });
 }
