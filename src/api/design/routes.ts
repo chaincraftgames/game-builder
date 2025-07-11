@@ -4,6 +4,7 @@ import {
   handleGenerateImage,
   handleGetFullSpecification,
   handleGetConversationHistory,
+  handleGetConversationMetadata,
 } from "./handler.js";
 import {
   ContinueDesignConversationRequestSchema,
@@ -14,6 +15,8 @@ import {
   GetFullSpecificationResponseSchema,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponseSchema,
+  GetConversationMetadataRequestSchema,
+  GetConversationMetadataResponseSchema,
 } from "#chaincraft/api/design/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -81,5 +84,22 @@ export async function registerDesignRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetConversationHistory,
+  });
+
+  // Get conversation metadata (title, etc.) without creating checkpoints
+  server.post("/conversation/metadata", {
+    schema: {
+      body: zodToJsonSchema(
+        GetConversationMetadataRequestSchema,
+        "getConversationMetadataRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          GetConversationMetadataResponseSchema,
+          "getConversationMetadataResponse"
+        ),
+      },
+    },
+    handler: handleGetConversationMetadata,
   });
 }

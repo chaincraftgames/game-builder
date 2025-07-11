@@ -65,6 +65,15 @@ export const GetConversationHistoryResponseSchema = z.object({
   totalMessages: z.number(),
 });
 
+// Get conversation metadata schemas
+export const GetConversationMetadataRequestSchema = z.object({
+  conversationId: z.string().min(1),
+});
+
+export const GetConversationMetadataResponseSchema = z.object({
+  title: z.string(),
+});
+
 // Type exports
 export type PlayerCount = z.infer<typeof PlayerCountSchema>;
 export type GameSpecification = z.infer<typeof GameSpecificationSchema>;
@@ -87,5 +96,11 @@ export type GetConversationHistoryRequest = z.infer<
 >;
 export type GetConversationHistoryResponse = z.infer<
   typeof GetConversationHistoryResponseSchema
+>;
+export type GetConversationMetadataRequest = z.infer<
+  typeof GetConversationMetadataRequestSchema
+>;
+export type GetConversationMetadataResponse = z.infer<
+  typeof GetConversationMetadataResponseSchema
 >;
 export type Message = z.infer<typeof MessageSchema>;

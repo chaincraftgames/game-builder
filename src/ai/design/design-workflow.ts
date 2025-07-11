@@ -215,6 +215,149 @@ export async function getFullDesignSpecification(
   };
 }
 
+// Read-only version that gets cached specification without creating checkpoints
+export async function getCachedDesignSpecification(
+  conversationId: string
+): Promise<(GameDesignSpecification & { title: string }) | undefined> {
+  // Check if conversation exists
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
+
+  // Get the saver directly to access checkpoints
+  const saver = await getSaver(conversationId, graphType);
+  const config = { configurable: { thread_id: conversationId } };
+
+  console.log(
+    "[getCachedDesignSpecification] Getting checkpoints for conversation:",
+    conversationId
+  );
+
+  // Get all checkpoints for this conversation
+  const checkpoints = [];
+  for await (const checkpoint of saver.list(config, {})) {
+    checkpoints.push(checkpoint);
+  }
+
+  console.log(
+    "[getCachedDesignSpecification] Found checkpoints:",
+    checkpoints.length
+  );
+
+  if (checkpoints.length === 0) {
+    console.log("[getCachedDesignSpecification] No checkpoints found");
+    return undefined;
+  }
+
+  // Get the latest checkpoint which should have all state
+  const latestCheckpoint = checkpoints[0]; // checkpoints are usually ordered newest first
+
+  if (!latestCheckpoint.checkpoint.channel_values) {
+    console.log(
+      "[getCachedDesignSpecification] No channel_values in checkpoint"
+    );
+    return undefined;
+  }
+
+  // Extract state from the checkpoint
+  const channelValues = latestCheckpoint.checkpoint.channel_values as any;
+  const currentGameSpec = channelValues.currentGameSpec;
+  const title = channelValues.title;
+
+  console.log(
+    "[getCachedDesignSpecification] Found cached spec:",
+    currentGameSpec ? "yes" : "no",
+    "title:",
+    title || "no title"
+  );
+
+  // If we have a cached spec, return it
+  if (currentGameSpec && currentGameSpec.designSpecification) {
+    return {
+      ...currentGameSpec,
+      title: title || "Untitled Game",
+    };
+  }
+
+  // No cached spec available
+  console.log("[getCachedDesignSpecification] No cached specification found");
+  return undefined;
+}
+
+// Function to generate a new specification (creates checkpoints)
+export async function generateNewDesignSpecification(
+  conversationId: string
+): Promise<(GameDesignSpecification & { title: string }) | undefined> {
+  console.log(
+    "[generateNewDesignSpecification] Generating new specification for:",
+    conversationId
+  );
+  return await getFullDesignSpecification(conversationId);
+}
+
+// Function to get cached title and basic info (doesn't create checkpoints)
+export async function getCachedConversationMetadata(
+  conversationId: string
+): Promise<{ title: string } | undefined> {
+  // Check if conversation exists
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
+
+  // Get the saver directly to access checkpoints
+  const saver = await getSaver(conversationId, graphType);
+  const config = { configurable: { thread_id: conversationId } };
+
+  console.log(
+    "[getCachedConversationMetadata] Getting checkpoints for conversation:",
+    conversationId
+  );
+
+  // Get all checkpoints for this conversation
+  const checkpoints = [];
+  for await (const checkpoint of saver.list(config, {})) {
+    checkpoints.push(checkpoint);
+  }
+
+  console.log(
+    "[getCachedConversationMetadata] Found checkpoints:",
+    checkpoints.length
+  );
+
+  if (checkpoints.length === 0) {
+    console.log("[getCachedConversationMetadata] No checkpoints found");
+    return undefined;
+  }
+
+  // Get the latest checkpoint which should have all state
+  const latestCheckpoint = checkpoints[0]; // checkpoints are usually ordered newest first
+
+  if (!latestCheckpoint.checkpoint.channel_values) {
+    console.log(
+      "[getCachedConversationMetadata] No channel_values in checkpoint"
+    );
+    return undefined;
+  }
+
+  // Extract state from the checkpoint
+  const channelValues = latestCheckpoint.checkpoint.channel_values as any;
+  const title = channelValues.title;
+
+  console.log(
+    "[getCachedConversationMetadata] Found title:",
+    title || "no title"
+  );
+
+  // Return title if available, otherwise return undefined
+  if (title) {
+    return { title };
+  }
+
+  // No title available
+  console.log("[getCachedConversationMetadata] No title found");
+  return undefined;
+}
+
 export async function getConversationHistory(conversationId: string): Promise<{
   conversationId: string;
   messages: Array<{
