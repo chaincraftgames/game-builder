@@ -717,24 +717,23 @@ async function _processMessage(
     ...config,
     streamMode: "values",
   })) {
+    // Get the last message which should be the AI's response
+    const msg = messages[messages?.length - 1];
+
+    // Always process AI messages to capture the response content
+    if (msg?.content && msg instanceof AIMessage) {
+      aiResponse = msg.content
+        .toString()
+        .replace(/<game_title>.*?<\/game_title>\n?/g, "");
+    }
+
     // Track if we've generated a specification
     if (specRequested) {
       if (currentGameSpec && currentGameSpec.designSpecification.length > 0) {
         updatedSpec = currentGameSpec;
-      } else {
-        aiResponse = "No spec received.";
       }
-      continue;
-    }
-
-    // Get the last message which should be the AI's response
-    const msg = messages[messages?.length - 1];
-
-    // Only process AI messages if we haven't generated a spec
-    if (!specRequested && msg?.content && msg instanceof AIMessage) {
-      aiResponse = msg.content
-        .toString()
-        .replace(/<game_title>.*?<\/game_title>\n?/g, "");
+      // Note: Don't set aiResponse to "No spec received." here since we want to preserve
+      // the actual AI response content even if spec generation fails
     }
 
     if (title) {
