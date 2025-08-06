@@ -5,6 +5,7 @@ import {
   handleGetFullSpecification,
   handleGetConversationHistory,
   handleGetConversationMetadata,
+  handlePublishGame,
 } from "./handler.js";
 import {
   ContinueDesignConversationRequestSchema,
@@ -17,6 +18,8 @@ import {
   GetConversationHistoryResponseSchema,
   GetConversationMetadataRequestSchema,
   GetConversationMetadataResponseSchema,
+  PublishGameRequestSchema,
+  PublishGameResponseSchema,
 } from "#chaincraft/api/design/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -101,5 +104,16 @@ export async function registerDesignRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetConversationMetadata,
+  });
+
+  // Publish game to IPFS
+  server.post("/publish", {
+    schema: {
+      body: zodToJsonSchema(PublishGameRequestSchema, "publishGameRequest"),
+      response: {
+        200: zodToJsonSchema(PublishGameResponseSchema, "publishGameResponse"),
+      },
+    },
+    handler: handlePublishGame,
   });
 }

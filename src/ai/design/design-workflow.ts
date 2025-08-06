@@ -341,7 +341,39 @@ export async function getCachedConversationMetadata(
 
   // Extract state from the checkpoint
   const channelValues = latestCheckpoint.checkpoint.channel_values as any;
-  const title = channelValues.title;
+
+  // First try to get title from the stored title field
+  let title = channelValues.title;
+
+  // If no stored title, try to extract from messages
+  if (!title) {
+    const rawMessages = channelValues.messages;
+    if (rawMessages && Array.isArray(rawMessages)) {
+      // Look through messages for AI responses that contain game titles
+      for (const msg of rawMessages) {
+        if (
+          msg._type === "ai" ||
+          msg.constructor?.name === "AIMessage" ||
+          msg.type === "ai"
+        ) {
+          const content =
+            typeof msg.content === "string"
+              ? msg.content
+              : msg.kwargs && msg.kwargs.content
+              ? msg.kwargs.content
+              : "";
+
+          if (content) {
+            const extractedTitle = _extractGameTitle(content);
+            if (extractedTitle) {
+              title = extractedTitle;
+              break; // Use the first title found
+            }
+          }
+        }
+      }
+    }
+  }
 
   console.log(
     "[getCachedConversationMetadata] Found title:",

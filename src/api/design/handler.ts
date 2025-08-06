@@ -15,6 +15,9 @@ import {
   GetConversationMetadataRequest,
   GetConversationMetadataRequestSchema,
   GetConversationMetadataResponse,
+  PublishGameRequest,
+  PublishGameRequestSchema,
+  PublishGameResponse,
 } from "#chaincraft/api/design/schemas.js";
 import {
   continueDesignConversation,
@@ -24,6 +27,7 @@ import {
   getConversationHistory,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
+import { uploadToIpfs } from "#chaincraft/integrations/storage/pinata.js";
 
 export async function handleContinueDesignConversation(
   request: FastifyRequest<{ Body: ContinueDesignConversationRequest }>,
@@ -172,6 +176,55 @@ export async function handleGetConversationMetadata(
     };
   } catch (error) {
     console.error("Error in getConversationMetadata:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+export async function handlePublishGame(
+  request: FastifyRequest<{ Body: PublishGameRequest }>,
+  reply: FastifyReply
+): Promise<PublishGameResponse> {
+  const result = PublishGameRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId, gameTitle, version, imageUrl, userId } =
+      result.data;
+
+    // Get the full game specification
+    const specification = await getFullDesignSpecification(conversationId);
+
+    if (!specification) {
+      reply.code(404).send({ error: "Game specification not found" });
+      return Promise.reject();
+    }
+
+    // Create PAIT token (same format as Discord version)
+    const token = {
+      game_title: gameTitle,
+      game_specification: specification,
+      spec_version: version,
+      image_url: imageUrl,
+    };
+
+    // Upload to IPFS (reuse existing function)
+    const ipfsHash = await uploadToIpfs(
+      token,
+      `PAIT_${userId}_${gameTitle.replace(/\s/g, "_")}`
+    );
+
+    return {
+      ipfsHash,
+      gameTitle,
+      version,
+    };
+  } catch (error) {
+    console.error("Error in publishGame:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
