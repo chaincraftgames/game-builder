@@ -1,4 +1,4 @@
-import { FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyRequest, FastifyReply } from "fastify";
 import {
   ContinueDesignConversationRequest,
   ContinueDesignConversationRequestSchema,
@@ -9,29 +9,47 @@ import {
   GetFullSpecificationRequest,
   GetFullSpecificationRequestSchema,
   GetFullSpecificationResponse,
-} from '#chaincraft/api/design/schemas.js';
+  GetConversationHistoryRequest,
+  GetConversationHistoryRequestSchema,
+  GetConversationHistoryResponse,
+  GetConversationMetadataRequest,
+  GetConversationMetadataRequestSchema,
+  GetConversationMetadataResponse,
+  PublishGameRequest,
+  PublishGameRequestSchema,
+  PublishGameResponse,
+} from "#chaincraft/api/design/schemas.js";
 import {
   continueDesignConversation,
   generateImage,
   getFullDesignSpecification,
+  getCachedConversationMetadata,
+  getConversationHistory,
   isActiveConversation,
-} from '#chaincraft/ai/design/design-workflow.js';
+} from "#chaincraft/ai/design/design-workflow.js";
+import { uploadToIpfs } from "#chaincraft/integrations/storage/pinata.js";
 
 export async function handleContinueDesignConversation(
   request: FastifyRequest<{ Body: ContinueDesignConversationRequest }>,
   reply: FastifyReply
 ): Promise<ContinueDesignConversationResponse> {
-  const result = ContinueDesignConversationRequestSchema.safeParse(request.body);
-  
+  const result = ContinueDesignConversationRequestSchema.safeParse(
+    request.body
+  );
+
   if (!result.success) {
-    reply.code(400).send({ error: 'Invalid request', details: result.error });
+    reply.code(400).send({ error: "Invalid request", details: result.error });
     return Promise.reject();
   }
 
   try {
     const { conversationId, userMessage, gameDescription } = result.data;
-    const response = await continueDesignConversation(conversationId, userMessage, gameDescription);
-    
+    const response = await continueDesignConversation(
+      conversationId,
+      userMessage,
+      gameDescription
+    );
+
     return {
       designResponse: response.designResponse,
       updatedTitle: response.updatedTitle,
@@ -39,8 +57,8 @@ export async function handleContinueDesignConversation(
       specification: response.specification,
     };
   } catch (error) {
-    console.error('Error in continueDesignConversation:', error);
-    reply.code(500).send({ error: 'Internal server error' });
+    console.error("Error in continueDesignConversation:", error);
+    reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
 }
@@ -50,22 +68,22 @@ export async function handleGenerateImage(
   reply: FastifyReply
 ): Promise<GenerateImageResponse> {
   const result = GenerateImageRequestSchema.safeParse(request.body);
-  
+
   if (!result.success) {
-    reply.code(400).send({ error: 'Invalid request', details: result.error });
+    reply.code(400).send({ error: "Invalid request", details: result.error });
     return Promise.reject();
   }
 
   try {
     const { conversationId } = result.data;
     const imageUrl = await generateImage(conversationId);
-    
+
     return {
       imageUrl,
     };
   } catch (error) {
-    console.error('Error in generateImage:', error);
-    reply.code(500).send({ error: 'Internal server error' });
+    console.error("Error in generateImage:", error);
+    reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
 }
@@ -75,21 +93,21 @@ export async function handleGetFullSpecification(
   reply: FastifyReply
 ): Promise<GetFullSpecificationResponse> {
   const result = GetFullSpecificationRequestSchema.safeParse(request.body);
-  
+
   if (!result.success) {
-    reply.code(400).send({ error: 'Invalid request', details: result.error });
+    reply.code(400).send({ error: "Invalid request", details: result.error });
     return Promise.reject();
   }
 
   try {
     const { conversationId } = result.data;
     const specification = await getFullDesignSpecification(conversationId);
-    
+
     if (!specification) {
-      reply.code(404).send({ error: 'Specification not found' });
+      reply.code(404).send({ error: "Specification not found" });
       return Promise.reject();
     }
-    
+
     return {
       title: specification.title,
       summary: specification.summary,
@@ -97,9 +115,117 @@ export async function handleGetFullSpecification(
       designSpecification: specification.designSpecification,
     };
   } catch (error) {
-    console.error('Error in getFullSpecification:', error);
-    reply.code(500).send({ error: 'Internal server error' });
+    console.error("Error in getFullSpecification:", error);
+    reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
 }
 
+export async function handleGetConversationHistory(
+  request: FastifyRequest<{ Body: GetConversationHistoryRequest }>,
+  reply: FastifyReply
+): Promise<GetConversationHistoryResponse> {
+  const result = GetConversationHistoryRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId } = result.data;
+    const history = await getConversationHistory(conversationId);
+
+    return history;
+  } catch (error) {
+    console.error("Error in getConversationHistory:", error);
+
+    if (error instanceof Error && error.message.includes("not found")) {
+      reply.code(404).send({ error: "Conversation not found" });
+    } else {
+      reply.code(500).send({ error: "Internal server error" });
+    }
+    return Promise.reject();
+  }
+}
+
+export async function handleGetConversationMetadata(
+  request: FastifyRequest<{ Body: GetConversationMetadataRequest }>,
+  reply: FastifyReply
+): Promise<GetConversationMetadataResponse> {
+  const result = GetConversationMetadataRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId } = result.data;
+
+    // Get cached metadata (doesn't create checkpoints)
+    const metadata = await getCachedConversationMetadata(conversationId);
+
+    if (!metadata) {
+      reply.code(404).send({ error: "Conversation metadata not found" });
+      return Promise.reject();
+    }
+
+    return {
+      title: metadata.title,
+    };
+  } catch (error) {
+    console.error("Error in getConversationMetadata:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+export async function handlePublishGame(
+  request: FastifyRequest<{ Body: PublishGameRequest }>,
+  reply: FastifyReply
+): Promise<PublishGameResponse> {
+  const result = PublishGameRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId, gameTitle, version, imageUrl, userId } =
+      result.data;
+
+    // Get the full game specification
+    const specification = await getFullDesignSpecification(conversationId);
+
+    if (!specification) {
+      reply.code(404).send({ error: "Game specification not found" });
+      return Promise.reject();
+    }
+
+    // Create PAIT token (same format as Discord version)
+    const token = {
+      game_title: gameTitle,
+      game_specification: specification,
+      spec_version: version,
+      image_url: imageUrl,
+    };
+
+    // Upload to IPFS (reuse existing function)
+    const ipfsHash = await uploadToIpfs(
+      token,
+      `PAIT_${userId}_${gameTitle.replace(/\s/g, "_")}`
+    );
+
+    return {
+      ipfsHash,
+      gameTitle,
+      version,
+    };
+  } catch (error) {
+    console.error("Error in publishGame:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
