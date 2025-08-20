@@ -1,11 +1,12 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance } from "fastify";
 import {
   handleCreateSimulation,
   handleInitializeSimulation,
   handleProcessAction,
   handleGetSimulationState,
   handleUpdateSimulation,
-} from './handler.js';
+  handleContinueSimulation,
+} from "./handler.js";
 import {
   CreateSimulationRequestSchema,
   CreateSimulationResponseSchema,
@@ -17,62 +18,108 @@ import {
   GetSimulationStateResponseSchema,
   UpdateSimulationRequestSchema,
   UpdateSimulationResponseSchema,
-} from '#chaincraft/api/simulate/schemas.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+  ContinueSimulationRequestSchema,
+  ContinueSimulationResponseSchema,
+} from "#chaincraft/api/simulate/schemas.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 export async function registerSimulateRoutes(server: FastifyInstance) {
   // Create simulation
-  server.post('/create', {
+  server.post("/create", {
     schema: {
-      body: zodToJsonSchema(CreateSimulationRequestSchema, 'createSimulationRequest'),
+      body: zodToJsonSchema(
+        CreateSimulationRequestSchema,
+        "createSimulationRequest"
+      ),
       response: {
-        200: zodToJsonSchema(CreateSimulationResponseSchema, 'createSimulationResponse')
-      }
+        200: zodToJsonSchema(
+          CreateSimulationResponseSchema,
+          "createSimulationResponse"
+        ),
+      },
     },
     handler: handleCreateSimulation,
   });
 
   // Initialize simulation
-  server.post('/initialize', {
+  server.post("/initialize", {
     schema: {
-      body: zodToJsonSchema(InitializeSimulationRequestSchema, 'initializeSimulationRequest'),
+      body: zodToJsonSchema(
+        InitializeSimulationRequestSchema,
+        "initializeSimulationRequest"
+      ),
       response: {
-        200: zodToJsonSchema(InitializeSimulationResponseSchema, 'initializeSimulationResponse')
-      }
+        200: zodToJsonSchema(
+          InitializeSimulationResponseSchema,
+          "initializeSimulationResponse"
+        ),
+      },
     },
     handler: handleInitializeSimulation,
   });
 
   // Process action
-  server.post('/action', {
+  server.post("/action", {
     schema: {
-      body: zodToJsonSchema(ProcessActionRequestSchema, 'processActionRequest'),
+      body: zodToJsonSchema(ProcessActionRequestSchema, "processActionRequest"),
       response: {
-        200: zodToJsonSchema(ProcessActionResponseSchema, 'processActionResponse')
-      }
+        200: zodToJsonSchema(
+          ProcessActionResponseSchema,
+          "processActionResponse"
+        ),
+      },
     },
     handler: handleProcessAction,
   });
 
   // Get simulation state
-  server.post('/state', {
+  server.post("/state", {
     schema: {
-      body: zodToJsonSchema(GetSimulationStateRequestSchema, 'getSimulationStateRequest'),
+      body: zodToJsonSchema(
+        GetSimulationStateRequestSchema,
+        "getSimulationStateRequest"
+      ),
       response: {
-        200: zodToJsonSchema(GetSimulationStateResponseSchema, 'getSimulationStateResponse')
-      }
+        200: zodToJsonSchema(
+          GetSimulationStateResponseSchema,
+          "getSimulationStateResponse"
+        ),
+      },
     },
     handler: handleGetSimulationState,
   });
 
   // Update simulation
-  server.post('/update', {
+  server.post("/update", {
     schema: {
-      body: zodToJsonSchema(UpdateSimulationRequestSchema, 'updateSimulationRequest'),
+      body: zodToJsonSchema(
+        UpdateSimulationRequestSchema,
+        "updateSimulationRequest"
+      ),
       response: {
-        200: zodToJsonSchema(UpdateSimulationResponseSchema, 'updateSimulationResponse')
-      }
+        200: zodToJsonSchema(
+          UpdateSimulationResponseSchema,
+          "updateSimulationResponse"
+        ),
+      },
     },
     handler: handleUpdateSimulation,
+  });
+
+  // Continue simulation
+  server.post("/continue", {
+    schema: {
+      body: zodToJsonSchema(
+        ContinueSimulationRequestSchema,
+        "continueSimulationRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          ContinueSimulationResponseSchema,
+          "continueSimulationResponse"
+        ),
+      },
+    },
+    handler: handleContinueSimulation,
   });
 }
