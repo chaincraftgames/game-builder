@@ -51,6 +51,8 @@ export const GetFullSpecificationResponseSchema = z.object({
 // Get conversation history schemas
 export const GetConversationHistoryRequestSchema = z.object({
   conversationId: z.string().min(1),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(50),
 });
 
 export const MessageSchema = z.object({
@@ -63,6 +65,9 @@ export const GetConversationHistoryResponseSchema = z.object({
   conversationId: z.string(),
   messages: z.array(MessageSchema),
   totalMessages: z.number(),
+  page: z.number(),
+  limit: z.number(),
+  hasMore: z.boolean(),
 });
 
 // Get conversation metadata schemas

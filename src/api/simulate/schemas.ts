@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // Runtime player state schema
 export const RuntimePlayerStateSchema = z.object({
@@ -9,7 +9,10 @@ export const RuntimePlayerStateSchema = z.object({
 });
 
 // Player states schema (Map serialized as object)
-export const PlayerStatesSchema = z.record(z.string(), RuntimePlayerStateSchema);
+export const PlayerStatesSchema = z.record(
+  z.string(),
+  RuntimePlayerStateSchema
+);
 
 // Simulation response schema
 export const SimResponseSchema = z.object({
@@ -66,17 +69,46 @@ export const UpdateSimulationResponseSchema = z.object({
   success: z.boolean(),
 });
 
+// Continue simulation schemas
+export const ContinueSimulationRequestSchema = z.object({
+  gameId: z.string().min(1),
+});
+
+export const ContinueSimulationResponseSchema = SimResponseSchema;
+
 // Type exports
 export type RuntimePlayerState = z.infer<typeof RuntimePlayerStateSchema>;
 export type PlayerStates = z.infer<typeof PlayerStatesSchema>;
 export type SimResponse = z.infer<typeof SimResponseSchema>;
-export type CreateSimulationRequest = z.infer<typeof CreateSimulationRequestSchema>;
-export type CreateSimulationResponse = z.infer<typeof CreateSimulationResponseSchema>;
-export type InitializeSimulationRequest = z.infer<typeof InitializeSimulationRequestSchema>;
-export type InitializeSimulationResponse = z.infer<typeof InitializeSimulationResponseSchema>;
+export type CreateSimulationRequest = z.infer<
+  typeof CreateSimulationRequestSchema
+>;
+export type CreateSimulationResponse = z.infer<
+  typeof CreateSimulationResponseSchema
+>;
+export type InitializeSimulationRequest = z.infer<
+  typeof InitializeSimulationRequestSchema
+>;
+export type InitializeSimulationResponse = z.infer<
+  typeof InitializeSimulationResponseSchema
+>;
 export type ProcessActionRequest = z.infer<typeof ProcessActionRequestSchema>;
 export type ProcessActionResponse = z.infer<typeof ProcessActionResponseSchema>;
-export type GetSimulationStateRequest = z.infer<typeof GetSimulationStateRequestSchema>;
-export type GetSimulationStateResponse = z.infer<typeof GetSimulationStateResponseSchema>;
-export type UpdateSimulationRequest = z.infer<typeof UpdateSimulationRequestSchema>;
-export type UpdateSimulationResponse = z.infer<typeof UpdateSimulationResponseSchema>;
+export type GetSimulationStateRequest = z.infer<
+  typeof GetSimulationStateRequestSchema
+>;
+export type GetSimulationStateResponse = z.infer<
+  typeof GetSimulationStateResponseSchema
+>;
+export type UpdateSimulationRequest = z.infer<
+  typeof UpdateSimulationRequestSchema
+>;
+export type UpdateSimulationResponse = z.infer<
+  typeof UpdateSimulationResponseSchema
+>;
+export type ContinueSimulationRequest = z.infer<
+  typeof ContinueSimulationRequestSchema
+>;
+export type ContinueSimulationResponse = z.infer<
+  typeof ContinueSimulationResponseSchema
+>;

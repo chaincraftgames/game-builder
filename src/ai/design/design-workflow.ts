@@ -229,28 +229,20 @@ export async function getCachedDesignSpecification(
   const config = { configurable: { thread_id: conversationId } };
 
   console.log(
-    "[getCachedDesignSpecification] Getting checkpoints for conversation:",
+    "[getCachedDesignSpecification] Getting latest checkpoint for conversation:",
     conversationId
   );
 
-  // Get all checkpoints for this conversation
-  const checkpoints = [];
-  for await (const checkpoint of saver.list(config, {})) {
-    checkpoints.push(checkpoint);
-  }
+  // Get only the first (latest) checkpoint
+  const checkpointIterator = saver.list(config, { limit: 1 });
+  const firstCheckpoint = await checkpointIterator.next();
 
-  console.log(
-    "[getCachedDesignSpecification] Found checkpoints:",
-    checkpoints.length
-  );
-
-  if (checkpoints.length === 0) {
+  if (firstCheckpoint.done) {
     console.log("[getCachedDesignSpecification] No checkpoints found");
     return undefined;
   }
 
-  // Get the latest checkpoint which should have all state
-  const latestCheckpoint = checkpoints[0]; // checkpoints are usually ordered newest first
+  const latestCheckpoint = firstCheckpoint.value;
 
   if (!latestCheckpoint.checkpoint.channel_values) {
     console.log(
@@ -309,28 +301,20 @@ export async function getCachedConversationMetadata(
   const config = { configurable: { thread_id: conversationId } };
 
   console.log(
-    "[getCachedConversationMetadata] Getting checkpoints for conversation:",
+    "[getCachedConversationMetadata] Getting latest checkpoint for conversation:",
     conversationId
   );
 
-  // Get all checkpoints for this conversation
-  const checkpoints = [];
-  for await (const checkpoint of saver.list(config, {})) {
-    checkpoints.push(checkpoint);
-  }
+  // Get only the first (latest) checkpoint
+  const checkpointIterator = saver.list(config, { limit: 1 });
+  const firstCheckpoint = await checkpointIterator.next();
 
-  console.log(
-    "[getCachedConversationMetadata] Found checkpoints:",
-    checkpoints.length
-  );
-
-  if (checkpoints.length === 0) {
+  if (firstCheckpoint.done) {
     console.log("[getCachedConversationMetadata] No checkpoints found");
     return undefined;
   }
 
-  // Get the latest checkpoint which should have all state
-  const latestCheckpoint = checkpoints[0]; // checkpoints are usually ordered newest first
+  const latestCheckpoint = firstCheckpoint.value;
 
   if (!latestCheckpoint.checkpoint.channel_values) {
     console.log(
@@ -390,7 +374,11 @@ export async function getCachedConversationMetadata(
   return undefined;
 }
 
-export async function getConversationHistory(conversationId: string): Promise<{
+export async function getConversationHistory(
+  conversationId: string,
+  page: number = 1,
+  limit: number = 50
+): Promise<{
   conversationId: string;
   messages: Array<{
     type: "human" | "ai" | "system";
@@ -398,6 +386,9 @@ export async function getConversationHistory(conversationId: string): Promise<{
     timestamp?: string;
   }>;
   totalMessages: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
 }> {
   // Check if conversation exists
   if (!(await isActiveConversation(conversationId))) {
@@ -409,31 +400,26 @@ export async function getConversationHistory(conversationId: string): Promise<{
   const config = { configurable: { thread_id: conversationId } };
 
   console.log(
-    "[getConversationHistory] Getting checkpoints for conversation:",
+    "[getConversationHistory] Getting latest checkpoint for conversation:",
     conversationId
   );
 
-  // Get all checkpoints for this conversation
-  const checkpoints = [];
-  for await (const checkpoint of saver.list(config, {})) {
-    checkpoints.push(checkpoint);
-  }
+  // Get only the first (latest) checkpoint
+  const checkpointIterator = saver.list(config, { limit: 1 });
+  const firstCheckpoint = await checkpointIterator.next();
 
-  console.log(
-    "[getConversationHistory] Found checkpoints:",
-    checkpoints.length
-  );
-
-  if (checkpoints.length === 0) {
+  if (firstCheckpoint.done) {
     return {
       conversationId,
       messages: [],
       totalMessages: 0,
+      page,
+      limit,
+      hasMore: false,
     };
   }
 
-  // Get the latest checkpoint which should have all messages
-  const latestCheckpoint = checkpoints[0]; // checkpoints are usually ordered newest first
+  const latestCheckpoint = firstCheckpoint.value;
 
   if (!latestCheckpoint.checkpoint.channel_values) {
     console.log("[getConversationHistory] No channel_values in checkpoint");
@@ -441,6 +427,9 @@ export async function getConversationHistory(conversationId: string): Promise<{
       conversationId,
       messages: [],
       totalMessages: 0,
+      page,
+      limit,
+      hasMore: false,
     };
   }
 
@@ -464,6 +453,9 @@ export async function getConversationHistory(conversationId: string): Promise<{
       conversationId,
       messages: [],
       totalMessages: 0,
+      page,
+      limit,
+      hasMore: false,
     };
   }
 
@@ -559,10 +551,20 @@ export async function getConversationHistory(conversationId: string): Promise<{
     formattedMessages.length
   );
 
+  // Apply pagination
+  const totalMessages = formattedMessages.length;
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedMessages = formattedMessages.slice(startIndex, endIndex);
+  const hasMore = endIndex < totalMessages;
+
   return {
     conversationId,
-    messages: formattedMessages,
-    totalMessages: formattedMessages.length,
+    messages: paginatedMessages,
+    totalMessages,
+    page,
+    limit,
+    hasMore,
   };
 }
 

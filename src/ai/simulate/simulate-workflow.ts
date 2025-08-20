@@ -97,9 +97,7 @@ export async function createSimulation(
       gameSpecification,
       updatedGameSpecVersion: gameSpecificationVersion,
     };
-    for await (const {
-      gameRules,
-    } of await graph.stream(inputs, {
+    for await (const { gameRules } of await graph.stream(inputs, {
       ...config,
       streamMode: "values",
     })) {
@@ -159,7 +157,12 @@ export async function processAction(
   // Queue the action to ensure sequential processing
   return queueAction(gameId, async () => {
     try {
-      console.log("[simulate] Processing action for game %s player %s: %s", gameId, playerId, action);
+      console.log(
+        "[simulate] Processing action for game %s player %s: %s",
+        gameId,
+        playerId,
+        action
+      );
       const graph = await simGraphCache.getGraph(gameId);
       const config = { configurable: { thread_id: gameId } };
       let simResponse!: SimResponse;
@@ -170,7 +173,7 @@ export async function processAction(
           playerAction: action,
         },
       };
-      
+
       for await (const state of await graph.stream(inputs, {
         ...config,
         streamMode: "values",
@@ -260,6 +263,26 @@ export async function getSimulationState(gameId: string): Promise<SimResponse> {
     handleError("Failed to get player messages", error);
     return Promise.reject(error);
   }
+}
+
+/**
+ * Continues the simulation by processing a system-level action that asks the AI
+ * to continue the game or inform players what actions they need to take.
+ * This is equivalent to the Discord "Continue Game" button functionality.
+ * @param gameId The ID of the game/conversation
+ * @returns The simulation response with updated game state and messages
+ */
+export async function continueSimulation(gameId: string): Promise<SimResponse> {
+  const continueQuestion = `
+  The players of the game believe they have completed all actions and are 
+  waiting for the game to continue.  If waiting for a player action, please 
+  inform the player(s) you are waiting on via public message.  If not waiting 
+  on player actions, then you please take the appropriate game level actions to 
+  continue the game, e.g. judging, scoring, generating narrative, resolving 
+  non-player or ai controlled player actions.
+  `;
+
+  return processAction(gameId, "all players", `QUESTION: ${continueQuestion}`);
 }
 
 /**
@@ -482,10 +505,7 @@ function shouldExecuteProcessSpecNode(state: SimulationStateType) {
 
 function shouldExecuteInitRuntimeNode(state: SimulationStateType) {
   // Init if we are not initialized and we have players.
-  return (
-    state.players?.length &&
-    !state.isInitialized
-  );
+  return state.players?.length && !state.isInitialized;
 }
 
 function shouldExecuteProcessActionNode(state: SimulationStateType) {
@@ -494,26 +514,26 @@ function shouldExecuteProcessActionNode(state: SimulationStateType) {
 
 function getSimResponse(state: SimulationStateType): SimResponse {
   console.debug("[simulate] Getting sim response");
-  
+
   // Check if state is undefined or null
   if (!state) {
     throw new Error("Cannot create response from undefined state");
   }
-  
+
   const gameState = getGameState(state);
-  
+
   // If gameState is undefined, return a default response
   if (!gameState) {
     return {
       publicMessage: "Error: Unable to get game state",
       playerStates: new Map(),
-      gameEnded: false
+      gameEnded: false,
     };
   }
 
   // Extract player states
   const playerStates: PlayerStates = new Map<string, RuntimePlayerState>();
-  
+
   // Make sure players object exists
   if (gameState.players) {
     for (const [playerId, playerData] of Object.entries(
@@ -522,9 +542,9 @@ function getSimResponse(state: SimulationStateType): SimResponse {
       const playerState: RuntimePlayerState = {
         illegalActionCount: playerData?.illegalActionCount || 0,
         actionsAllowed: playerData?.actionsAllowed !== false,
-        actionRequired: playerData?.actionRequired === true
+        actionRequired: playerData?.actionRequired === true,
       };
-      
+
       const playerMessage = playerData?.privateMessage;
       if (playerMessage && playerMessage.length > 0) {
         playerState.privateMessage = playerMessage;
