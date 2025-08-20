@@ -133,8 +133,8 @@ export async function handleGetConversationHistory(
   }
 
   try {
-    const { conversationId } = result.data;
-    const history = await getConversationHistory(conversationId);
+    const { conversationId, page, limit } = result.data;
+    const history = await getConversationHistory(conversationId, page, limit);
 
     return history;
   } catch (error) {
