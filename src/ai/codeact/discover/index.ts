@@ -11,6 +11,13 @@ import {
 import { runTests, TestResult } from './test-runner.js';
 import { formatProjectResults, ProjectResults } from './reporter.js';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { 
+  storeFunctions, 
+  initializeStorage,
+  storeGameState,
+  storeGameMetadata
+} from '../file-storage.js';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Progress callback interface
@@ -30,6 +37,15 @@ export interface CodeActOptions {
   model: BaseChatModel;
   onProgress?: (progress: ProgressCallback) => void;
   debug?: boolean;
+  output?: {
+    showAnalysis?: boolean;
+    showSchema?: boolean;
+    showRuntimePlan?: boolean;
+    showFunctionDesign?: boolean;
+    showImplementation?: boolean;
+    showTestResults?: boolean;
+    showPerformance?: boolean;
+  };
 }
 
 /**
@@ -66,6 +82,113 @@ function isStateSchemaResult(stateSchema: StateSchemaResult | StateSchemaError |
 }
 
 /**
+ * Format and display results based on output options
+ * @param {CodeActResult} results - The generated results
+ * @param {CodeActOptions['output']} outputOptions - Output configuration options
+ */
+function displayResults(results: CodeActResult, outputOptions: CodeActOptions['output'] = {}) {
+  // Default all options to true if not specified
+  const options = {
+    showAnalysis: true,
+    showSchema: true,
+    showRuntimePlan: true,
+    showFunctionDesign: true,
+    showImplementation: true,
+    showTestResults: true,
+    showPerformance: true,
+    ...outputOptions
+  };
+  
+  console.log("\n====== CodeAct Generation Results ======");
+  
+  if (options.showAnalysis && results.analysis) {
+    console.log("\n----- Game Analysis -----");
+    console.log(results.analysis.analysis.fullText);
+  }
+  
+  if (options.showSchema && results.stateSchema) {
+    console.log("\n----- State Schema -----");
+    if ('description' in results.stateSchema) {
+      console.log(results.stateSchema.description);
+    }
+    console.log("\nSchema (JSON Schema format):");
+    if ('schema' in results.stateSchema) {
+      console.log(results.stateSchema.schema);
+    } else if ('error' in results.stateSchema) {
+      console.log("Error generating schema:", results.stateSchema.error);
+    }
+  }
+  
+  if (options.showRuntimePlan && results.runtimePlan) {
+    console.log("\n----- Runtime Interaction Plan -----");
+    console.log(results.runtimePlan.runtimePlan.fullText);
+  }
+  
+  if (options.showFunctionDesign && results.functionDesign) {
+    console.log("\n----- Function Library Design -----");
+    console.log(results.functionDesign.functionDesign.fullText);
+  }
+  
+  if (options.showImplementation && results.implementation) {
+    console.log("\n----- Generated Functions -----");
+    console.log(results.implementation.code);
+  }
+  
+  // Always show debug files if available
+  if (results.testResults?.debugFiles) {
+    console.log("\n----- Debug Files (Generated Code) -----");
+    if (results.testResults.debugFiles.implementation) {
+      console.log(`Implementation: ${results.testResults.debugFiles.implementation}`);
+    }
+    if (results.testResults.debugFiles.test) {
+      console.log(`Tests:          ${results.testResults.debugFiles.test}`);
+    }
+    if (results.testResults.debugFiles.combined) {
+      console.log(`Combined:       ${results.testResults.debugFiles.combined}`);
+    }
+    console.log("-----------------------------------------");
+  }
+  
+  if (options.showTestResults) {
+    console.log("\n----- Test Results -----");
+    if (results.testResults && results.testResults.success) {
+      console.log("✅ All tests executed successfully");
+    } else {
+      console.log("❌ Tests failed to execute");
+      console.log(`Error: ${results.testResults?.error || "Unknown error"}`);
+      
+      // Show detailed error information if available
+      if (results.testResults?.errorDetails) {
+        const { diagnosis, suggestion, snippet } = results.testResults.errorDetails;
+        if (diagnosis) console.log(`\nDiagnosis: ${diagnosis}`);
+        if (snippet) console.log(`\nError Context:\n${snippet}`);
+        if (suggestion) console.log(`\nSuggestion: ${suggestion}`);
+      }
+      
+      // Show error logs if available
+      if (results.testResults?.logs && results.testResults.logs.length > 0) {
+        console.log("\nError Logs:");
+        results.testResults.logs.slice(0, 10).forEach(log => {
+          console.log(`  ${log}`);
+        });
+        if (results.testResults.logs.length > 10) {
+          console.log(`  ... and ${results.testResults.logs.length - 10} more lines (see debug files for complete logs)`);
+        }
+      }
+    }
+  }
+  
+  if (options.showPerformance && results.timings) {
+    console.log("\n----- Performance Metrics -----");
+    Object.entries(results.timings).forEach(([key, value]) => {
+      if (value !== undefined) {
+        console.log(`${key}: ${value}ms`);
+      }
+    });
+  }
+}
+
+/**
  * Generate a complete game implementation based on a game specification
  * @param {CodeActOptions} options - Generator options
  * @returns {Promise<CodeActResult>} Complete game implementation and documentation
@@ -74,7 +197,8 @@ export const codeActGenerator = async ({
   gameSpecification,
   model,
   onProgress = () => {},
-  debug = false
+  debug = false,
+  output = {}
 }: CodeActOptions): Promise<CodeActResult> => {
   // Validate inputs
   if (!gameSpecification) throw new Error("Game specification is required");
@@ -227,6 +351,22 @@ export const codeActGenerator = async ({
   results.timings.testRuntime = Date.now() - testRunStartTime;
   
   log(`✅ Test execution completed in ${results.timings.testRuntime}ms`);
+  
+  // Show debug file paths prominently at the end of test execution
+  if (results.testResults?.debugFiles) {
+    console.log("\n----- Debug Files (Generated Code) -----");
+    if (results.testResults.debugFiles.implementation) {
+      console.log(`Implementation: ${results.testResults.debugFiles.implementation}`);
+    }
+    if (results.testResults.debugFiles.test) {
+      console.log(`Tests:          ${results.testResults.debugFiles.test}`);
+    }
+    if (results.testResults.debugFiles.combined) {
+      console.log(`Combined:       ${results.testResults.debugFiles.combined}`);
+    }
+    console.log("-----------------------------------------\n");
+  }
+  
   log("Test results:", results.testResults);
   
   // Generate final report
@@ -243,6 +383,47 @@ export const codeActGenerator = async ({
   
   onProgress({ stage: 9, message: "Code generation completed!", isComplete: true });
   
+  // Display results based on output options
+  displayResults(results, output);
+
+  // Save generated functions and initialize game storage
+  try {
+    // Initialize storage directories
+    await initializeStorage();
+
+    // Generate a unique game ID
+    const gameId = `game-${uuidv4().slice(0, 8)}`;
+    log(`🔄 Saving generated functions for game ID: ${gameId}`);
+
+    // Store the functions and metadata
+    await storeFunctions(
+      gameId,
+      results.implementation?.code || ''
+    );
+
+    // Store the game specification and state schema
+    await storeGameMetadata(
+      gameId,
+      {
+        gameSpecification: gameSpecification,
+        stateDefinition: stateSchema.schema,
+      }
+    )
+
+    // Create an initial empty state to initialize the game directory
+    await storeGameState(gameId, {});
+
+    // Log success message
+    log(`✅ Functions and game structure saved to disk with game ID: ${gameId}`);
+    console.log(`\n📂 Generated game saved with ID: ${gameId}`);
+    console.log(`   - Functions saved to: /game-data/functions.js`);
+    console.log(`   - Game state will be saved to: /game-data/games/${gameId}/state.json`);
+    console.log(`   - To initialize this game, run: codeact-simulate init ${gameId}`);
+  } catch (error) {
+    log(`❌ Error saving functions to disk: ${error}`);
+    console.error(`\nWarning: Failed to save generated code to disk: ${error}`);
+  }
+
   return {
     ...results,
     formattedResults

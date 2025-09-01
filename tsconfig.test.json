@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "outDir": "./test-dist",
+    "module": "NodeNext",
+    "target": "ES2020"
+  },
+  "include": ["src/**/*"]
+}

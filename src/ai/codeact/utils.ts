@@ -186,7 +186,7 @@ export const safeExecute = async (
  * @param {string} code - The implemented code
  * @returns {string[]} Array of function names
  */
-export const extractImplementedFunctions = (code: string): string[] => {
+export const extractFunctionNames = (code: string): string[] => {
   if (!code) return [];
   
   const functionPattern = /function\s+([a-zA-Z0-9_]+)\s*\(/g;
@@ -198,39 +198,5 @@ export const extractImplementedFunctions = (code: string): string[] => {
   return [...new Set([...functionMatches, ...arrowFunctionMatches])];
 };
 
-/**
- * Function design interface
- */
-export interface FunctionDesign {
-  name: string;
-  importance: string;
-  [key: string]: any;
-}
 
-/**
- * Normalize designed functions to handle potential inconsistencies in naming
- * @param {Array<FunctionDesign>} functions - Array of function objects from the design
- * @returns {Array<FunctionDesign>} Normalized array of function objects
- */
-export const normalizeDesignedFunctions = (functions: FunctionDesign[]): FunctionDesign[] => {
-  if (!functions || !Array.isArray(functions)) return [];
-  
-  // Remove any potential duplicates and normalize function names
-  const uniqueFunctions: FunctionDesign[] = [];
-  const seen = new Set<string>();
-  
-  functions.forEach(fn => {
-    if (!fn.name) return;
-    
-    const normalizedName = fn.name.trim();
-    if (normalizedName && !seen.has(normalizedName.toLowerCase())) {
-      seen.add(normalizedName.toLowerCase());
-      uniqueFunctions.push({
-        name: normalizedName,
-        importance: fn.importance || 'unknown'
-      });
-    }
-  });
-  
-  return uniqueFunctions;
-};
+

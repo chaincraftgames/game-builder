@@ -1,4 +1,4 @@
-import { invokeModel } from './utils.js';
+import { invokeModel } from '../utils.js';
 import { extractAICapabilitiesSection, extractFunctionDescription, FunctionDefinition } from './function-designer.js';
 import { StateSchemaResult } from './schema-designer.js';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';

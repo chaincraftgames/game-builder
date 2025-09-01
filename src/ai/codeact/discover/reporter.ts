@@ -1,5 +1,5 @@
 // filepath: /Users/ericwood/dev/projects/ChainCraft/game-builder/src/ai/codeact/reporter.ts
-import { GameAnalysis, GameState } from './analyzer.js';
+import { GameAnalysis, GameState } from '../analyzer.js';
 import { StateSchemaError, StateSchemaResult } from './schema-designer.js';
 import { RuntimePlan } from './runtime-planner.js';
 import { FunctionDesign } from './function-designer.js';
@@ -112,7 +112,7 @@ const formatStateElements = (gameState?: GameState): string => {
   if (globalState.length === 0) {
     output += "- No global state elements specified\n";
   } else {
-    globalState.forEach(element => {
+    globalState.forEach((element: any) => {
       output += `- **${element.name}**: ${element.purpose} (${element.type})\n`;
     });
   }
@@ -121,7 +121,7 @@ const formatStateElements = (gameState?: GameState): string => {
   if (playerState.length === 0) {
     output += "- No player state elements specified\n";
   } else {
-    playerState.forEach(element => {
+    playerState.forEach((element: any) => {
       output += `- **${element.name}**: ${element.purpose} (${element.type})\n`;
     });
   }
@@ -158,7 +158,7 @@ ${formatJson(stateSchema.initialState)}
 
 ### Validations
 ${stateSchema.validations && stateSchema.validations.length > 0 
-  ? stateSchema.validations.map(v => `- ${v}`).join('\n') 
+  ? stateSchema.validations.map((v: any) => `- ${v}`).join('\n') 
   : "- No specific validations specified"}
   `;
 };
@@ -202,7 +202,7 @@ ${fullText || "No detailed function design available"}
   if (functions.length === 0) {
     output += "- No functions specified\n";
   } else {
-    functions.forEach(func => {
+    functions.forEach((func: any) => {
       output += `- **${func.name}** (${func.importance}): ${func.purpose || "No description available"}\n`;
     });
   }

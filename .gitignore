@@ -1,6 +1,16 @@
 .env
 dist/**
+test-dist/**
 node_modules/**
 *.tsbuildinfo
 data/*
 !data/design/
+node_modules
+**/.DS_Store
+
+# Prevent compiled JS files from being committed to src
+src/**/*.js
+src/**/*.js.map
+
+# Don't include game-data
+game-data/**

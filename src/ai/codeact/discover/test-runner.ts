@@ -1,4 +1,4 @@
-import { safeExecute, ExecutionResult } from './utils.js';
+import { safeExecute, ExecutionResult } from '../utils.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -267,7 +267,7 @@ export const runTests = async (implementation: string, testCode: string): Promis
     console.log(`- Tests: ${testFilePath}`);
     console.log(`- Combined: ${combinedFilePath}`);
     
-    const result = await safeExecute(combinedCode, {}, 30000);  // 30-second timeout
+    const result = await safeExecute(combinedCode, [{}], 30000);  // 30-second timeout
     
     if (result.error) {
       console.error("❌ Error running tests:", result.error);

@@ -1,12 +1,49 @@
-import { invokeModel } from './utils.js';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { invokeModel, ModelResponse } from '../utils.js';
+
+/**
+ * State element interface
+ */
+export interface StateElement {
+  name: string;
+  purpose: string;
+  type: string;
+}
+
+/**
+ * Game state interface
+ */
+export interface GameState {
+  globalState: StateElement[];
+  playerState: StateElement[];
+}
+
+/**
+ * Game analysis interface
+ */
+export interface GameAnalysis {
+  fullText: string;
+  gameState: GameState;
+}
+
+/**
+ * Analysis result interface
+ */
+export interface AnalysisResult {
+  analysis: GameAnalysis;
+  analysisTime: number;
+}
 
 /**
  * Stage 1: Analyze a game specification in depth
- * @param {Object} model - The language model to use
+ * @param {BaseChatModel} model - The language model to use
  * @param {string} gameSpecification - The game specification to analyze
- * @returns {Object} Analysis results and timing information
+ * @returns {Promise<AnalysisResult>} Analysis results and timing information
  */
-export const analyzeGameSpecification = async (model, gameSpecification) => {
+export const analyzeGameSpecification = async (
+  model: BaseChatModel, 
+  gameSpecification: string
+): Promise<AnalysisResult> => {
   console.log("🔍 Stage 1: Analyzing game specification...");
   const startTime = Date.now();
   
@@ -62,8 +99,8 @@ export const analyzeGameSpecification = async (model, gameSpecification) => {
   
   // Extract the list of state elements for the next stage
   // This is a simple extraction to pass structured data to the next stage
-  let globalStateElements = [];
-  let playerStateElements = [];
+  let globalStateElements: StateElement[] = [];
+  let playerStateElements: StateElement[] = [];
   
   try {
     // Simple regex matching to extract state elements from markdown lists
@@ -103,7 +140,7 @@ export const analyzeGameSpecification = async (model, gameSpecification) => {
   }
   
   // Create a simplified analysis object with the extracted information
-  const analysis = {
+  const analysis: GameAnalysis = {
     fullText: analysisText,
     gameState: {
       globalState: globalStateElements,
