@@ -1,5 +1,5 @@
 // filepath: /Users/ericwood/dev/projects/ChainCraft/game-builder/src/ai/codeact/run-rps-example.ts
-import { codeActGenerator, CodeActResult, ProgressCallback } from './index.js';
+import { codeActGenerator, CodeActResult, ProgressCallback } from './discover/index.js';
 import { setupModel } from './utils.js';
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 
@@ -73,61 +73,18 @@ const runRockPaperScissorsExample = async (): Promise<CodeActResult | { error: a
       gameSpecification: rockPaperScissorsSpec,
       model,
       onProgress,
-      debug: true // Enable verbose logging
+      debug: true, // Enable verbose logging
+      output: {
+        // Configure which sections to display in the output
+        showAnalysis: true,
+        showSchema: true,
+        showRuntimePlan: true,
+        showFunctionDesign: true,
+        showImplementation: true,
+        showTestResults: true,
+        showPerformance: true
+      }
     });
-    
-    // Display the results
-    console.log("\n====== CodeAct Generation Results ======");
-    
-    if (results.analysis) {
-      console.log("\n----- Game Analysis -----");
-      console.log(results.analysis.analysis.fullText);
-    }
-    
-    if (results.stateSchema) {
-      console.log("\n----- State Schema -----");
-      if ('description' in results.stateSchema) {
-        console.log(results.stateSchema.description);
-      }
-      console.log("\nSchema (JSON Schema format):");
-      if ('schema' in results.stateSchema) {
-        console.log(results.stateSchema.schema);
-      } else if ('error' in results.stateSchema) {
-        console.log("Error generating schema:", results.stateSchema.error);
-      }
-    }
-    
-    if (results.runtimePlan) {
-      console.log("\n----- Runtime Interaction Plan -----");
-      console.log(results.runtimePlan.runtimePlan.fullText);
-    }
-    
-    if (results.functionDesign) {
-      console.log("\n----- Function Library Design -----");
-      console.log(results.functionDesign.functionDesign.fullText);
-    }
-    
-    if (results.implementation) {
-      console.log("\n----- Generated Functions -----");
-      console.log(results.implementation.code);
-    }
-    
-    console.log("\n----- Test Results -----");
-    if (results.testResults && results.testResults.success) {
-      console.log("✅ All tests executed successfully");
-    } else {
-      console.log("❌ Tests failed to execute");
-      console.log(`Error: ${results.testResults?.error || "Unknown error"}`);
-    }
-    
-    console.log("\n----- Performance Metrics -----");
-    if (results.timings) {
-      Object.entries(results.timings).forEach(([key, value]) => {
-        if (value !== undefined) {
-          console.log(`${key}: ${value}ms`);
-        }
-      });
-    }
     
     return results;
   } catch (error) {
