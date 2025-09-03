@@ -23,6 +23,7 @@ import {
   continueDesignConversation,
   generateImage,
   getFullDesignSpecification,
+  getCachedDesignSpecification,
   getCachedConversationMetadata,
   getConversationHistory,
   isActiveConversation,
@@ -116,6 +117,39 @@ export async function handleGetFullSpecification(
     };
   } catch (error) {
     console.error("Error in getFullSpecification:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+export async function handleGetCachedSpecification(
+  request: FastifyRequest<{ Body: GetFullSpecificationRequest }>,
+  reply: FastifyReply
+): Promise<GetFullSpecificationResponse> {
+  const result = GetFullSpecificationRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId } = result.data;
+    const specification = await getCachedDesignSpecification(conversationId);
+
+    if (!specification) {
+      reply.code(404).send({ error: "Specification not found" });
+      return Promise.reject();
+    }
+
+    return {
+      title: specification.title,
+      summary: specification.summary,
+      playerCount: specification.playerCount,
+      designSpecification: specification.designSpecification,
+    };
+  } catch (error) {
+    console.error("Error in getCachedSpecification:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
