@@ -3,6 +3,7 @@ import {
   handleContinueDesignConversation,
   handleGenerateImage,
   handleGetFullSpecification,
+  handleGetCachedSpecification,
   handleGetConversationHistory,
   handleGetConversationMetadata,
   handlePublishGame,
@@ -70,6 +71,23 @@ export async function registerDesignRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetFullSpecification,
+  });
+
+  // Get cached specification (no recomputation)
+  server.post("/conversation/specification/cached", {
+    schema: {
+      body: zodToJsonSchema(
+        GetFullSpecificationRequestSchema,
+        "getCachedSpecificationRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          GetFullSpecificationResponseSchema,
+          "getCachedSpecificationResponse"
+        ),
+      },
+    },
+    handler: handleGetCachedSpecification,
   });
 
   // Get conversation history
