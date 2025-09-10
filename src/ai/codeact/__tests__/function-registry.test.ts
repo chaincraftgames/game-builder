@@ -1,12 +1,10 @@
 import { describe, expect, test } from '@jest/globals';
 import { 
-  parseFunctions,
-  extractFunctionNames,
   initializeFunctionRegistry 
 } from '#chaincraft/ai/codeact/function-registry.js';
 
 describe('Function Registry', () => {
-  describe('parseFunctions', () => {
+  describe('initializeFunctionRegistry', () => {
     test('should extract function with JSDoc comment', () => {
       const sampleCode = `/**
  * Creates a new game instance with initial state
@@ -33,7 +31,8 @@ function initializeGame(player1Id, player1Name, player2Id, player2Name) {
   };
 }`;
 
-      const functions = parseFunctions(sampleCode);
+      const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
       
       expect(functions).toHaveLength(1);
       expect(functions[0].name).toBe('initializeGame');
@@ -47,11 +46,12 @@ function initializeGame(player1Id, player1Name, player2Id, player2Name) {
   return x + y;
 }`;
 
-      const functions = parseFunctions(sampleCode);
+      const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
       
       expect(functions).toHaveLength(1);
       expect(functions[0].name).toBe('simpleFunction');
-      expect(functions[0].description).toBe('Function simpleFunction');
+      expect(functions[0].description).toBe('simpleFunction\n\nFunction simpleFunction');
       expect(functions[0].impl).toBe('return x + y;');
     });
 
@@ -66,7 +66,8 @@ const calculateSum = (a, b) => {
   return a + b;
 };`;
 
-      const functions = parseFunctions(sampleCode);
+      const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
       
       expect(functions).toHaveLength(1);
       expect(functions[0].name).toBe('calculateSum');
@@ -89,19 +90,21 @@ function functionTwo() {
   return 'two';
 }`;
 
-      const functions = parseFunctions(sampleCode);
+      const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
       
       expect(functions).toHaveLength(2);
       expect(functions[0].name).toBe('functionOne');
       expect(functions[1].name).toBe('functionTwo');
-      expect(functions[0].description).toBe('Function one');
-      expect(functions[1].description).toBe('Function two');
+      expect(functions[0].description).toBe('functionOne\n\nFunction one\n');
+      expect(functions[1].description).toBe('functionTwo\n\nFunction two\n');
       expect(functions[0].impl).toBe("return 'one';");
       expect(functions[1].impl).toBe("return 'two';");
     });
 
     test('should handle empty code', () => {
-      const functions = parseFunctions('');
+      const registry = initializeFunctionRegistry('');
+      const functions = registry.getAllFunctions();
       expect(functions).toHaveLength(0);
     });
 
@@ -128,33 +131,22 @@ function processAction(state, playerId, action) {
   return { ...state, lastAction: action };
 }`;
 
-      const functions = parseFunctions(sampleCode);
+      const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
       
       expect(functions).toHaveLength(1);
       expect(functions[0].name).toBe('processAction');
       expect(functions[0].description).toContain('Processes a game action and updates state');
       expect(functions[0].description).toContain('This function handles player actions during gameplay');
       expect(functions[0].description).toContain('It validates the action and updates the game state accordingly');
-      // Should NOT contain @param, @returns, etc.
+      // Should NOT contain @param, @returns, etc. raw tags
       expect(functions[0].description).not.toContain('@param');
       expect(functions[0].description).not.toContain('@returns');
       expect(functions[0].description).not.toContain('@throws');
       expect(functions[0].description).not.toContain('@example');
     });
-  });
 
-  describe('extractFunctionNames', () => {
-    test('should extract function names only', () => {
-      const sampleCode = `function one() { return 1; }
-const two = () => { return 2; }`;
-      
-      const names = extractFunctionNames(sampleCode);
-      expect(names).toEqual(['one', 'two']);
-    });
-  });
-
-  describe('initializeFunctionRegistry', () => {
-    test('should create registry with functions', () => {
+    test('should create registry with single function', () => {
       const sampleCode = `/**
  * Test function
  */
@@ -163,28 +155,65 @@ function testFunc(x) {
 }`;
 
       const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
       
-      expect(registry.getAllFunctions()).toHaveLength(1);
-      expect(registry.hasFunction('testFunc')).toBe(true);
-      expect(registry.hasFunction('nonExistent')).toBe(false);
-      
-      const func = registry.getFunction('testFunc');
-      expect(func).toBeDefined();
-      expect(func?.name).toBe('testFunc');
-      expect(func?.description).toBe('Test function');
-      expect(func?.impl).toBe('return x;');
-      
-      const docs = registry.getFunctionDocumentation();
-      expect(docs).toContain('testFunc(): Test function');
+      expect(functions).toHaveLength(1);
+      expect(functions[0].name).toBe('testFunc');
+      expect(functions[0].description).toBe('testFunc\n\nTest function\n');
+      expect(functions[0].impl).toBe('return x;');
     });
 
     test('should handle empty function code', () => {
       const registry = initializeFunctionRegistry('');
+      const functions = registry.getAllFunctions();
       
-      expect(registry.getAllFunctions()).toHaveLength(0);
-      expect(registry.hasFunction('anything')).toBe(false);
-      expect(registry.getFunction('anything')).toBeUndefined();
-      expect(registry.getFunctionDocumentation()).toBe('');
+      expect(functions).toHaveLength(0);
+    });
+
+    test('should handle mixed function types', () => {
+      const sampleCode = `/**
+ * Regular function
+ */
+function regularFunc() {
+  return 'regular';
+}
+
+/**
+ * Arrow function
+ */
+const arrowFunc = () => {
+  return 'arrow';
+};
+
+/**
+ * Expression arrow function
+ */
+const exprArrow = () => 'expression';`;
+
+      const registry = initializeFunctionRegistry(sampleCode);
+      const functions = registry.getAllFunctions();
+      
+      expect(functions).toHaveLength(3);
+      
+      // Check that we got all functions
+      const names = functions.map(f => f.name);
+      expect(names).toContain('regularFunc');
+      expect(names).toContain('arrowFunc');
+      expect(names).toContain('exprArrow');
+      
+      // Find specific functions and check their details
+      const regular = functions.find(f => f.name === 'regularFunc');
+      const arrow = functions.find(f => f.name === 'arrowFunc');
+      const expr = functions.find(f => f.name === 'exprArrow');
+      
+      expect(regular?.description).toBe('regularFunc\n\nRegular function\n');
+      expect(regular?.impl).toBe("return 'regular';");
+      
+      expect(arrow?.description).toBe('arrowFunc\n\nArrow function\n');
+      expect(arrow?.impl).toBe("return 'arrow';");
+      
+      expect(expr?.description).toBe('exprArrow\n\nExpression arrow function\n');
+      expect(expr?.impl).toBe("'expression'");
     });
   });
 });

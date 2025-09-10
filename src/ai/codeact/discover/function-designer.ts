@@ -1,7 +1,6 @@
 // filepath: /Users/ericwood/dev/projects/ChainCraft/game-builder/src/ai/codeact/function-designer.ts
-import { Base } from 'discord.js';
-import { invokeModel } from '../utils.js';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { Mode } from 'fs';
+import { invokeModel, ModelWithOptions } from '../model-config.js';
 
 /**
  * Function interface
@@ -141,13 +140,15 @@ export const extractFunctionsFromDesign = (designText: string): FunctionDefiniti
 
 /**
  * Stage 4: Design function library based on the game specification and state schema
- * @param {BaseChatModel} model - The language model to use
+ * @param {ModelWithOptions} model - The model with options to use
  * @param {FunctionDesignOptions} options - Options object
+ * @param {object} metadata - Optional metadata for tracing
  * @returns {Promise<FunctionDesignResult>} Function design and timing information
  */
 export const designFunctionLibrary = async (
-  model: BaseChatModel, 
-  { gameSpecification, stateSchema, runtimePlan }: FunctionDesignOptions
+  model: ModelWithOptions, 
+  { gameSpecification, stateSchema, runtimePlan }: FunctionDesignOptions,
+  metadata?: { [key: string]: any }
 ): Promise<FunctionDesignResult> => {
   console.log("📚 Stage 4: Designing function library...");
   const startTime = Date.now();
@@ -225,7 +226,7 @@ export const designFunctionLibrary = async (
     Limit your design to a maximum of 8 functions total, focusing on quality over quantity.
   `;
   
-  const response = await invokeModel(model, prompt);
+  const response = await invokeModel(model, prompt, undefined, metadata);
   
   const functionDesignTime = Date.now() - startTime;
   console.log(`✅ Function library design completed in ${functionDesignTime}ms`);

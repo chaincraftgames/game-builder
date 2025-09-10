@@ -9,7 +9,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as readline from 'readline';
-import { setupModel } from '../utils.js';
+import { setupSimulationModel } from '../model-config.js';
 import { 
   loadFunctions, 
   functionsExist, 
@@ -116,6 +116,17 @@ program
       const { functionCode } = await loadFunctions(gameId);
       const metadata = await loadGameMetadata(gameId);
       
+      // Validate function code before proceeding
+      console.log(chalk.blue('Validating loaded functions...'));
+      try {
+        new Function(functionCode);
+        console.log(chalk.green('✅ Function syntax validation passed'));
+      } catch (error) {
+        console.error(chalk.red(`❌ Function syntax validation failed: ${error instanceof Error ? error.message : String(error)}`));
+        console.error(chalk.red('The loaded functions contain syntax errors. This may cause initialization to fail.'));
+        console.error(chalk.yellow('Consider regenerating the functions or manually fixing the syntax errors.'));
+      }
+      
       // Get player IDs from user
       const playerIdsInput = await question(chalk.yellow('Enter player IDs (comma-separated): '));
       const playerIds = playerIdsInput.split(',').map(id => id.trim());
@@ -128,7 +139,7 @@ program
       
       // Set up the model
       console.log(chalk.blue('Setting up the model...'));
-      const { model } = await setupModel();
+      const model = await setupSimulationModel();
       
       // Create function registry
       const functionRegistry = initializeFunctionRegistry(
@@ -149,7 +160,7 @@ program
       
       // Initialize the game
       console.log(chalk.blue('Initializing the game...'));
-      const result = await initializeGame(context, options);
+      const result = await initializeGame(context, options, gameId);
       
       // Store the game state
       await storeGameState(gameId, context);
@@ -205,9 +216,20 @@ program
       const { functionCode } = await loadFunctions(gameId);
       const context = await loadGameState(gameId);
       
+      // Validate function code before proceeding
+      console.log(chalk.blue('Validating loaded functions...'));
+      try {
+        new Function(functionCode);
+        console.log(chalk.green('✅ Function syntax validation passed'));
+      } catch (error) {
+        console.error(chalk.red(`❌ Function syntax validation failed: ${error instanceof Error ? error.message : String(error)}`));
+        console.error(chalk.red('The loaded functions contain syntax errors. This may cause action processing to fail.'));
+        console.error(chalk.yellow('Consider regenerating the functions or manually fixing the syntax errors.'));
+      }
+      
       // Set up the model
       console.log(chalk.blue('Setting up the model...'));
-      const { model } = await setupModel();
+      const model = await setupSimulationModel();
       
       // Create function registry
       const functionRegistry = initializeFunctionRegistry(
@@ -225,7 +247,7 @@ program
       
       // Process the action
       console.log(chalk.blue(`Processing action: ${action}`));
-      const result = await processAction(context, options, playerId, action);
+      const result = await processAction(context, options, playerId, action, gameId);
       
       // Store the updated game state
       await storeGameState(gameId, context);

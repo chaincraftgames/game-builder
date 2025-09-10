@@ -10,7 +10,7 @@ import {
 } from './test-generator.js';
 import { runTests, TestResult } from './test-runner.js';
 import { formatProjectResults, ProjectResults } from './reporter.js';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { ModelWithOptions } from '../model-config.js';
 import { 
   storeFunctions, 
   initializeStorage,
@@ -33,8 +33,9 @@ export interface ProgressCallback {
  * Generator options interface
  */
 export interface CodeActOptions {
+  model: ModelWithOptions;
   gameSpecification: string;
-  model: BaseChatModel;
+  gameName: string;
   onProgress?: (progress: ProgressCallback) => void;
   debug?: boolean;
   output?: {
@@ -194,15 +195,15 @@ function displayResults(results: CodeActResult, outputOptions: CodeActOptions['o
  * @returns {Promise<CodeActResult>} Complete game implementation and documentation
  */
 export const codeActGenerator = async ({
-  gameSpecification,
   model,
+  gameSpecification,
+  gameName,
   onProgress = () => {},
   debug = false,
   output = {}
 }: CodeActOptions): Promise<CodeActResult> => {
   // Validate inputs
   if (!gameSpecification) throw new Error("Game specification is required");
-  if (!model) throw new Error("Language model is required");
   
   // Initialize results object to store all artifacts
   const results: CodeActResult = {
@@ -220,7 +221,11 @@ export const codeActGenerator = async ({
   onProgress({ stage: 1, message: "Analyzing game specification..." });
   
   const analysisStartTime = Date.now();
-  results.analysis = await analyzeGameSpecification(model, gameSpecification);
+  results.analysis = await analyzeGameSpecification(model, gameSpecification, undefined, {
+    gameName: gameName,
+    discoveryStep: 'game-analysis',
+    stepNumber: 1
+  });
   results.timings.analysisTime = Date.now() - analysisStartTime;
   
   log(`✅ Analysis completed in ${results.timings.analysisTime}ms`);
@@ -234,6 +239,10 @@ export const codeActGenerator = async ({
   results.stateSchema = await createStateSchema(model, {
     gameSpecification,
     analysis: results.analysis
+  }, {
+    gameName: gameName,
+    discoveryStep: 'schema-design',
+    stepNumber: 2
   });
   results.timings.schemaTime = Date.now() - schemaStartTime;
   
@@ -274,6 +283,10 @@ export const codeActGenerator = async ({
     gameSpecification,
     analysis: results.analysis.analysis,
     stateSchema: stateSchema
+  }, {
+    gameName: gameName,
+    discoveryStep: 'runtime-planning',
+    stepNumber: 3
   });
   results.timings.runtimePlanTime = Date.now() - runtimePlanStartTime;
   
@@ -301,6 +314,10 @@ export const codeActGenerator = async ({
     gameSpecification,
     stateSchema: stateSchema.schema,
     runtimePlan: results.runtimePlan.runtimePlan.fullText
+  }, {
+    gameName: gameName,
+    discoveryStep: 'function-design',
+    stepNumber: 4
   });
   results.timings.functionDesignTime = Date.now() - functionDesignStartTime;
   
@@ -318,6 +335,11 @@ export const codeActGenerator = async ({
         gameSpecification,
         stateSchema: stateSchema,
         functionDesign: results.functionDesign.functionDesign
+    },
+    {
+      gameName: gameName,
+      discoveryStep: 'function-implementation',
+      stepNumber: 5
     }
   );
   results.timings.implementationTime = Date.now() - implementationStartTime;

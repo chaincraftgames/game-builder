@@ -1,5 +1,5 @@
 // filepath: /Users/ericwood/dev/projects/ChainCraft/game-builder/src/ai/codeact/reporter.ts
-import { GameAnalysis, GameState } from '../analyzer.js';
+import { GameAnalysis, GameState } from './analyzer.js';
 import { StateSchemaError, StateSchemaResult } from './schema-designer.js';
 import { RuntimePlan } from './runtime-planner.js';
 import { FunctionDesign } from './function-designer.js';

@@ -1,6 +1,5 @@
 // filepath: /Users/ericwood/dev/projects/ChainCraft/game-builder/src/ai/codeact/runtime-planner.ts
-import { invokeModel } from '../utils.js';
-import { GameAnalysis } from '../analyzer.js';
+import { invokeModel, ModelWithOptions } from '../model-config.js';
 import { StateSchemaResult } from './schema-designer.js';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
@@ -32,14 +31,16 @@ export interface RuntimePlanningOptions {
 }
 
 /**
- * Stage 3: Runtime interaction planning
- * @param {BaseChatModel} model - The language model to use
+ * Create a runtime plan for the game based on analysis and state schema
+ * @param {ModelWithOptions} model - The model to use
  * @param {RuntimePlanningOptions} options - Options object
+ * @param {object} metadata - Optional metadata for tracing
  * @returns {Promise<RuntimePlanningResult>} Runtime plan and timing information
  */
 export const createRuntimePlan = async (
-  model: BaseChatModel, 
-  { gameSpecification, analysis, stateSchema }: RuntimePlanningOptions
+  model: ModelWithOptions, 
+  { gameSpecification, analysis, stateSchema }: RuntimePlanningOptions,
+  metadata?: { [key: string]: any }
 ): Promise<RuntimePlanningResult> => {
   console.log("🎮 Stage 3: Planning runtime interactions...");
   const startTime = Date.now();
@@ -83,7 +84,7 @@ export const createRuntimePlan = async (
     - Example dialog
   `;
   
-  const response = await invokeModel(model, prompt);
+  const response = await invokeModel(model, prompt, undefined, metadata);
   
   const runtimePlanTime = Date.now() - startTime;
   console.log(`✅ Runtime interaction planning completed in ${runtimePlanTime}ms`);

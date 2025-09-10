@@ -4,7 +4,7 @@
  * 2. Providing function descriptions for AI prompts
  */
 
-import doctrine from 'doctrine';
+import * as doctrine from 'doctrine';
 import * as acorn from 'acorn';
 
 /**
@@ -16,19 +16,10 @@ export interface FunctionDefinition {
   name: string;        // Function name
   impl: string;        // Function body for sandbox execution
   description: string; // Human-readable description for AI prompts
-  // Legacy compatibility fields
-  code?: string;       // Complete function code (optional, for compatibility)
-  signature?: string;  // Function signature (optional, computed from name)
 }
 
-/**
- * Function registry interface
- */
 export interface FunctionRegistry {
   getAllFunctions(): FunctionDefinition[];
-  hasFunction(name: string): boolean;
-  getFunction(name: string): FunctionDefinition | undefined;
-  getFunctionDocumentation(): string; // For AI prompts
 }
 
 /**
@@ -39,7 +30,15 @@ function parseJSDocForAI(jsdocText: string, functionName: string): string {
     // Parse JSDoc with doctrine
     const parsed = doctrine.parse(jsdocText, { unwrap: true, sloppy: true });
     
-    let description = parsed.description || `Function ${functionName}`;
+    // Start with function name so AI knows what to call
+    let description = `${functionName}\n\n`;
+    
+    // Add main description
+    if (parsed.description) {
+      description += `${parsed.description}\n`;
+    } else {
+      description += `Function ${functionName}\n`;
+    }
     
     // Add parameter information if available
     const params = parsed.tags?.filter(tag => tag.title === 'param') || [];
@@ -64,7 +63,7 @@ function parseJSDocForAI(jsdocText: string, functionName: string): string {
     return description;
   } catch (error) {
     console.warn(`Failed to parse JSDoc for ${functionName}:`, error);
-    return `Function ${functionName}`;
+    return `${functionName}\n\nFunction ${functionName}`;
   }
 }
 
@@ -90,23 +89,34 @@ function getTypeString(type: any): string {
  * AST-based function parser using acorn for reliable parsing
  * Handles all JavaScript function types properly
  */
-export function parseFunctions(code: string): FunctionDefinition[] {
+function parseFunctions(code: string): FunctionDefinition[] {
   if (!code) return [];
   
   try {
-    // Collect comments during parsing
-    const comments: any[] = [];
+    // Track JSDoc comments separately as we parse
+    const jsdocComments: any[] = [];
+    
     const ast = acorn.parse(code, {
       ecmaVersion: 2022,
       sourceType: 'module',
       allowHashBang: true,
       allowReturnOutsideFunction: true,
-      onComment: comments
+      onComment: (isBlock: boolean, text: string, start: number, end: number) => {
+        // Only collect JSDoc comments (block comments starting with *)
+        if (isBlock && text.startsWith('*')) {
+          jsdocComments.push({
+            text: `/**${text}*/`,
+            start,
+            end
+          });
+        }
+      }
     });
     
     const functions: FunctionDefinition[] = [];
+    const foundFunctions: Array<{node: any, info: {name: string, start: number, end: number}}> = [];
     
-    // Walk the AST to find function declarations and expressions
+    // First pass: collect all functions
     function walk(node: any, parent?: any) {
       if (!node || typeof node !== 'object') return;
       
@@ -116,8 +126,8 @@ export function parseFunctions(code: string): FunctionDefinition[] {
       if (node.type === 'FunctionDeclaration' && node.id?.name) {
         functionInfo = {
           name: node.id.name,
-          start: node.body.start + 1, // Skip opening brace
-          end: node.body.end - 1      // Skip closing brace
+          start: node.start,  // Include the entire function
+          end: node.end       // Include the entire function
         };
       }
       // Variable Declaration with Arrow Function: const name = () => {}
@@ -129,18 +139,18 @@ export function parseFunctions(code: string): FunctionDefinition[] {
             const arrow = declarator.init;
             
             if (arrow.body.type === 'BlockStatement') {
-              // Arrow with block: () => { ... }
+              // Arrow with block: const name = () => { ... }
               functionInfo = {
                 name: declarator.id.name,
-                start: arrow.body.start + 1,
-                end: arrow.body.end - 1
+                start: node.start,  // Include entire variable declaration
+                end: node.end       // Include entire variable declaration
               };
             } else {
-              // Arrow with expression: () => expr
+              // Arrow with expression: const name = () => expr
               functionInfo = {
                 name: declarator.id.name,
-                start: arrow.body.start,
-                end: arrow.body.end
+                start: node.start,  // Include entire variable declaration
+                end: node.end       // Include entire variable declaration
               };
             }
             break; // Only handle first arrow function per declaration
@@ -149,24 +159,7 @@ export function parseFunctions(code: string): FunctionDefinition[] {
       }
       
       if (functionInfo) {
-        // Extract function body
-        const impl = code.substring(functionInfo.start, functionInfo.end).trim();
-        
-        // Find JSDoc comment for this function
-        let description = `Function ${functionInfo.name}`;
-        const jsdoc = findJSDocForFunction(comments, node.start, code);
-        if (jsdoc) {
-          description = parseJSDocForAI(jsdoc, functionInfo.name);
-        }
-        
-        functions.push({
-          name: functionInfo.name,
-          impl: impl,
-          description,
-          // Legacy compatibility
-          code: code.substring(node.start, node.end),
-          signature: `${functionInfo.name}()`
-        });
+        foundFunctions.push({ node, info: functionInfo });
       }
       
       // Recursively walk child nodes
@@ -183,6 +176,40 @@ export function parseFunctions(code: string): FunctionDefinition[] {
     }
     
     walk(ast);
+    
+    // Second pass: sort functions by position and match with JSDoc comments
+    foundFunctions.sort((a, b) => a.node.start - b.node.start);
+    
+    let lastUsedCommentIndex = -1;
+    
+    for (const { node, info: functionInfo } of foundFunctions) {
+      // Extract function body
+      const impl = code.substring(functionInfo.start, functionInfo.end).trim();
+      
+      // Find the next unused JSDoc comment before this function
+      let description = `${functionInfo.name}\n\nFunction ${functionInfo.name}`;
+      
+      for (let i = lastUsedCommentIndex + 1; i < jsdocComments.length; i++) {
+        const comment = jsdocComments[i];
+        
+        // Comment must come before the function
+        if (comment.end <= node.start) {
+          // Check if there's only whitespace between comment and function
+          const betweenText = code.substring(comment.end, node.start);
+          if (/^\s*$/.test(betweenText)) {
+            description = parseJSDocForAI(comment.text, functionInfo.name);
+            lastUsedCommentIndex = i;
+            break;
+          }
+        }
+      }
+      
+      functions.push({
+        name: functionInfo.name,
+        impl: impl,
+        description
+      });
+    }
     return functions;
     
   } catch (error) {
@@ -190,35 +217,6 @@ export function parseFunctions(code: string): FunctionDefinition[] {
     // Fallback to empty array rather than crash
     return [];
   }
-}
-
-/**
- * Find JSDoc comment for a function using collected comments
- * Returns the JSDoc comment text if found, null otherwise
- */
-function findJSDocForFunction(comments: any[], functionStart: number, code: string): string | null {
-  // Find the JSDoc comment immediately before this function
-  // JSDoc comments are Block comments that start with /**
-  const jsdocComments = comments.filter(comment => 
-    comment.type === 'Block' && 
-    comment.value.startsWith('*') &&
-    comment.end <= functionStart
-  );
-  
-  if (jsdocComments.length === 0) return null;
-  
-  // Find the closest JSDoc comment before this function
-  const closest = jsdocComments.reduce((closest, current) => 
-    current.end > closest.end ? current : closest
-  );
-  
-  // Make sure there's only whitespace between the comment and function
-  const betweenText = code.substring(closest.end, functionStart);
-  if (!/^\s*$/.test(betweenText)) {
-    return null; // There's non-whitespace content between comment and function
-  }
-  
-  return `/**${closest.value}*/`;
 }
 
 /**
@@ -237,28 +235,7 @@ export function initializeFunctionRegistry(functionCode: string): FunctionRegist
   return {
     getAllFunctions(): FunctionDefinition[] {
       return Array.from(functions.values());
-    },
-    
-    hasFunction(name: string): boolean {
-      return functions.has(name);
-    },
-    
-    getFunction(name: string): FunctionDefinition | undefined {
-      return functions.get(name);
-    },
-    
-    getFunctionDocumentation(): string {
-      return Array.from(functions.values())
-        .map(fn => `${fn.signature || fn.name + '()'}: ${fn.description}`)
-        .join('\n');
     }
   };
 }
 
-/**
- * Extract just function names from code (for compatibility with test-generator.js)
- */
-export function extractFunctionNames(code: string): string[] {
-  const functions = parseFunctions(code);
-  return functions.map(fn => fn.name);
-}

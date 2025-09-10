@@ -1,6 +1,5 @@
-import { invokeModel } from '../utils.js';
-import { GameAnalysis } from '../analyzer.js';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { invokeModel, ModelWithOptions } from '../model-config.js';
+import { GameAnalysis } from './analyzer.js';
 
 /**
  * StateSchema creation options interface
@@ -38,13 +37,15 @@ export interface StateSchemaResult {
 
 /**
  * Create a state schema for the game based on analysis
- * @param {BaseChatModel} model - The language model to use
+ * @param {ModelWithOptions} model - The model with options to use
  * @param {StateSchemaOptions} options - Options object
+ * @param {object} metadata - Optional metadata for tracing
  * @returns {Promise<StateSchemaResult | StateSchemaError>} State schema definition or error
  */
 export const createStateSchema = async (
-  model: BaseChatModel, 
-  { gameSpecification, analysis }: StateSchemaOptions
+  model: ModelWithOptions, 
+  { gameSpecification, analysis }: StateSchemaOptions,
+  metadata?: { [key: string]: any }
 ): Promise<StateSchemaResult | StateSchemaError> => {
   const prompt = `
 You are an expert game programmer designing the state schema for a game. Based on the game specification 
@@ -90,7 +91,7 @@ Do not include backticks or language identifiers in your JSON sections.
 `;
 
   try {
-    const response = await invokeModel(model, prompt);
+    const response = await invokeModel(model, prompt, undefined, metadata);
     const responseText = response.content;
     
     // Extract the three sections using regex

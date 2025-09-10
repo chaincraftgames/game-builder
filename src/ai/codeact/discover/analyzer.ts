@@ -1,5 +1,4 @@
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { invokeModel, ModelResponse } from '../utils.js';
+import { ModelWithOptions, invokeModel } from '../model-config.js';
 
 /**
  * State element interface
@@ -36,13 +35,17 @@ export interface AnalysisResult {
 
 /**
  * Stage 1: Analyze a game specification in depth
- * @param {BaseChatModel} model - The language model to use
+ * @param {ModelWithOptions} model - The model with options to use
  * @param {string} gameSpecification - The game specification to analyze
+ * @param {any[]} callbacks - Optional callbacks for tracing
+ * @param {Record<string, any>} metadata - Optional metadata for tracing
  * @returns {Promise<AnalysisResult>} Analysis results and timing information
  */
 export const analyzeGameSpecification = async (
-  model: BaseChatModel, 
-  gameSpecification: string
+  model: ModelWithOptions, 
+  gameSpecification: string,
+  callbacks: any[] = [],
+  metadata?: Record<string, any>
 ): Promise<AnalysisResult> => {
   console.log("🔍 Stage 1: Analyzing game specification...");
   const startTime = Date.now();
@@ -89,7 +92,11 @@ export const analyzeGameSpecification = async (
     The next stage will use this analysis to create a structured state schema.
   `;
   
-  const response = await invokeModel(model, prompt);
+  const response = await invokeModel(model, prompt, callbacks, {
+    ...metadata,
+    discoveryStep: 'game-analysis',
+    stepNumber: 1
+  });
   
   const analysisTime = Date.now() - startTime;
   console.log(`✅ Game analysis completed in ${analysisTime}ms`);
@@ -111,8 +118,8 @@ export const analyzeGameSpecification = async (
     const playerStateMatch = analysisText.match(playerStateRegex);
     
     if (globalStateMatch && globalStateMatch[1]) {
-      const elements = globalStateMatch[1].split('\n').filter(line => line.trim().startsWith('-'));
-      globalStateElements = elements.map(element => {
+      const elements = globalStateMatch[1].split('\n').filter((line: string) => line.trim().startsWith('-'));
+      globalStateElements = elements.map((element: string) => {
         const parts = element.replace('-', '').trim().split(':');
         return {
           name: parts[0]?.trim() || "Unknown",
@@ -124,8 +131,8 @@ export const analyzeGameSpecification = async (
     }
     
     if (playerStateMatch && playerStateMatch[1]) {
-      const elements = playerStateMatch[1].split('\n').filter(line => line.trim().startsWith('-'));
-      playerStateElements = elements.map(element => {
+      const elements = playerStateMatch[1].split('\n').filter((line: string) => line.trim().startsWith('-'));
+      playerStateElements = elements.map((element: string) => {
         const parts = element.replace('-', '').trim().split(':');
         return {
           name: parts[0]?.trim() || "Unknown",

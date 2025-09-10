@@ -1,23 +1,28 @@
 // filepath: /Users/ericwood/dev/projects/ChainCraft/game-builder/src/ai/codeact/run-rps-example.ts
-import { codeActGenerator, CodeActResult, ProgressCallback } from './discover/index.js';
-import { setupModel } from './utils.js';
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import {
+  codeActGenerator,
+  CodeActResult,
+  ProgressCallback,
+} from "./discover/index.js";
+import { setupDiscoveryModel } from "./model-config.js";
 
 /**
  * Run the Rock Paper Scissors example using the modular codeAct implementation
  */
-const runRockPaperScissorsExample = async (): Promise<CodeActResult | { error: any }> => {
+const runRockPaperScissorsExample = async (): Promise<
+  CodeActResult | { error: any }
+> => {
   console.log("====== Running Rock Paper Scissors Example with CodeAct ======");
-  
-  // Initialize the model
-  const { model, MODEL_NAME } = await setupModel();
-  console.log(`Using model: ${MODEL_NAME}\n`);
-  
-  // Setup tracer for debugging
-  const chaincraftCodeactTracer = new LangChainTracer({
-    projectName: "chaincraft-codeact-test",
+
+  // Initialize the discovery model with custom tracer project
+  const model = await setupDiscoveryModel({
+    tracerProjectName: "chaincraft-rps-discovery",
   });
-  
+  console.log(`Using discovery model: ${model.modelName}`);
+  console.log(`Tracer project: ${model.tracerProjectName}\n`);
+
+  // The tracer is now automatically configured in the model setup
+
   // Define the Rock Paper Scissors game specification (same as in original file)
   const rockPaperScissorsSpec = `
     Game: Rock Paper Scissors
@@ -61,17 +66,22 @@ const runRockPaperScissorsExample = async (): Promise<CodeActResult | { error: a
     - After both players have made their choices, the round result should be announced
     - When the game ends, the final result should be announced
   `;
-  
+
   // Progress reporting function
-  const onProgress = ({ stage, message, isComplete }: ProgressCallback): void => {
+  const onProgress = ({
+    stage,
+    message,
+    isComplete,
+  }: ProgressCallback): void => {
     console.log(`[Stage ${stage}] ${message}`);
   };
-  
+
   // Run the codeAct generator with the Rock Paper Scissors specification
   try {
     const results = await codeActGenerator({
-      gameSpecification: rockPaperScissorsSpec,
       model,
+      gameSpecification: rockPaperScissorsSpec,
+      gameName: "rock-paper-scissors",
       onProgress,
       debug: true, // Enable verbose logging
       output: {
@@ -82,10 +92,10 @@ const runRockPaperScissorsExample = async (): Promise<CodeActResult | { error: a
         showFunctionDesign: true,
         showImplementation: true,
         showTestResults: true,
-        showPerformance: true
-      }
+        showPerformance: true,
+      },
     });
-    
+
     return results;
   } catch (error) {
     console.error("Error running CodeAct generator:", error);

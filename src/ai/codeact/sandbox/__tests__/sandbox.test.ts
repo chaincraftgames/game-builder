@@ -12,46 +12,32 @@ describe('GameCodeSandbox', () => {
       // Simple synchronous function
       {
         name: 'unsafeGreet',
-        code: 'function unsafeGreet(name) { return "Hello, " + name; }',
-        signature: 'unsafeGreet(name)',
+        impl: 'function unsafeGreet(name) { return "Hello, " + name; }',
         description: 'Greets a person',
-        impl: 'return "Hello, " + args[0];'
       },
       // Function that calls safe functions
       {
         name: 'unsafeCalculate',
-        code: 'function unsafeCalculate(a, b) { return safeAdd(a, b) * 2; }',
-        signature: 'unsafeCalculate(a, b)',
+        impl: 'function unsafeCalculate(a, b) { return safeAdd(a, b) * 2; }',
         description: 'Calculates a value using safe functions',
-        impl: 'return safeAdd(args[0], args[1]) * 2;'
       },
       // Asynchronous function
       {
         name: 'unsafeDelay',
-        code: 'async function unsafeDelay(ms, value) { return new Promise(resolve => setTimeout(() => resolve(value), ms)); }',
-        signature: 'unsafeDelay(ms, value)',
+        impl: 'async function unsafeDelay(ms, value) { return new Promise(resolve => setTimeout(() => resolve(value), ms)); }',
         description: 'Returns a value after a delay',
-        impl: 'return new Promise(resolve => setTimeout(() => resolve(args[1]), args[0]));'
       },
       // Function that calls other unsafe functions
       {
         name: 'unsafeComposite',
-        code: 'function unsafeComposite(name, a, b) { const greeting = unsafeGreet(name); const value = unsafeCalculate(a, b); return `${greeting} Your result is ${value}`; }',
-        signature: 'unsafeComposite(name, a, b)',
+        impl: 'function unsafeComposite(name, a, b) { const greeting = unsafeGreet(name); const value = unsafeCalculate(a, b); return `${greeting} Your result is ${value}`; }',
         description: 'Combines results from other unsafe functions',
-        impl: `
-          const greeting = unsafeGreet(args[0]);
-          const value = unsafeCalculate(args[1], args[2]);
-          return \`\${greeting} Your result is \${value}\`;
-        `
       },
       // Function that throws an error
       {
         name: 'unsafeError',
-        code: 'function unsafeError(message) { throw new Error(message); }',
-        signature: 'unsafeError(message)',
+        impl: 'function unsafeError(message) { throw new Error(message); }',
         description: 'Throws an error',
-        impl: 'throw new Error(args[0]);'
       }
     ];
     
@@ -156,10 +142,8 @@ describe('GameCodeSandbox', () => {
     test('should allow registering additional unsafe functions after creation', async () => {
       const newUnsafeFunction: FunctionDefinition = {
         name: 'unsafeSubtract',
-        code: 'function unsafeSubtract(a, b) { return a - b; }',
-        signature: 'unsafeSubtract(a, b)',
+        impl: 'function unsafeSubtract(a, b) { return a - b; }',
         description: 'Subtracts two numbers',
-        impl: 'return args[0] - args[1];'
       };
       
       sandbox.registerUnsafeFunction(newUnsafeFunction);

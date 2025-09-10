@@ -9,6 +9,7 @@ interface InitGamePromptArgs {
   gameSpecification: string;
   functionDocumentation: string;
   playerIds: string[];
+  stateSchema?: string;
 }
 
 interface ProcessActionPromptArgs {
@@ -17,6 +18,7 @@ interface ProcessActionPromptArgs {
   playerId?: string;
   action?: string;
   currentState: string;
+  stateSchema?: string;
 }
 
 interface ErrorRecoveryPromptArgs {
@@ -28,12 +30,27 @@ interface ErrorRecoveryPromptArgs {
   playerIds?: string[];
   action: string | null;
   currentState: string;
+  stateSchema?: string;
 }
 
 /**
  * Creates a prompt for initializing a game using the CodeAct methodology
  */
 export function createInitGamePrompt(args: InitGamePromptArgs): string {
+  const schemaSection = args.stateSchema ? `
+# State Schema
+The game state must conform to this schema structure:
+\`\`\`json
+${args.stateSchema}
+\`\`\`
+
+# State Structure Guidelines
+- Follow the exact field names and structure defined in the schema
+- Do NOT assume field names - use only what's defined in the schema
+- Use the schema as the source of truth for all state field references
+- Nested objects should follow the schema's properties structure
+` : '';
+
   return `
 You are a game master AI that manages a text-based game. You have access to a sandbox environment
 where you can execute code to initialize a new game session.
@@ -42,8 +59,28 @@ where you can execute code to initialize a new game session.
 ${args.gameSpecification}
 
 # Available Functions
-You have access to the following functions:
+The sandbox environment provides these functions that you can call directly:
 ${args.functionDocumentation}
+
+${schemaSection}
+
+# Function Responsibility
+This function ONLY handles game initialization. Do NOT handle action processing or other game logic.
+
+# State Management Pattern
+- Call the appropriate initialization function(s) from the available functions
+- The function will return a complete game state object
+- Use that state object directly in your return value
+- Do NOT wrap or modify the returned state object
+
+# Message Guidelines
+Generate concise, relevant messages:
+- public: Messages visible to all players (game announcements)
+- private: Player-specific messages (personal notifications)
+
+Example message structure:
+- public: ["Game started!", "Round 1 begins!"]
+- private: { "player1": ["You are Player 1"], "player2": ["You are Player 2"] }
 
 # Task
 Implement the following function that initializes a new game:
@@ -63,16 +100,14 @@ Implement the following function that initializes a new game:
 function ai_initializeGame(playerIds, gameSpec) {
   // YOUR CODE GOES HERE
   // Use the playerIds array that's passed to this function
-  // Create the initial game state
+  // Call the appropriate initialization function from the available functions
   // Generate welcome messages for all players
   
-  // Return the result object with this structure
+  // Pattern: Use the complete state object returned by initialization functions
   return {
-    state: {
-      // Your game state goes here
-    },
+    state: gameStateFromInitFunction,  // Complete game state object
     messages: {
-      public: ["Message visible to all players"],
+      public: ["Concise public messages"],
       private: {
         // Each player ID should have an array of messages
       }
@@ -86,7 +121,9 @@ IMPORTANT:
 - DO NOT call the function yourself
 - DO NOT use an IIFE pattern
 - The function will be called by the system with the appropriate arguments
-- Make sure you use the playerIds parameter that's passed to the function
+- Use the complete state object returned by initialization functions
+- Keep messages concise and relevant
+${args.stateSchema ? '- Follow the exact state structure defined in the schema above' : ''}
 
 Return your code wrapped in a code block with a complete implementation of the ai_initializeGame function.
 `;
@@ -99,6 +136,21 @@ export function createProcessActionPrompt(args: ProcessActionPromptArgs): string
   const playerIdExample = args.playerId ? `"${args.playerId}"` : "playerId";
   const actionExample = args.action ? `"${args.action}"` : "action";
   
+  const schemaSection = args.stateSchema ? `
+# State Schema
+The game state must conform to this schema structure:
+\`\`\`json
+${args.stateSchema}
+\`\`\`
+
+# State Structure Guidelines
+- Follow the exact field names and structure defined in the schema
+- Do NOT assume field names - use only what's defined in the schema
+- Use the schema as the source of truth for all state field references
+- Nested objects should follow the schema's properties structure
+- When checking conditions, use the field names from the schema
+` : '';
+  
   return `
 You are a game master AI that manages a text-based game. You have access to a sandbox environment
 where you can execute code to process player actions and update the game state.
@@ -107,13 +159,45 @@ where you can execute code to process player actions and update the game state.
 ${args.gameSpecification}
 
 # Available Functions
-You have access to the following functions:
+The sandbox environment provides these functions that you can call directly:
 ${args.functionDocumentation}
 
 # Current Game State
 \`\`\`json
 ${args.currentState}
 \`\`\`
+
+${schemaSection}
+
+# Function Responsibility & Assumptions
+This function ONLY handles action processing. Critical assumptions:
+- The game is ALREADY INITIALIZED when this function is called
+- You do NOT need to check if the game state is empty
+- You do NOT need to handle game initialization within this function
+- The currentState parameter will always contain a valid, initialized game state
+- Do NOT mix initialization logic with action processing
+
+# State Management Pattern
+1. Validate the action using available validation functions
+2. If validation fails, return the current state unchanged with error message
+3. Apply state changes using available functions
+4. Return the complete updated state object (not wrapped or modified)
+
+# Error Handling Pattern
+Handle validation errors gracefully:
+- If validation fails, return current state with private error message to the player
+- Use try/catch for function calls that might throw exceptions
+- Keep error messages clear and actionable
+
+# Message Guidelines
+Generate concise, relevant messages:
+- public: Game announcements visible to all players
+- private: Player-specific notifications and feedback
+
+Example message patterns:
+- Successful action: private message to acting player, public message if needed
+- Invalid action: private error message to acting player only
+- Game events: public messages about round results, game state changes
 
 # Task
 Implement the following function that processes a player action:
@@ -123,7 +207,7 @@ Implement the following function that processes a player action:
  * Process an action taken by a player
  * @param {string} playerId - ID of the player taking the action
  * @param {string} action - The action text from the player
- * @param {object} currentState - Current game state
+ * @param {object} currentState - Current game state (guaranteed to be initialized)
  * @param {object} gameSpec - The game specification object
  * @returns {object} Object containing updated state and messages
  * 
@@ -134,19 +218,18 @@ Implement the following function that processes a player action:
  */
 function ai_processAction(playerId, action, currentState, gameSpec) {
   // YOUR CODE GOES HERE
-  // Use the parameters that are passed to this function
-  // Process the action based on current game state
-  // Generate appropriate messages
+  // Step 1: Validate the action (currentState is guaranteed to be initialized)
+  // Step 2: Apply the validated action using available functions
+  // Step 3: Handle any follow-up game logic using available functions
+  // Step 4: Return the updated state with appropriate messages
   
-  // Return the result object with this structure
+  // Pattern: Always return complete state object from functions
   return {
-    state: {
-      // Updated game state goes here
-    },
+    state: completeUpdatedState,  // Complete game state object from functions
     messages: {
-      public: ["Message visible to all players"],
+      public: ["Concise public messages"],
       private: {
-        // Each player ID should have an array of messages
+        [playerId]: ["Player-specific messages"]
       }
     }
   };
@@ -157,9 +240,12 @@ IMPORTANT:
 - Implement ONLY the body of the function
 - DO NOT call the function yourself
 - DO NOT use an IIFE pattern
+- DO NOT handle game initialization
 - The function will be called by the system with the appropriate arguments
-- Make sure you use the parameters that are passed to the function
-- The currentState parameter contains the game state as shown above
+- Use complete state objects returned by available functions
+- Keep messages concise and relevant
+${args.stateSchema ? '- Follow the exact state structure defined in the schema above' : ''}
+${args.stateSchema ? '- Do NOT hardcode field names - use only what exists in the schema' : ''}
 
 Return your code wrapped in a code block with a complete implementation of the ai_processAction function.
 `;
@@ -193,7 +279,7 @@ export function createErrorRecoveryPrompt(args: ErrorRecoveryPromptArgs): string
  * Process an action taken by a player
  * @param {string} playerId - ID of the player taking the action
  * @param {string} action - The action text from the player
- * @param {object} currentState - Current game state
+ * @param {object} currentState - Current game state (guaranteed to be initialized)
  * @param {object} gameSpec - The game specification object
  * @returns {object} Object containing updated state and messages
  * 
@@ -205,9 +291,46 @@ export function createErrorRecoveryPrompt(args: ErrorRecoveryPromptArgs): string
 
   // Add clear example of the error and how to access functions
   const errorExample = args.errorMessage.includes('is not defined')
-    ? `// ERROR EXAMPLE: The error "${args.errorMessage}" is likely because you're trying to
-// use a function that does not exist.  Make sure you only call functions provided.`
-    : `// ERROR to fix: "${args.errorMessage}"`;
+    ? `// ERROR ANALYSIS: The error "${args.errorMessage}" suggests you tried to
+// call a function that doesn't exist. Only use functions from the Available Functions list.`
+    : `// ERROR TO FIX: "${args.errorMessage}"`;
+
+  const specificGuidance = args.operation === 'initialize'
+    ? `# Function Responsibility
+This function ONLY handles game initialization. Do NOT handle action processing.
+
+# Key Points for Initialization:
+- Use the playerIds array that's passed to the function
+- Call appropriate initialization function(s) from available functions
+- Return the complete state object from initialization functions
+- Generate welcome messages for players`
+    : `# Function Responsibility & Assumptions
+This function ONLY handles action processing. Key assumptions:
+- The game is ALREADY INITIALIZED (do not check for empty states)
+- Do NOT handle initialization logic
+- The currentState parameter contains a valid, initialized game state
+- Focus only on processing the specific action provided
+
+# Key Points for Action Processing:
+- Validate the action using available functions
+- Apply state changes using available functions
+- Return complete updated state objects from functions
+- Generate appropriate response messages`;
+
+  const schemaSection = args.stateSchema ? `
+# State Schema
+The game state must conform to this schema structure:
+\`\`\`json
+${args.stateSchema}
+\`\`\`
+
+# State Structure Guidelines
+- Follow the exact field names and structure defined in the schema
+- Do NOT assume field names - use only what's defined in the schema
+- Use the schema as the source of truth for all state field references
+- Nested objects should follow the schema's properties structure
+- This may help you avoid the error that occurred previously
+` : '';
   
   return `
 You are a game master AI that manages a text-based game. You have access to a sandbox environment
@@ -217,7 +340,7 @@ where you can execute code to manage the game state, but there was an error with
 ${args.gameSpecification}
 
 # Available Functions
-You have access to the following functions:
+The sandbox environment provides these functions that you can call directly:
 ${args.functionDocumentation}
 
 # Current Game State
@@ -225,34 +348,48 @@ ${args.functionDocumentation}
 ${args.currentState}
 \`\`\`
 
+${schemaSection}
+
 # Error Information
 The following error occurred while trying to ${args.operation} the game:
 ${args.errorMessage}
 
+${specificGuidance}
+
+# State Management Pattern
+- Use complete state objects returned by available functions
+- Do NOT wrap or modify state objects returned by functions
+- Handle function errors with try/catch blocks
+- Return current state unchanged if validation fails
+
+# Message Guidelines
+Generate concise, relevant messages:
+- Keep error messages clear and actionable
+- Use private messages for player-specific feedback
+- Use public messages for game-wide announcements
+
 # Task
 ${taskDescription}
 
-Implement the following function to fix the error:
+Fix the error and implement the following function:
 
 \`\`\`javascript
 ${functionComment}
 ${functionSignature} {
   // YOUR CODE GOES HERE
-  // Fix the error described above
   ${errorExample}
   
-  // ${args.operation === 'initialize' ? 'Create the initial game state' : 'Process the action and update the game state'}
+  // ${args.operation === 'initialize' ? 'Call initialization functions and return complete state' : 'Process action using available functions and return updated state'}
   // Generate appropriate messages for players
+  // Handle errors gracefully
   
-  // Return the result object with this structure
+  // Pattern: Return complete state object from functions
   return {
-    state: {
-      // ${args.operation === 'initialize' ? 'Initial' : 'Updated'} game state goes here
-    },
+    state: completeStateObject,  // Complete state from available functions
     messages: {
-      public: ["Message visible to all players"],
+      public: ["Concise public messages"],
       private: {
-        // Each player ID should have an array of messages
+        // Player-specific messages
       }
     }
   };
@@ -262,9 +399,12 @@ ${functionSignature} {
 IMPORTANT:
 - Implement ONLY the body of the function
 - DO NOT call the function yourself
-- Make sure you use the parameters that are passed to the function
-- Avoid the error that occurred previously
-- The function will be called by the system with the appropriate arguments
+- Fix the specific error that occurred
+- Use only functions from the Available Functions list
+- ${args.operation === 'initialize' ? 'Do NOT handle action processing' : 'Do NOT handle initialization logic'}
+- Return complete state objects from available functions
+${args.stateSchema ? '- Follow the exact state structure defined in the schema above' : ''}
+${args.stateSchema ? '- Do NOT hardcode field names - use only what exists in the schema' : ''}
 
 Return your code wrapped in a code block with a complete implementation of the ${args.operation === 'initialize' ? 'ai_initializeGame' : 'ai_processAction'} function.
 `;

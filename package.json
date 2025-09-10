@@ -13,6 +13,8 @@
     "run-design-test": "tsc && node ./dist/ai/design/__tests__/design-workflow.test.js",
     "run-codeact-discovery:rps-example": "npm run build && node ./dist/ai/codeact/run-rps-example.js",
     "run-codeact-simulate": "npm run build && node --experimental-vm-modules ./dist/ai/codeact/simulate/cli.js",
+    "run-game-session-test": "npm run build && node --experimental-vm-modules ./dist/ai/codeact/simulate/game-session-test.js",
+    "run-complete-game-test": "npm run build && node --experimental-vm-modules ./dist/ai/codeact/simulate/complete-game-test.js",
     "test:simulation": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/__tests__/simulate-workflow.test.ts",
     "test:generate": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/gen/generators/__tests__/state-machine-generator.test.ts",
     "test:action-queues": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/__tests__/action-queues.test.ts",

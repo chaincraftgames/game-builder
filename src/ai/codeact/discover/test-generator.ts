@@ -1,5 +1,5 @@
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { invokeModel } from '../utils.js';
+import { invokeModel, ModelWithOptions } from '../model-config.js';
 import { StateSchemaResult } from './schema-designer.js';
 import { FunctionDesign } from './function-designer.js';
 
@@ -80,13 +80,15 @@ runAllTests();
 /**
  * Generate black-box tests based only on function signatures and design requirements,
  * without knowledge of the implementation details.
- * @param {BaseChatModel} model - The language model to use
+ * @param {ModelWithOptions} model - The model with options to use
  * @param {TestGenerationParams} params - Parameters including game specification, state schema, and function signatures
+ * @param {object} metadata - Optional metadata for tracing
  * @returns {Promise<TestGenerationResult>} Test code and timing information
  */
 export const generateBlackBoxTests = async (
-  model: BaseChatModel, 
-  params: TestGenerationParams
+  model: ModelWithOptions, 
+  params: TestGenerationParams,
+  metadata?: { [key: string]: any }
 ): Promise<TestGenerationResult> => {
   const { gameSpecification, stateSchema, functionDesign, functionSignatures } = params;
   console.log("🧪 Stage 6: Generating black-box tests...");
@@ -164,7 +166,7 @@ export const generateBlackBoxTests = async (
     Return ONLY executable JavaScript code that can run directly. No markdown formatting or text explanations outside the code.
     `;
   
-  const response = await invokeModel(model, prompt);
+  const response = await invokeModel(model, prompt, undefined, metadata);
   
   // Extract the test code from the response
   let testCode = response.content.trim();
@@ -203,13 +205,15 @@ export const generateBlackBoxTests = async (
 
 /**
  * Generate improved black-box tests with more explicit instructions
- * @param {BaseChatModel} model - The language model to use
+ * @param {ModelWithOptions} model - The model with options to use
  * @param {TestGenerationParams} params - Parameters for test generation
+ * @param {object} metadata - Optional metadata for tracing
  * @returns {Promise<TestGenerationResult>} Improved test code and timing information
  */
 export const generateImprovedBlackBoxTests = async (
-  model: BaseChatModel, 
-  params: TestGenerationParams
+  model: ModelWithOptions, 
+  params: TestGenerationParams,
+  metadata?: { [key: string]: any }
 ): Promise<TestGenerationResult> => {
   const { gameSpecification, stateSchema, functionDesign, functionSignatures } = params;
   console.log("🔄 Generating improved black-box tests...");
@@ -334,7 +338,7 @@ export const generateImprovedBlackBoxTests = async (
     runAllTests();
   `;
   
-  const response = await invokeModel(model, prompt);
+  const response = await invokeModel(model, prompt, undefined, metadata);
   
   // Extract the test code from the response
   let testCode = response.content.trim();

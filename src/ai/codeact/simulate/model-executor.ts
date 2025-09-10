@@ -8,9 +8,9 @@
  * 4. Results are used to update the game state
  */
 
-import { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { ModelWithOptions, invokeModel } from "../model-config.js";
 import { FunctionRegistry, FunctionDefinition } from "../function-registry.js";
-import { GameCodeSandbox, SandboxExecutionResult } from "../sandbox/sandbox.js";
+import { GameCodeSandbox } from "../sandbox/sandbox.js";
 import { 
   createInitGamePrompt,
   createProcessActionPrompt,
@@ -55,7 +55,7 @@ export interface SimulationResult {
 }
 
 export interface ModelExecutorOptions {
-  model: BaseChatModel;
+  model: ModelWithOptions;
   functionRegistry: FunctionRegistry;
   gameSpecification: string;
   stateDefinition?: string;
@@ -85,17 +85,19 @@ export function createExecutionContext(options: ModelExecutorOptions): Execution
  * 
  * @param context The execution context
  * @param options The model executor options
+ * @param gameId The unique identifier for the game instance
  * @returns The initialized game state
  */
 export async function initializeGame(
   context: ExecutionContext,
-  options: ModelExecutorOptions
+  options: ModelExecutorOptions,
+  gameId?: string
 ): Promise<SimulationResult> {
   console.log('[ModelExecutor] Initializing game state with model: ' + options.model.constructor.name);
   
   // Generate initialize function first if needed
   if (!context.codeImplementations.initializeGame) {
-    await generateInitializeFunction(context, options);
+    await generateInitializeFunction(context, options, gameId);
   }
   
   const playerIds = context.playerIds || [];
@@ -138,12 +140,14 @@ export async function initializeGame(
   // Execute the code in the sandbox
   const executionResult = await sandbox.execute(
     executableCode,
-    [{
+    {
       playerIds,
       gameSpec: options.gameSpecification
-    }],
+    },
     { timeoutMs: 10000 }
   );
+  
+  console.log('[ModelExecutor] Raw execution result:', JSON.stringify(executionResult, null, 2));
   
   // Add code to history with execution result
   context.codeHistory.push({
@@ -159,8 +163,10 @@ export async function initializeGame(
   
   if (executionResult.error) {
     console.error('[ModelExecutor] Initialization error:', executionResult.error);
+    console.error('[ModelExecutor] Execution result:', JSON.stringify(executionResult, null, 2));
+    console.error('[ModelExecutor] Generated code:', aiGeneratedCode);
     return await recoverFromError(
-      context, options, 'initialize', playerIds, executionResult.error, null
+      context, options, 'initialize', playerIds, executionResult.error, null, gameId
     );
   }
   
@@ -173,7 +179,7 @@ export async function initializeGame(
     // Attempt recovery for validation errors
     if (error instanceof Error) {
       return await recoverFromError(
-        context, options, 'initialize', playerIds, error.message, null
+        context, options, 'initialize', playerIds, error.message, null, gameId
       );
     }
     throw error;
@@ -185,11 +191,13 @@ export async function initializeGame(
  * 
  * @param context The execution context
  * @param options The model executor options
+ * @param gameId The unique identifier for the game instance
  * @returns Promise resolving when the function is available
  */
 async function generateInitializeFunction(
   context: ExecutionContext,
-  options: ModelExecutorOptions
+  options: ModelExecutorOptions,
+  gameId?: string
 ): Promise<void> {
   console.log('[ModelExecutor] Generating initialize function with model');
   
@@ -200,10 +208,7 @@ async function generateInitializeFunction(
   }
   
   // Get function documentation from registry
-  const functionDocs = options.functionRegistry.getAllFunctions()
-    .map((fn: FunctionDefinition) => `${fn.signature}\n${fn.description}`)
-    .join('\n\n');
-  
+  const functionDocs = getFunctionDocs(options)
   // Prepare the prompt for the model using the imported prompt template function
   const prompt = createInitGamePrompt({
     gameSpecification: options.gameSpecification,
@@ -213,7 +218,11 @@ async function generateInitializeFunction(
   
   try {
     // Get the implementation from the model
-    const response = await options.model.invoke(prompt);
+    const response = await invokeModel(options.model, prompt, undefined, {
+      gameId: gameId || 'unknown',
+      operation: 'initialize',
+      timestamp: new Date().toISOString()
+    });
     const aiGeneratedCode = extractCodeFromResponse(response.content as string, 'initializeGame');
     
     if (!aiGeneratedCode) {
@@ -243,13 +252,14 @@ export async function processAction(
   context: ExecutionContext,
   options: ModelExecutorOptions,
   playerId: string,
-  action: string
+  action: string,
+  gameId?: string
 ): Promise<SimulationResult> {
   console.log(`[ModelExecutor] Processing action for player ${playerId}: ${action}`);
   
   // Generate process function if needed
   if (!context.codeImplementations.processAction) {
-    await generateProcessActionFunction(context, options, playerId, action);
+    await generateProcessActionFunction(context, options, playerId, action, gameId);
   }
 
   // Store the current function implementation
@@ -279,11 +289,11 @@ export async function processAction(
   // Execute the code in the sandbox
   const executionResult = await sandbox.execute(
     executableCode,
-    [{
+    {
       playerId,
       action,
       currentState: { ...context.currentState },
-    }],
+    },
     { timeoutMs: 5000 }
   );
   
@@ -309,7 +319,8 @@ export async function processAction(
       'process',
       playerId,
       executionResult.error,
-      action
+      action,
+      gameId
     );
   }
   
@@ -339,13 +350,17 @@ export async function processAction(
  * 
  * @param context The execution context
  * @param options The model executor options
+ * @param playerId The ID of the player taking the action
+ * @param action The action being taken
+ * @param gameId The unique identifier for the game instance
  * @returns Promise resolving when the function is available
  */
 async function generateProcessActionFunction(
   context: ExecutionContext,
   options: ModelExecutorOptions,
   playerId: string,
-  action: string
+  action: string,
+  gameId?: string
 ): Promise<void> {
   console.log('[ModelExecutor] Generating process action function with model');
   
@@ -356,10 +371,8 @@ async function generateProcessActionFunction(
   }
   
   // Get function documentation from registry
-  const functionDocs = options.functionRegistry.getAllFunctions()
-    .map((fn: FunctionDefinition) => `${fn.signature}\n${fn.description}`)
-    .join('\n\n');
-  
+  const functionDocs = getFunctionDocs(options);
+
   // Get the current state to provide as context
   const currentStateJson = JSON.stringify(context.currentState, null, 2);
   
@@ -374,7 +387,13 @@ async function generateProcessActionFunction(
   
   try {
     // Get the implementation from the model
-    const response = await options.model.invoke(prompt);
+    const response = await invokeModel(options.model, prompt, undefined, {
+      gameId: gameId || 'unknown',
+      playerId: playerId,
+      action: action,
+      operation: 'process-action',
+      timestamp: new Date().toISOString()
+    });
     const aiGeneratedCode = extractCodeFromResponse(response.content as string, 'processAction');
     
     if (!aiGeneratedCode) {
@@ -399,6 +418,7 @@ async function generateProcessActionFunction(
  * @param idOrAction The player ID or action that was being processed
  * @param errorMessage The error message that occurred
  * @param actionText The action text (if processing an action)
+ * @param gameId The unique identifier for the game instance
  * @returns The result after recovery attempt
  */
 async function recoverFromError(
@@ -407,15 +427,14 @@ async function recoverFromError(
   operation: 'initialize' | 'process',
   idOrAction: string | string[],
   errorMessage: string,
-  actionText: string | null
+  actionText: string | null,
+  gameId?: string
 ): Promise<SimulationResult> {
   console.log(`[ModelExecutor] Attempting to recover from error in ${operation} operation`);
   
   // Get function documentation from registry
-  const functionDocs = options.functionRegistry.getAllFunctions()
-    .map((fn: FunctionDefinition) => `${fn.signature}\n${fn.description}`)
-    .join('\n\n');
-  
+  const functionDocs = getFunctionDocs(options);
+
   // Create prompt for error recovery
   const prompt = createErrorRecoveryPrompt({
     gameSpecification: '',
@@ -432,7 +451,14 @@ async function recoverFromError(
   const functionName = operation === 'initialize' ? 'initializeGame' : 'processAction';
   
   // Ask the model to generate fixed code
-  const response = await options.model.invoke(prompt);
+  const response = await invokeModel(options.model, prompt, undefined, {
+    gameId: gameId || 'unknown',
+    operation: `error-recovery-${operation}`,
+    playerId: Array.isArray(idOrAction) ? 'multiple' : idOrAction,
+    action: actionText || 'none',
+    errorMessage: errorMessage.substring(0, 100), // Truncate long error messages
+    timestamp: new Date().toISOString()
+  });
   const aiGeneratedCode = extractCodeFromResponse(response.content as string, functionName);
   
   if (!aiGeneratedCode) {
@@ -461,22 +487,28 @@ async function recoverFromError(
   
   // Prepare the execution arguments
   const executionArgs = operation === 'initialize' 
-    ? [{
+    ? {
         playerIds: idOrAction, 
         gameSpec: ''
-      }]
-    : [{
+      }
+    : {
         playerId: idOrAction as string,
         action: actionText,
         currentState: { ...context.currentState },
         gameSpec: ''
-      }];
+      };
   
   // Create the sandbox for executing the code
   const sandbox = new GameCodeSandbox({ 
     debugMode: true 
   });
-  
+
+  // Load unsafe functions into the error recovery sandbox (same as main execution)
+  const unsafeFunctions = options.functionRegistry.getAllFunctions();
+  for (const funcDef of unsafeFunctions) {
+    sandbox.registerUnsafeFunction(funcDef);
+  }
+
   // Execute the wrapped code in the sandbox
   const executionResult = await sandbox.execute(
     executableCode,
@@ -498,6 +530,9 @@ async function recoverFromError(
   
   if (executionResult.error) {
     console.error('[ModelExecutor] Error recovery failed:', executionResult.error);
+    console.error('[ModelExecutor] Error recovery execution result:', JSON.stringify(executionResult, null, 2));
+    console.error('[ModelExecutor] Error recovery generated code:', aiGeneratedCode);
+    console.error('[ModelExecutor] Error recovery executable code:', executableCode);
     throw new Error(`Error recovery failed: ${executionResult.error}`);
   }
   
@@ -704,4 +739,9 @@ export function getLastGeneratedCode(context: ExecutionContext): ExecutionContex
     return null;
   }
   return context.codeHistory[context.codeHistory.length - 1];
+}
+
+function getFunctionDocs(options: ModelExecutorOptions): string {
+  const functions = options.functionRegistry.getAllFunctions();
+  return functions.map(fn => fn.description).join('\n\n---\n\n');
 }

@@ -1,26 +1,7 @@
 import dotenv from 'dotenv';
-import { HumanMessage } from '@langchain/core/messages';
-import { getModel } from '#chaincraft/ai/model.js';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
 // Load environment variables
 dotenv.config();
-
-/**
- * Model setup result interface
- */
-export interface ModelSetup {
-  model: BaseChatModel;
-  MODEL_NAME: string;
-}
-
-/**
- * Model invocation response interface
- */
-export interface ModelResponse {
-  content: string;
-  [key: string]: any;
-}
 
 /**
  * Safe execution result interface
@@ -31,37 +12,6 @@ export interface ExecutionResult {
   executionTime: number;
   error: string | null;
 }
-
-/**
- * Configure the model - we use a powerful model for code generation
- */
-export const setupModel = async (): Promise<ModelSetup> => {
-  const MODEL_NAME = process.env.CHAINCRAFT_DISCOVERY_MODEL_NAME || '';
-  const model = await getModel(MODEL_NAME);
-  return { model, MODEL_NAME };
-};
-
-/**
- * Invoke the model with a prompt
- * @param {BaseChatModel} model - The language model to use
- * @param {string} prompt - The prompt text to send to the model
- * @param {Array} callbacks - Optional callbacks for tracing
- * @returns {Promise<ModelResponse>} The model's response
- */
-export const invokeModel = async (
-  model: BaseChatModel, 
-  prompt: string, 
-  callbacks: any[] = []
-): Promise<ModelResponse> => {
-  return await model.invoke(
-    [
-      new HumanMessage(prompt)
-    ],
-    {
-      callbacks,
-    }
-  ) as ModelResponse;
-};
 
 /**
  * Safely execute a function with timeout and memory limits

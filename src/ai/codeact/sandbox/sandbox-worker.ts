@@ -325,7 +325,15 @@ function createSandboxContext(): Record<string, any> {
         // Create function with access to current sandbox context
         const contextKeys = Object.keys(sandbox);
         const contextValues = contextKeys.map(key => sandbox[key]);
-        const asyncFunction = new Function(...contextKeys, 'args', `return (async function() { ${func.impl} })()`);
+        
+        // func.impl contains the complete function definition, so we need to:
+        // 1. Execute the function definition to declare it
+        // 2. Then call the function with the provided args
+        const wrapperCode = `
+          ${func.impl}
+          return ${name}(...args);
+        `;
+        const asyncFunction = new Function(...contextKeys, 'args', `return (async function() { ${wrapperCode} })()`);
         return asyncFunction(...contextValues, args);
       });
     } else {
@@ -335,11 +343,39 @@ function createSandboxContext(): Record<string, any> {
           console.warn(`[SandboxWorker] Executing sync unsafe function "${name}" with args:`, args);
         }
         
-        // Create function with access to current sandbox context
-        const contextKeys = Object.keys(sandbox);
-        const contextValues = contextKeys.map(key => sandbox[key]);
-        const syncFunction = new Function(...contextKeys, 'args', func.impl);
-        return syncFunction(...contextValues, args);
+        try {
+          // Create function with access to current sandbox context
+          const contextKeys = Object.keys(sandbox);
+          const contextValues = contextKeys.map(key => sandbox[key]);
+          
+          // func.impl contains the complete function definition, so we need to:
+          // 1. Execute the function definition to declare it
+          // 2. Then call the function with the provided args
+          const wrapperCode = `
+            ${func.impl}
+            return ${name}(...args);
+          `;
+          
+          if (debugMode) {
+            console.log(`[SandboxWorker] Executing wrapper code for "${name}":`, wrapperCode.substring(0, 200) + '...');
+            console.log(`[SandboxWorker] Context keys:`, contextKeys);
+          }
+          
+          const syncFunction = new Function(...contextKeys, 'args', wrapperCode);
+          const result = syncFunction(...contextValues, args);
+          
+          if (debugMode) {
+            console.log(`[SandboxWorker] Function "${name}" returned:`, result);
+          }
+          
+          return result;
+        } catch (error: any) {
+          if (debugMode) {
+            console.error(`[SandboxWorker] Error in unsafe function "${name}":`, error);
+            console.error(`[SandboxWorker] Function implementation:`, func.impl);
+          }
+          throw error;
+        }
       });
     }
   }
