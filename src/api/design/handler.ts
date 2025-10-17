@@ -76,8 +76,8 @@ export async function handleGenerateImage(
   }
 
   try {
-    const { conversationId } = result.data;
-    const imageUrl = await generateImage(conversationId);
+    const { conversationId, image_type } = result.data;
+    const imageUrl = await generateImage(conversationId, image_type);
 
     return {
       imageUrl,

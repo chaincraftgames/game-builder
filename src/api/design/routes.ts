@@ -42,7 +42,7 @@ export async function registerDesignRoutes(server: FastifyInstance) {
     handler: handleContinueDesignConversation,
   });
 
-  // Generate image for game design
+  // Generate image for game design (supports both legacy cartridge and raw image types)
   server.post("/conversation/generate-image", {
     schema: {
       body: zodToJsonSchema(GenerateImageRequestSchema, "generateImageRequest"),

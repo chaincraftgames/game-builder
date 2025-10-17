@@ -30,6 +30,7 @@ export const ContinueDesignConversationResponseSchema = z.object({
 // Generate image schemas
 export const GenerateImageRequestSchema = z.object({
   conversationId: z.string().min(1),
+  image_type: z.enum(["legacy", "raw"]).optional().default("legacy"),
 });
 
 export const GenerateImageResponseSchema = z.object({

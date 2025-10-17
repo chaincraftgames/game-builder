@@ -30,6 +30,8 @@ import {
   gameSummaryTag,
   gamePlayerCountTag,
   imageGenPrompt,
+  rawImageGenPrompt,
+  rawImageNegativePrompt,
 } from "#chaincraft/ai/design/game-design-prompts.js";
 import { getModel } from "#chaincraft/ai/model.js";
 import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
@@ -39,7 +41,7 @@ import {
   isActiveConversation as _isActiveConversation,
   registerConversationId,
 } from "#chaincraft/ai/conversation.js";
-import { imageGenTool } from "#chaincraft/ai/tools.js";
+import { imageGenTool, rawImageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
 import { constraintsRegistry, getConstraintsRegistry } from "./design-data.js";
@@ -79,6 +81,9 @@ const conversationSystemMessage = SystemMessagePromptTemplate.fromTemplate(
 
 const imageGenSystemMessage =
   SystemMessagePromptTemplate.fromTemplate(imageGenPrompt);
+
+const rawImageGenSystemMessage =
+  SystemMessagePromptTemplate.fromTemplate(rawImageGenPrompt);
 
 const gameTitleRegex = new RegExp(
   `.*?${gameTitleTag}(.*?)${gameTitleTag.replace("<", "</")}`,
@@ -142,7 +147,10 @@ export async function continueDesignConversation(
   return _processMessage(graph, message, config);
 }
 
-export async function generateImage(conversationId: string): Promise<string> {
+export async function generateImage(
+  conversationId: string,
+  imageType: "legacy" | "raw" = "legacy"
+): Promise<string> {
   const specAndTitle = await getFullDesignSpecification(conversationId);
   if (!specAndTitle) {
     throw new Error("Failed to generate image: no game design spec");
@@ -150,6 +158,7 @@ export async function generateImage(conversationId: string): Promise<string> {
 
   const { summary, title } = specAndTitle;
 
+  // Step 1: Generate image description with AI (same for both types)
   const imageDesign = await model
     .invoke(
       [
@@ -172,29 +181,55 @@ export async function generateImage(conversationId: string): Promise<string> {
       }
     });
   if (!imageDesign.content) {
-    throw new Error("Failed to generate image: no content");
+    throw new Error("Failed to generate image description: no content");
   }
 
-  const imageGenPrompt = await imageGenSystemMessage.format({
-    // game_summary: summary,
-    image_description: imageDesign.content.toString().substring(0, 600),
-    game_title: title,
-  });
-  const imageUrl = await imageGenTool
-    .invoke(imageGenPrompt.content, {
-      callbacks: [chaincraftDesignTracer],
-    })
-    .catch((error) => {
-      if (error.type && error.type == "overloaded_error") {
-        throw new OverloadedError(error.message);
-      } else {
-        throw error;
-      }
+  // Step 2: Choose the appropriate prompt and tool based on image type
+  if (imageType === "raw") {
+    // Use raw image generation
+    const rawImagePrompt = await rawImageGenSystemMessage.format({
+      image_description: imageDesign.content.toString().substring(0, 600),
+      game_title: title,
     });
-  if (!imageUrl) {
-    throw new Error("Failed to generate image: no image URL");
+
+    const imageUrl = await rawImageGenTool
+      .invoke(rawImagePrompt.content, {
+        callbacks: [chaincraftDesignTracer],
+        negativePrompt: rawImageNegativePrompt,
+      })
+      .catch((error) => {
+        if (error.type && error.type == "overloaded_error") {
+          throw new OverloadedError(error.message);
+        } else {
+          throw error;
+        }
+      });
+    if (!imageUrl) {
+      throw new Error("Failed to generate raw image: no image URL");
+    }
+    return imageUrl;
+  } else {
+    // Use legacy cartridge image generation
+    const imageGenPrompt = await imageGenSystemMessage.format({
+      image_description: imageDesign.content.toString().substring(0, 600),
+      game_title: title,
+    });
+    const imageUrl = await imageGenTool
+      .invoke(imageGenPrompt.content, {
+        callbacks: [chaincraftDesignTracer],
+      })
+      .catch((error) => {
+        if (error.type && error.type == "overloaded_error") {
+          throw new OverloadedError(error.message);
+        } else {
+          throw error;
+        }
+      });
+    if (!imageUrl) {
+      throw new Error("Failed to generate legacy image: no image URL");
+    }
+    return imageUrl;
   }
-  return imageUrl;
 }
 
 export async function getFullDesignSpecification(
@@ -523,26 +558,9 @@ export async function getConversationHistory(
         return false;
       }
 
-      // Filter out spec response messages (they contain the XML tags)
-      if (
-        msg.type === "ai" &&
-        msg.content.includes("<game_specification_requested>")
-      ) {
-        return false;
-      }
-
-      // Filter out messages that are ONLY XML tags (not content wrapped in XML)
-      const trimmedContent = msg.content.trim();
-      if (
-        trimmedContent.startsWith("<") &&
-        trimmedContent.endsWith(">") &&
-        !trimmedContent.includes("\n") &&
-        trimmedContent.length < 100
-      ) {
-        // Only filter very short XML-only messages
-        return false;
-      }
-
+      // Keep everything else - let frontend handle display
+      // This includes spec response messages and XML-only messages
+      // as they may contain important metadata for parsing
       return true;
     });
 
