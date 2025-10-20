@@ -12,9 +12,6 @@ import {
   GetConversationHistoryRequest,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponse,
-  GetConversationMetadataRequest,
-  GetConversationMetadataRequestSchema,
-  GetConversationMetadataResponse,
   PublishGameRequest,
   PublishGameRequestSchema,
   PublishGameResponse,
@@ -24,7 +21,6 @@ import {
   generateImage,
   getFullDesignSpecification,
   getCachedDesignSpecification,
-  getCachedConversationMetadata,
   getConversationHistory,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
@@ -183,37 +179,6 @@ export async function handleGetConversationHistory(
   }
 }
 
-export async function handleGetConversationMetadata(
-  request: FastifyRequest<{ Body: GetConversationMetadataRequest }>,
-  reply: FastifyReply
-): Promise<GetConversationMetadataResponse> {
-  const result = GetConversationMetadataRequestSchema.safeParse(request.body);
-
-  if (!result.success) {
-    reply.code(400).send({ error: "Invalid request", details: result.error });
-    return Promise.reject();
-  }
-
-  try {
-    const { conversationId } = result.data;
-
-    // Get cached metadata (doesn't create checkpoints)
-    const metadata = await getCachedConversationMetadata(conversationId);
-
-    if (!metadata) {
-      reply.code(404).send({ error: "Conversation metadata not found" });
-      return Promise.reject();
-    }
-
-    return {
-      title: metadata.title,
-    };
-  } catch (error) {
-    console.error("Error in getConversationMetadata:", error);
-    reply.code(500).send({ error: "Internal server error" });
-    return Promise.reject();
-  }
-}
 
 export async function handlePublishGame(
   request: FastifyRequest<{ Body: PublishGameRequest }>,
