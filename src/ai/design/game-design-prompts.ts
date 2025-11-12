@@ -133,6 +133,23 @@ features colorful 1990s-style game cover art inspired by:
 {image_description}
 
 The game title {game_title} is clearly printed at the top of the label in bold text. 
-The title is fully visible, with no distortion. Below the label is an embossed “CHAINCRAFT” logo 
+The title is fully visible, with no distortion. Below the label is an embossed "CHAINCRAFT" logo 
 molded into the plastic cartridge.
-`
+`;
+
+export const rawImageGenPrompt = `
+Retro video game art illustration, 1980s-1990s style with vibrant hand-drawn aesthetic and slightly faded vintage appearance. 
+IMPORTANT: The title "{game_title}" must be prominently displayed in bold lettering near the top of the image, 
+fully integrated into the design. Typography style, color, and effects must authentically match the game's 
+specific genre and emotional tone.
+
+Full bleed artwork depicting: {image_description}
+
+Title "{game_title}" rendered in period-accurate typography with thematically-driven styling. 
+Classic colorful 1980s-1990s gaming art style with dramatic composition, bold colors, and authentic 
+period-appropriate details.
+`;
+
+export const rawImageNegativePrompt = `
+no text, missing title, blank title area, wrong font style, modern fonts, yellow gradient text, orange gradient text, generic title colors, border, frame, box, cartridge, case, package, product, margin, white space, black border, edge border, outline, container, packaging, 3D render, game case, rectangular frame, modern digital art, photo realistic, UI elements, watermark, logo, breathing room, padding, inset
+`;

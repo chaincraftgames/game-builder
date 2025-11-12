@@ -7,6 +7,7 @@ This document describes the REST API endpoints for the ChainCraft GameBuilder sy
 The Design API provides endpoints for creating and managing game design conversations.
 
 ### Base URL
+
 ```
 /api/design
 ```
@@ -14,11 +15,13 @@ The Design API provides endpoints for creating and managing game design conversa
 ### Endpoints
 
 #### Continue Design Conversation
+
 **POST** `/conversation/continue`
 
 Continue an existing design conversation with a user message.
 
 **Request Body:**
+
 ```json
 {
   "conversationId": "string (required)",
@@ -28,6 +31,7 @@ Continue an existing design conversation with a user message.
 ```
 
 **Response:**
+
 ```json
 {
   "designResponse": "string",
@@ -45,18 +49,27 @@ Continue an existing design conversation with a user message.
 ```
 
 #### Generate Image
+
 **POST** `/conversation/generate-image`
 
-Generate an image for a game design.
+Generate an image for a game design. Supports both legacy cartridge styling and raw images.
 
 **Request Body:**
+
 ```json
 {
-  "conversationId": "string (required)"
+  "conversationId": "string (required)",
+  "image_type": "string (optional, default: 'legacy')"
 }
 ```
 
+**Parameters:**
+
+- `conversationId`: The ID of the conversation to generate an image for
+- `image_type`: Either `"legacy"` (cartridge styling) or `"raw"` (no cartridge styling)
+
 **Response:**
+
 ```json
 {
   "imageUrl": "string"
@@ -64,11 +77,13 @@ Generate an image for a game design.
 ```
 
 #### Get Full Specification
+
 **POST** `/conversation/specification`
 
 Retrieve the full game design specification.
 
 **Request Body:**
+
 ```json
 {
   "conversationId": "string (required)"
@@ -76,6 +91,7 @@ Retrieve the full game design specification.
 ```
 
 **Response:**
+
 ```json
 {
   "title": "string",
@@ -93,6 +109,7 @@ Retrieve the full game design specification.
 Legacy endpoint for backward compatibility.
 
 **Request Body:**
+
 ```json
 {
   "description": "string (required, max 2000 chars)"
@@ -100,6 +117,7 @@ Legacy endpoint for backward compatibility.
 ```
 
 **Response:**
+
 ```json
 {
   "gameDescription": "string"
@@ -111,6 +129,7 @@ Legacy endpoint for backward compatibility.
 The Simulate API provides endpoints for managing game simulations.
 
 ### Base URL
+
 ```
 /api/simulate
 ```
@@ -118,11 +137,13 @@ The Simulate API provides endpoints for managing game simulations.
 ### Endpoints
 
 #### Create Simulation
+
 **POST** `/create`
 
 Create a new game simulation.
 
 **Request Body:**
+
 ```json
 {
   "gameId": "string (required)",
@@ -132,6 +153,7 @@ Create a new game simulation.
 ```
 
 **Response:**
+
 ```json
 {
   "gameRules": "string"
@@ -139,11 +161,13 @@ Create a new game simulation.
 ```
 
 #### Initialize Simulation
+
 **POST** `/initialize`
 
 Initialize a simulation with players.
 
 **Request Body:**
+
 ```json
 {
   "gameId": "string (required)",
@@ -152,6 +176,7 @@ Initialize a simulation with players.
 ```
 
 **Response:**
+
 ```json
 {
   "publicMessage": "string (optional)",
@@ -167,11 +192,13 @@ Initialize a simulation with players.
 ```
 
 #### Process Action
+
 **POST** `/action`
 
 Process a player action in the simulation.
 
 **Request Body:**
+
 ```json
 {
   "gameId": "string (required)",
@@ -181,6 +208,7 @@ Process a player action in the simulation.
 ```
 
 **Response:**
+
 ```json
 {
   "publicMessage": "string (optional)",
@@ -197,11 +225,13 @@ Process a player action in the simulation.
 ```
 
 #### Get Simulation State
+
 **POST** `/state`
 
 Get the current state of a simulation.
 
 **Request Body:**
+
 ```json
 {
   "gameId": "string (required)"
@@ -209,6 +239,7 @@ Get the current state of a simulation.
 ```
 
 **Response:**
+
 ```json
 {
   "publicMessage": "string (optional)",
@@ -225,11 +256,13 @@ Get the current state of a simulation.
 ```
 
 #### Update Simulation
+
 **POST** `/update`
 
 Update a simulation with a new game specification.
 
 **Request Body:**
+
 ```json
 {
   "gameId": "string (required)",
@@ -238,6 +271,7 @@ Update a simulation with a new game specification.
 ```
 
 **Response:**
+
 ```json
 {
   "success": "boolean"
@@ -254,6 +288,7 @@ All endpoints return appropriate HTTP status codes:
 - **500 Internal Server Error**: Server error
 
 Error responses have the following format:
+
 ```json
 {
   "error": "string",
@@ -270,6 +305,7 @@ All API endpoints require authentication via the middleware. The `/health` endpo
 ### Design Flow Example
 
 1. **Start a conversation:**
+
    ```bash
    curl -X POST /api/design/conversation/continue \
      -H "Content-Type: application/json" \
@@ -281,11 +317,22 @@ All API endpoints require authentication via the middleware. The `/health` endpo
    ```
 
 2. **Generate an image:**
+
    ```bash
+   # Generate legacy cartridge image
    curl -X POST /api/design/conversation/generate-image \
      -H "Content-Type: application/json" \
      -d '{
-       "conversationId": "conv-123"
+       "conversationId": "conv-123",
+       "image_type": "legacy"
+     }'
+
+   # Generate raw image (no cartridge)
+   curl -X POST /api/design/conversation/generate-image \
+     -H "Content-Type: application/json" \
+     -d '{
+       "conversationId": "conv-123",
+       "image_type": "raw"
      }'
    ```
 
@@ -301,6 +348,7 @@ All API endpoints require authentication via the middleware. The `/health` endpo
 ### Simulation Flow Example
 
 1. **Create simulation:**
+
    ```bash
    curl -X POST /api/simulate/create \
      -H "Content-Type: application/json" \
@@ -312,6 +360,7 @@ All API endpoints require authentication via the middleware. The `/health` endpo
    ```
 
 2. **Initialize with players:**
+
    ```bash
    curl -X POST /api/simulate/initialize \
      -H "Content-Type: application/json" \
@@ -322,6 +371,7 @@ All API endpoints require authentication via the middleware. The `/health` endpo
    ```
 
 3. **Process player action:**
+
    ```bash
    curl -X POST /api/simulate/action \
      -H "Content-Type: application/json" \

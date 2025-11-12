@@ -5,7 +5,6 @@ import {
   handleGetFullSpecification,
   handleGetCachedSpecification,
   handleGetConversationHistory,
-  handleGetConversationMetadata,
   handlePublishGame,
 } from "./handler.js";
 import {
@@ -17,8 +16,6 @@ import {
   GetFullSpecificationResponseSchema,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponseSchema,
-  GetConversationMetadataRequestSchema,
-  GetConversationMetadataResponseSchema,
   PublishGameRequestSchema,
   PublishGameResponseSchema,
 } from "#chaincraft/api/design/schemas.js";
@@ -42,7 +39,7 @@ export async function registerDesignRoutes(server: FastifyInstance) {
     handler: handleContinueDesignConversation,
   });
 
-  // Generate image for game design
+  // Generate image for game design (supports both legacy cartridge and raw image types)
   server.post("/conversation/generate-image", {
     schema: {
       body: zodToJsonSchema(GenerateImageRequestSchema, "generateImageRequest"),
@@ -107,22 +104,6 @@ export async function registerDesignRoutes(server: FastifyInstance) {
     handler: handleGetConversationHistory,
   });
 
-  // Get conversation metadata (title, etc.) without creating checkpoints
-  server.post("/conversation/metadata", {
-    schema: {
-      body: zodToJsonSchema(
-        GetConversationMetadataRequestSchema,
-        "getConversationMetadataRequest"
-      ),
-      response: {
-        200: zodToJsonSchema(
-          GetConversationMetadataResponseSchema,
-          "getConversationMetadataResponse"
-        ),
-      },
-    },
-    handler: handleGetConversationMetadata,
-  });
 
   // Publish game to IPFS
   server.post("/publish", {

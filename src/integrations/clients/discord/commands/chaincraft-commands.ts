@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import type { CommandInteraction } from "discord.js";
+import type { ChatInputCommandInteraction } from "discord.js";
 
 import { startChaincraftDesign } from "#chaincraft/integrations/clients/discord/chaincraft-design.js";
 
@@ -18,7 +18,7 @@ const ChaincraftCommand = {
             .setName(chainCraftGameDescriptionOptionName)
             .setDescription('The description of a game you want to design')),
 
-    execute: async (interaction: CommandInteraction) => {
+    execute: async (interaction: ChatInputCommandInteraction) => {
         startChaincraftDesign(interaction);
     }
 }

@@ -30,6 +30,7 @@ export const ContinueDesignConversationResponseSchema = z.object({
 // Generate image schemas
 export const GenerateImageRequestSchema = z.object({
   conversationId: z.string().min(1),
+  image_type: z.enum(["legacy", "raw"]).optional().default("legacy"),
 });
 
 export const GenerateImageResponseSchema = z.object({
@@ -71,13 +72,6 @@ export const GetConversationHistoryResponseSchema = z.object({
 });
 
 // Get conversation metadata schemas
-export const GetConversationMetadataRequestSchema = z.object({
-  conversationId: z.string().min(1),
-});
-
-export const GetConversationMetadataResponseSchema = z.object({
-  title: z.string(),
-});
 
 export const PublishGameRequestSchema = z.object({
   conversationId: z.string().min(1),
@@ -115,12 +109,6 @@ export type GetConversationHistoryRequest = z.infer<
 >;
 export type GetConversationHistoryResponse = z.infer<
   typeof GetConversationHistoryResponseSchema
->;
-export type GetConversationMetadataRequest = z.infer<
-  typeof GetConversationMetadataRequestSchema
->;
-export type GetConversationMetadataResponse = z.infer<
-  typeof GetConversationMetadataResponseSchema
 >;
 export type Message = z.infer<typeof MessageSchema>;
 export type PublishGameRequest = z.infer<typeof PublishGameRequestSchema>;
