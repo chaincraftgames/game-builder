@@ -56,6 +56,7 @@ export async function handleContinueDesignConversation(
       updatedTitle: response.updatedTitle,
       systemPromptVersion: response.systemPromptVersion,
       specification: response.specification,
+      specDiff: response.specDiff,
     };
   } catch (error) {
     console.error("Error in continueDesignConversation:", error);
@@ -114,6 +115,7 @@ export async function handleGetFullSpecification(
       summary: specification.summary,
       playerCount: specification.playerCount,
       designSpecification: specification.designSpecification,
+      version: specification.version,
     };
   } catch (error) {
     console.error("Error in getFullSpecification:", error);
@@ -147,6 +149,7 @@ export async function handleGetCachedSpecification(
       summary: specification.summary,
       playerCount: specification.playerCount,
       designSpecification: specification.designSpecification,
+      version: specification.version,
     };
   } catch (error) {
     console.error("Error in getCachedSpecification:", error);

@@ -11,6 +11,7 @@ export const GameSpecificationSchema = z.object({
   summary: z.string(),
   playerCount: PlayerCountSchema,
   designSpecification: z.string(),
+  version: z.number(),
 });
 
 // Design conversation schemas
@@ -25,6 +26,7 @@ export const ContinueDesignConversationResponseSchema = z.object({
   updatedTitle: z.string().optional(),
   systemPromptVersion: z.string().optional(),
   specification: GameSpecificationSchema.optional(),
+  specDiff: z.string().optional(),
 });
 
 // Generate image schemas
@@ -46,6 +48,7 @@ export const GetFullSpecificationResponseSchema = z.object({
   summary: z.string(),
   playerCount: PlayerCountSchema,
   designSpecification: z.string(),
+  version: z.number(),
 });
 
 // Get conversation history schemas
