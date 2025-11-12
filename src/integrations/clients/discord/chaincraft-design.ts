@@ -4,6 +4,7 @@ import {
   ButtonBuilder,
   ButtonInteraction,
   ButtonStyle,
+  ChatInputCommandInteraction,
   CommandInteraction,
   Message,
   TextChannel,
@@ -68,7 +69,7 @@ export async function handleDesignMessage(
 }
 
 // Start generation of a game design based on a given prompt
-export async function startChaincraftDesign(interaction: CommandInteraction) {
+export async function startChaincraftDesign(interaction: ChatInputCommandInteraction) {
   let thread: ThreadChannel | undefined;
   try {
     if (!(await _validateInteraction(interaction))) {
@@ -76,11 +77,15 @@ export async function startChaincraftDesign(interaction: CommandInteraction) {
     }
     await interaction.deferReply();
 
-    // The discord.js typings omit the functions on options for some reason, but the guide instructs us to use them
-    // https://discordjs.guide/slash-commands/parsing-options.html#command-options
-    const gameDescription = (interaction.options as any).getString(
+    // ChatInputCommandInteraction has the options property
+    const gameDescription = interaction.options.getString(
       chainCraftGameDescriptionOptionName
     );
+
+    if (!gameDescription) {
+      await interaction.editReply("Game description is required.");
+      return;
+    }
 
     // Create thread with loading state
     thread = await createThreadInChannel(

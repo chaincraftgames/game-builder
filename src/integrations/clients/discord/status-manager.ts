@@ -171,7 +171,9 @@ export async function getStatus(
 
   // Get player status
   let playerStatuses: PlayerStatus[];
-  const actionRows = playerStatusMessage.components;
+  const actionRows = playerStatusMessage.components.filter(
+    (row): row is Extract<typeof row, { components: unknown[] }> => 'components' in row
+  );
 
   // Ensure that player statuses are initialized
   playerStatuses = initPlayerStatus(parseInt(playerCount));
