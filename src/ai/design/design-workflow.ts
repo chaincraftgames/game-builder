@@ -1,47 +1,34 @@
 import "dotenv/config.js";
 
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
-import {
-  StateGraph,
-  END,
-  START,
-  BaseCheckpointSaver,
-  CompiledStateGraph,
-} from "@langchain/langgraph";
+import { CompiledStateGraph } from "@langchain/langgraph";
 import {
   AIMessage,
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import {
   GameDesignSpecification,
   GameDesignState,
-  PlayerCount,
 } from "#chaincraft/ai/design/game-design-state.js";
 import {
-  gameDesignConversationPrompt,
-  gameDesignSpecificationPrompt,
-  gameDesignSpecificationTag,
   gameTitleTag,
   imageDesignPrompt,
   produceFullGameDesignPrompt,
-  gameDesignSpecificationRequestTag,
-  gameSummaryTag,
-  gamePlayerCountTag,
   imageGenPrompt,
+  rawImageGenPrompt,
+  rawImageNegativePrompt,
 } from "#chaincraft/ai/design/game-design-prompts.js";
 import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
-import { getFileCommitHash } from "#chaincraft/util.js";
 import {
   isActiveConversation as _isActiveConversation,
   registerConversationId,
 } from "#chaincraft/ai/conversation.js";
-import { imageGenTool } from "#chaincraft/ai/tools.js";
+import { imageGenTool, rawImageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
-import { constraintsRegistry, getConstraintsRegistry } from "./design-data.js";
+import { getConstraintsRegistry } from "./design-data.js";
 import {
   logApplicationEvent,
   logSecretStatus,
@@ -69,6 +56,9 @@ const designGraphCache = new GraphCache(
 
 const imageGenSystemMessage =
   SystemMessagePromptTemplate.fromTemplate(imageGenPrompt);
+
+const rawImageGenSystemMessage =
+  SystemMessagePromptTemplate.fromTemplate(rawImageGenPrompt);
 
 const gameTitleRegex = new RegExp(
   `.*?${gameTitleTag}(.*?)${gameTitleTag.replace("<", "</")}`,
@@ -113,7 +103,10 @@ export async function continueDesignConversation(
   return _processMessage(graph, message, config);
 }
 
-export async function generateImage(conversationId: string): Promise<string> {
+export async function generateImage(
+  conversationId: string,
+  imageType: "legacy" | "raw" = "legacy"
+): Promise<string> {
   const specAndTitle = await getFullDesignSpecification(conversationId);
   if (!specAndTitle) {
     throw new Error("Failed to generate image: no game design spec");
@@ -136,7 +129,7 @@ export async function generateImage(conversationId: string): Promise<string> {
       ],
       {
         agent: "image-design-generator",
-        workflow: "design"
+        workflow: "design",
       }
     )
     .catch((error) => {
@@ -147,29 +140,55 @@ export async function generateImage(conversationId: string): Promise<string> {
       }
     });
   if (!imageDesign.content) {
-    throw new Error("Failed to generate image: no content");
+    throw new Error("Failed to generate image description: no content");
   }
 
-  const imageGenPrompt = await imageGenSystemMessage.format({
-    // game_summary: summary,
-    image_description: imageDesign.content.toString().substring(0, 600),
-    game_title: title,
-  });
-  const imageUrl = await imageGenTool
-    .invoke(imageGenPrompt.content, {
-      callbacks: modelWithOptions.invokeOptions.callbacks,
-    })
-    .catch((error) => {
-      if (error.type && error.type == "overloaded_error") {
-        throw new OverloadedError(error.message);
-      } else {
-        throw error;
-      }
+  // Step 2: Choose the appropriate prompt and tool based on image type
+  if (imageType === "raw") {
+    // Use raw image generation
+    const rawImagePrompt = await rawImageGenSystemMessage.format({
+      image_description: imageDesign.content.toString().substring(0, 600),
+      game_title: title,
     });
-  if (!imageUrl) {
-    throw new Error("Failed to generate image: no image URL");
+
+    const imageUrl = await rawImageGenTool
+      .invoke(rawImagePrompt.content, {
+        callbacks: [chaincraftDesignTracer],
+        negativePrompt: rawImageNegativePrompt,
+      })
+      .catch((error) => {
+        if (error.type && error.type == "overloaded_error") {
+          throw new OverloadedError(error.message);
+        } else {
+          throw error;
+        }
+      });
+    if (!imageUrl) {
+      throw new Error("Failed to generate raw image: no image URL");
+    }
+    return imageUrl;
+  } else {
+    // Use legacy cartridge image generation
+    const imageGenPrompt = await imageGenSystemMessage.format({
+      image_description: imageDesign.content.toString().substring(0, 600),
+      game_title: title,
+    });
+    const imageUrl = await imageGenTool
+      .invoke(imageGenPrompt.content, {
+        callbacks: [chaincraftDesignTracer],
+      })
+      .catch((error) => {
+        if (error.type && error.type == "overloaded_error") {
+          throw new OverloadedError(error.message);
+        } else {
+          throw error;
+        }
+      });
+    if (!imageUrl) {
+      throw new Error("Failed to generate legacy image: no image URL");
+    }
+    return imageUrl;
   }
-  return imageUrl;
 }
 
 export async function getFullDesignSpecification(
@@ -260,93 +279,6 @@ export async function generateNewDesignSpecification(
     conversationId
   );
   return await getFullDesignSpecification(conversationId);
-}
-
-// Function to get cached title and basic info (doesn't create checkpoints)
-export async function getCachedConversationMetadata(
-  conversationId: string
-): Promise<{ title: string } | undefined> {
-  // Check if conversation exists
-  if (!(await isActiveConversation(conversationId))) {
-    throw new Error(`Conversation ${conversationId} not found`);
-  }
-
-  // Get the saver directly to access checkpoints
-  const saver = await getSaver(conversationId, graphType);
-  const config = { configurable: { thread_id: conversationId } };
-
-  console.log(
-    "[getCachedConversationMetadata] Getting latest checkpoint for conversation:",
-    conversationId
-  );
-
-  // Get only the first (latest) checkpoint
-  const checkpointIterator = saver.list(config, { limit: 1 });
-  const firstCheckpoint = await checkpointIterator.next();
-
-  if (firstCheckpoint.done) {
-    console.log("[getCachedConversationMetadata] No checkpoints found");
-    return undefined;
-  }
-
-  const latestCheckpoint = firstCheckpoint.value;
-
-  if (!latestCheckpoint.checkpoint.channel_values) {
-    console.log(
-      "[getCachedConversationMetadata] No channel_values in checkpoint"
-    );
-    return undefined;
-  }
-
-  // Extract state from the checkpoint
-  const channelValues = latestCheckpoint.checkpoint.channel_values as any;
-
-  // First try to get title from the stored title field
-  let title = channelValues.title;
-
-  // If no stored title, try to extract from messages
-  if (!title) {
-    const rawMessages = channelValues.messages;
-    if (rawMessages && Array.isArray(rawMessages)) {
-      // Look through messages for AI responses that contain game titles
-      for (const msg of rawMessages) {
-        if (
-          msg._type === "ai" ||
-          msg.constructor?.name === "AIMessage" ||
-          msg.type === "ai"
-        ) {
-          const content =
-            typeof msg.content === "string"
-              ? msg.content
-              : msg.kwargs && msg.kwargs.content
-              ? msg.kwargs.content
-              : "";
-
-          if (content) {
-            const extractedTitle = _extractGameTitle(content);
-            if (extractedTitle) {
-              title = extractedTitle;
-              break; // Use the first title found
-            }
-          }
-        }
-      }
-    }
-  }
-
-  console.log(
-    "[getCachedConversationMetadata] Found title:",
-    title || "no title"
-  );
-
-  // Return title if available, otherwise return undefined
-  if (title) {
-    return { title };
-  }
-
-  // No title available
-  console.log("[getCachedConversationMetadata] No title found");
-  return undefined;
 }
 
 export async function getConversationHistory(
@@ -498,26 +430,9 @@ export async function getConversationHistory(
         return false;
       }
 
-      // Filter out spec response messages (they contain the XML tags)
-      if (
-        msg.type === "ai" &&
-        msg.content.includes("<game_specification_requested>")
-      ) {
-        return false;
-      }
-
-      // Filter out messages that are ONLY XML tags (not content wrapped in XML)
-      const trimmedContent = msg.content.trim();
-      if (
-        trimmedContent.startsWith("<") &&
-        trimmedContent.endsWith(">") &&
-        !trimmedContent.includes("\n") &&
-        trimmedContent.length < 100
-      ) {
-        // Only filter very short XML-only messages
-        return false;
-      }
-
+      // Keep everything else - let frontend handle display
+      // This includes spec response messages and XML-only messages
+      // as they may contain important metadata for parsing
       return true;
     });
 

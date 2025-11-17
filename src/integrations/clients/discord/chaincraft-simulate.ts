@@ -553,12 +553,14 @@ async function getSetupMessage(
   for (const [, message] of messages) {
     if (
       message.components.length > 1 &&
-      message.components.some((row) =>
-        row.components.some(
-          (component) =>
-            component instanceof ButtonComponent &&
-            component.customId === resetSimId
-        )
+      message.components.some(
+        (row) =>
+          "components" in row &&
+          row.components.some(
+            (component) =>
+              component instanceof ButtonComponent &&
+              component.customId === resetSimId
+          )
       )
     ) {
       return message;
@@ -578,40 +580,45 @@ async function updateButtonEnabledStates(
     startOrContinueEnabled,
     startOrContinue
   );
-  const newComponents = message.components.map((row) => {
-    const newRow = new ActionRowBuilder<ButtonBuilder>();
-    for (const [index, component] of row.components.entries()) {
-      if (component instanceof ButtonComponent) {
-        let updatedComponent!: ButtonBuilder;
-        if (
-          component.customId === startGameId ||
-          component.customId === continueGameId
-        ) {
-          updatedComponent = (
-            startOrContinue === "start" ? startGameButton : continueGameButton
-          ).setDisabled(!startOrContinueEnabled);
-        } else if (
-          component.customId?.startsWith(assumeRoleIdPrefix) &&
-          playerButtons
-        ) {
-          const disabled = !playerButtons[index];
-          updatedComponent = new ButtonBuilder()
-            .setCustomId(component.customId!)
-            .setLabel(component.label!)
-            .setStyle(component.style)
-            .setDisabled(disabled);
-        } else {
-          updatedComponent = new ButtonBuilder()
-            .setCustomId(component.customId!)
-            .setLabel(component.label!)
-            .setStyle(component.style)
-            .setDisabled(component.disabled);
+  const newComponents = message.components
+    .filter(
+      (row): row is Extract<typeof row, { components: unknown[] }> =>
+        "components" in row
+    )
+    .map((row) => {
+      const newRow = new ActionRowBuilder<ButtonBuilder>();
+      for (const [index, component] of row.components.entries()) {
+        if (component instanceof ButtonComponent) {
+          let updatedComponent!: ButtonBuilder;
+          if (
+            component.customId === startGameId ||
+            component.customId === continueGameId
+          ) {
+            updatedComponent = (
+              startOrContinue === "start" ? startGameButton : continueGameButton
+            ).setDisabled(!startOrContinueEnabled);
+          } else if (
+            component.customId?.startsWith(assumeRoleIdPrefix) &&
+            playerButtons
+          ) {
+            const disabled = !playerButtons[index];
+            updatedComponent = new ButtonBuilder()
+              .setCustomId(component.customId!)
+              .setLabel(component.label!)
+              .setStyle(component.style)
+              .setDisabled(disabled);
+          } else {
+            updatedComponent = new ButtonBuilder()
+              .setCustomId(component.customId!)
+              .setLabel(component.label!)
+              .setStyle(component.style)
+              .setDisabled(component.disabled);
+          }
+          newRow.addComponents(updatedComponent);
         }
-        newRow.addComponents(updatedComponent);
       }
-    }
-    return newRow;
-  });
+      return newRow;
+    });
 
   await message.edit({ components: newComponents });
 }
