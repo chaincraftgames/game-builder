@@ -86,6 +86,15 @@ const SPEC_EXECUTE_DEFAULTS = {
 };
 
 /**
+ * Default configuration for spec-diff agent
+ * Uses Haiku by default for fast, cost-effective diff analysis
+ */
+const SPEC_DIFF_DEFAULTS = {
+  modelName: process.env.CHAINCRAFT_SPEC_DIFF_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "claude-3-5-haiku-20241022",
+  tracerProjectName: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
+};
+
+/**
  * Configure the model with flexible options for different workflows
  * @param options Configuration options for the model setup
  * @returns Promise resolving to ModelSetup with model instance and configuration
@@ -107,7 +116,7 @@ export const setupModel = async (
   } else {
     // Use explicit options or design defaults as fallback
     modelName = options.modelName || DESIGN_DEFAULTS.modelName;
-    tracerProjectName = options.tracerProjectName;
+    tracerProjectName = options.tracerProjectName || DESIGN_DEFAULTS.tracerProjectName;
   }
 
   console.log(
@@ -254,6 +263,23 @@ export const setupSpecExecuteModel = async (
 ): Promise<ModelWithOptions> => {
   const modelName = options.modelName || SPEC_EXECUTE_DEFAULTS.modelName;
   const tracerProjectName = options.tracerProjectName || SPEC_EXECUTE_DEFAULTS.tracerProjectName;
+  return setupModel({ modelName, tracerProjectName });
+};
+
+/**
+ * Setup model specifically for spec-diff agent
+ * Uses Haiku by default for fast, cost-effective diff analysis
+ * @param options Optional configuration overrides
+ * @returns Promise resolving to ModelSetup configured for spec-diff
+ */
+export const setupSpecDiffModel = async (
+  options: Omit<
+    ModelConfigOptions,
+    "useDesignDefaults" | "useSimulationDefaults"
+  > = {}
+): Promise<ModelWithOptions> => {
+  const modelName = options.modelName || SPEC_DIFF_DEFAULTS.modelName;
+  const tracerProjectName = options.tracerProjectName || SPEC_DIFF_DEFAULTS.tracerProjectName;
   return setupModel({ modelName, tracerProjectName });
 };
 

@@ -15,7 +15,7 @@
  */
 import { describe, expect, test, beforeAll } from "@jest/globals";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { setupDesignModel } from "#chaincraft/ai/model-config.js";
+import { setupSpecExecuteModel } from "#chaincraft/ai/model-config.js";
 import { createSpecExecute } from "../index.js";
 import type { GameDesignSpecification, GamepieceMetadata, SpecPlan } from "#chaincraft/ai/design/game-design-state.js";
 
@@ -52,7 +52,7 @@ function createTestState(overrides: {
 
 describe("Execute Spec - Error Handling", () => {
   test("should throw error when no spec_plan in state", async () => {
-    const model = await setupDesignModel();
+    const model = await setupSpecExecuteModel();
     const executeSpec = createSpecExecute(model);
     
     const state = createTestState({
@@ -79,7 +79,7 @@ describe("Execute Spec - Integration", () => {
     }
 
     try {
-      model = await setupDesignModel();
+      model = await setupSpecExecuteModel();
       executeSpec = createSpecExecute(model);
     } catch (error) {
       console.log("⚠️  Failed to setup model:", error);
@@ -418,7 +418,7 @@ describe("Execute Spec - Spec Quality (Manual Inspection)", () => {
       return;
     }
 
-    const model = await setupDesignModel();
+    const model = await setupSpecExecuteModel();
     const executeSpec = createSpecExecute(model);
 
     const specPlan: SpecPlan = {
@@ -461,7 +461,7 @@ describe("Execute Spec - Spec Quality (Manual Inspection)", () => {
       return;
     }
 
-    const model = await setupDesignModel();
+    const model = await setupSpecExecuteModel();
     const executeSpec = createSpecExecute(model);
 
     const existingSpec: GameDesignSpecification = {

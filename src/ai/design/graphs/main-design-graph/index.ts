@@ -11,13 +11,13 @@
  */
 
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { GameDesignState } from "../../game-design-state.js";
+import { GameDesignState } from "#chaincraft/ai/design/game-design-state.js";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
-import { setupSpecPlanModel, setupSpecExecuteModel, setupModel } from "../../../model-config.js";
-import { createSpecPlan } from "./nodes/spec-plan/index.js";
+import { setupSpecPlanModel, setupSpecExecuteModel, setupModel } from "#chaincraft/ai/model-config.js";
+import { createSpecPlan } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-plan/index.js";
 import { createSpecExecute } from "./nodes/spec-execute/index.js";
-import { createConversationalAgent } from "./nodes/conversational-agent/index.js";
-import { diffSpec } from "./nodes/diff-spec/index.js";
+import { createConversationalAgent } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/conversational-agent/index.js";
+import { specDiff } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-diff/index.js";
 
 // Import metadata subgraph (TODO: Implement)
 // import { createMetadataSubgraph } from "../gamepiece-metadata-subgraph/index.js";
@@ -92,7 +92,7 @@ export async function createMainDesignGraph(
   workflow.addNode("conversation", conversationalAgent);
   workflow.addNode("plan_spec", specPlan);
   workflow.addNode("execute_spec", specExecute);
-  workflow.addNode("generate_diff", diffSpec);
+  workflow.addNode("generate_diff", specDiff);
   
   // TODO: Metadata subgraph invocation
   // workflow.addNode("update_metadata", async (state) => {

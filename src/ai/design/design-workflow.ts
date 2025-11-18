@@ -153,7 +153,11 @@ export async function generateImage(
 
     const imageUrl = await rawImageGenTool
       .invoke(rawImagePrompt.content, {
-        callbacks: [chaincraftDesignTracer],
+        callbacks: modelWithOptions.invokeOptions.callbacks,
+        metadata: {
+          agent: "raw-image-generator",
+          workflow: "design",
+        },
         negativePrompt: rawImageNegativePrompt,
       })
       .catch((error) => {
@@ -175,7 +179,11 @@ export async function generateImage(
     });
     const imageUrl = await imageGenTool
       .invoke(imageGenPrompt.content, {
-        callbacks: [chaincraftDesignTracer],
+        callbacks: modelWithOptions.invokeOptions.callbacks,
+        metadata: {
+          agent: "cartridge-image-generator",
+          workflow: "design",
+        },
       })
       .catch((error) => {
         if (error.type && error.type == "overloaded_error") {

@@ -8,10 +8,12 @@ import { describe, it, expect, beforeAll } from "@jest/globals";
 import { HumanMessage } from "@langchain/core/messages";
 import { MemorySaver } from "@langchain/langgraph";
 import { createMainDesignGraph } from "../index.js";
+import { createTracerCallbacks } from "../../../../model-config.js";
 
 describe("Main Design Graph - Integration", () => {
   let graph: Awaited<ReturnType<typeof createMainDesignGraph>>;
   let checkpointer: MemorySaver;
+  const callbacks = createTracerCallbacks("chaincraft-design");
   
   beforeAll(async () => {
     checkpointer = new MemorySaver();
@@ -40,7 +42,10 @@ describe("Main Design Graph - Integration", () => {
   }, 30000); // Allow time for model setup
   
   it("should generate initial spec from conversation", async () => {
-    const config = { configurable: { thread_id: "test-initial-spec" } };
+    const config = { 
+      configurable: { thread_id: "test-initial-spec" },
+      callbacks
+    };
     
     const inputs = {
       messages: [
@@ -60,12 +65,12 @@ describe("Main Design Graph - Integration", () => {
     expect(result.spec?.playerCount).toEqual({ min: 2, max: 2 });
     expect(result.spec?.designSpecification).toBeTruthy();
     
-    // Verify spec was saved to currentGameSpec (via diff-spec node)
+    // Verify spec was saved to currentGameSpec (via spec-diff node)
     expect(result.currentGameSpec).toEqual(result.updatedSpec);
     
-    // Verify diff was generated
+    // Verify diff was generated (LLM-based, should mention it's new/created/initial)
     expect(result.specDiff).toBeDefined();
-    expect(result.specDiff).toContain("New Specification Created");
+    expect(result.specDiff).toMatch(/initial|new|complete|generated|created/i);
     
     // Verify flags were cleared
     expect(result.specUpdateNeeded).toBe(false);
@@ -79,7 +84,7 @@ describe("Main Design Graph - Integration", () => {
   }, 60000);
   
   it("should update existing spec from conversation", async () => {
-    const config = { configurable: { thread_id: "test-update-spec" } };
+    const config = { configurable: { thread_id: "test-update-spec" }, callbacks };
     
     // First: Create initial spec
     const initialInputs = {
@@ -103,11 +108,11 @@ describe("Main Design Graph - Integration", () => {
     expect(result.spec).toBeDefined();
     expect(result.spec?.designSpecification).toContain("volcano");
     
-    // Verify diff shows modification
+    // Verify diff shows modification (LLM-based, should mention change/update/added)
     expect(result.specDiff).toBeDefined();
-    expect(result.specDiff).toContain("Updated");
+    expect(result.specDiff).toMatch(/change|update|added|expanded|v1.*v2/i);
     
-    // Verify currentGameSpec was updated (via diff-spec node)
+    // Verify currentGameSpec was updated (via spec-diff node)
     expect(result.currentGameSpec).toEqual(result.updatedSpec);
     
     console.log("\n=== UPDATE SPEC TEST ===");
@@ -117,7 +122,7 @@ describe("Main Design Graph - Integration", () => {
   }, 90000);
   
   it("should handle conversation without spec update request", async () => {
-    const config = { configurable: { thread_id: "test-no-spec-update" } };
+    const config = { configurable: { thread_id: "test-no-spec-update" }, callbacks };
     
     // First: Create initial spec
     const initialInputs = {
@@ -150,7 +155,7 @@ describe("Main Design Graph - Integration", () => {
   }, 60000);
   
   it("should preserve conversation history across turns", async () => {
-    const config = { configurable: { thread_id: "test-multi-turn" } };
+    const config = { configurable: { thread_id: "test-multi-turn" }, callbacks };
     
     // Turn 1
     const turn1 = await graph.invoke({
@@ -181,6 +186,7 @@ describe("Main Design Graph - Integration", () => {
 
 describe("Main Design Graph - Node Functionality", () => {
   let graph: Awaited<ReturnType<typeof createMainDesignGraph>>;
+  const callbacks = createTracerCallbacks("chaincraft-design");
   
   beforeAll(async () => {
     const checkpointer = new MemorySaver();
@@ -192,7 +198,7 @@ describe("Main Design Graph - Node Functionality", () => {
   }, 30000);
   
   it("should generate meaningful diffs", async () => {
-    const config = { configurable: { thread_id: "test-diff-quality" } };
+    const config = { configurable: { thread_id: "test-diff-quality" }, callbacks };
     
     const inputs = {
       messages: [
@@ -212,7 +218,7 @@ describe("Main Design Graph - Node Functionality", () => {
   }, 60000);
   
   it("should return state with diff and spec for API consumption", async () => {
-    const config = { configurable: { thread_id: "test-api-response" } };
+    const config = { configurable: { thread_id: "test-api-response" }, callbacks };
     
     const inputs = {
       messages: [
@@ -222,9 +228,9 @@ describe("Main Design Graph - Node Functionality", () => {
     
     const result = await graph.invoke(inputs, config);
     
-    // Verify state contains all necessary data for API response
+    // Verify state contains all necessary data for API response (LLM-based diff)
     expect(result.specDiff).toBeDefined();
-    expect(result.specDiff).toContain("New Specification Created");
+    expect(result.specDiff).toMatch(/initial|new|complete|generated|created/i);
     
     expect(result.currentGameSpec).toBeDefined();
     expect(result.currentGameSpec?.designSpecification).toBeTruthy();
