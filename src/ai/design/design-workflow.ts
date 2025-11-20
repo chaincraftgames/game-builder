@@ -107,9 +107,14 @@ export async function generateImage(
   conversationId: string,
   imageType: "legacy" | "raw" = "legacy"
 ): Promise<string> {
-  const specAndTitle = await getFullDesignSpecification(conversationId);
+  // Retrieve cached specification to avoid regenerating it
+  // Image generation is triggered after conversation continues, so the spec should already exist
+  const specAndTitle = await getCachedDesignSpecification(conversationId);
+
   if (!specAndTitle) {
-    throw new Error("Failed to generate image: no game design spec");
+    throw new Error(
+      "Failed to generate image: no game design spec found. Spec should be generated before image generation."
+    );
   }
 
   const { summary, title } = specAndTitle;
