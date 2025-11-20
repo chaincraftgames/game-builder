@@ -44,6 +44,7 @@ function createTestState(overrides: {
     specUpdateNeeded: overrides.specUpdateNeeded ?? false,
     metadataUpdateNeeded: overrides.metadataUpdateNeeded ?? false,
     specPlan: undefined,
+    metadataPlan: undefined,
     metadataChangePlan: undefined,
     spec: overrides.spec || undefined,
     updatedSpec: undefined,
