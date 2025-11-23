@@ -1,42 +1,26 @@
 import "dotenv/config.js";
 
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
-import {
-  StateGraph,
-  END,
-  START,
-  BaseCheckpointSaver,
-  CompiledStateGraph,
-} from "@langchain/langgraph";
+import { CompiledStateGraph } from "@langchain/langgraph";
 import {
   AIMessage,
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import {
   GameDesignSpecification,
   GameDesignState,
-  PlayerCount,
 } from "#chaincraft/ai/design/game-design-state.js";
 import {
-  gameDesignConversationPrompt,
-  gameDesignSpecificationPrompt,
-  gameDesignSpecificationTag,
   gameTitleTag,
   imageDesignPrompt,
   produceFullGameDesignPrompt,
-  gameDesignSpecificationRequestTag,
-  gameSummaryTag,
-  gamePlayerCountTag,
   imageGenPrompt,
   rawImageGenPrompt,
   rawImageNegativePrompt,
 } from "#chaincraft/ai/design/game-design-prompts.js";
-import { getModel } from "#chaincraft/ai/model.js";
 import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
-import { getFileCommitHash } from "#chaincraft/util.js";
 import {
   isActiveConversation as _isActiveConversation,
   registerConversationId,
@@ -44,11 +28,13 @@ import {
 import { imageGenTool, rawImageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
-import { constraintsRegistry, getConstraintsRegistry } from "./design-data.js";
+import { getConstraintsRegistry } from "./design-data.js";
 import {
   logApplicationEvent,
   logSecretStatus,
 } from "#chaincraft/util/safe-logging.js";
+import { createMainDesignGraph } from "./graphs/main-design-graph/index.js";
+import { setupDesignModel } from "#chaincraft/ai/model-config.js";
 
 // Log safe application startup info
 logApplicationEvent("design-workflow", "initializing", {
@@ -63,20 +49,9 @@ logSecretStatus(
 
 const graphType = getConfig("design-graph-type");
 
-const model = await getModel(process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME);
-
 const designGraphCache = new GraphCache(
   createDesignGraph,
   parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100")
-);
-
-const chaincraftDesignTracer = new LangChainTracer({
-  projectName: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT_NAME,
-});
-
-// Create the system message for game design
-const conversationSystemMessage = SystemMessagePromptTemplate.fromTemplate(
-  gameDesignConversationPrompt
 );
 
 const imageGenSystemMessage =
@@ -87,24 +62,6 @@ const rawImageGenSystemMessage =
 
 const gameTitleRegex = new RegExp(
   `.*?${gameTitleTag}(.*?)${gameTitleTag.replace("<", "</")}`,
-  "s"
-);
-
-const gameSpecificationRegex = new RegExp(
-  `.*?${gameDesignSpecificationTag}(.*?)${gameDesignSpecificationTag.replace(
-    "<",
-    "</"
-  )}`,
-  "s"
-);
-
-const gameSummaryRegex = new RegExp(
-  `.*?${gameSummaryTag}(.*?)${gameSummaryTag.replace("<", "</")}`,
-  "s"
-);
-
-const gamePlayerCountRegex = new RegExp(
-  `.*?${gamePlayerCountTag}(.*?)${gamePlayerCountTag.replace("<", "</")}`,
   "s"
 );
 
@@ -119,7 +76,9 @@ export type DesignResponse = {
       max: number;
     };
     designSpecification: string;
+    version: number;
   };
+  specDiff?: string;
 };
 
 export async function continueDesignConversation(
@@ -130,18 +89,15 @@ export async function continueDesignConversation(
   // Save the conversation id
   registerConversationId(graphType, conversationId);
 
-  // const saver = await getSaver(conversationId, graphType);
-  // const graph = await _createDesignGraph(saver);
   const graph = await designGraphCache.getGraph(conversationId);
   const config = { configurable: { thread_id: conversationId } };
 
   // Format initial game description with XML tags if provided
   const message = gameDescription
-    ? // ? `${produceFullGameDesignPrompt}
-      `
-    <game_description>
+    ? `
+  <game_description>
     ${gameDescription}
-    </game_description>`
+  </game_description>`
     : userMessage;
 
   return _processMessage(graph, message, config);
@@ -151,16 +107,23 @@ export async function generateImage(
   conversationId: string,
   imageType: "legacy" | "raw" = "legacy"
 ): Promise<string> {
-  const specAndTitle = await getFullDesignSpecification(conversationId);
+  // Retrieve cached specification to avoid regenerating it
+  // Image generation is triggered after conversation continues, so the spec should already exist
+  const specAndTitle = await getCachedDesignSpecification(conversationId);
+
   if (!specAndTitle) {
-    throw new Error("Failed to generate image: no game design spec");
+    throw new Error(
+      "Failed to generate image: no game design spec found. Spec should be generated before image generation."
+    );
   }
 
   const { summary, title } = specAndTitle;
 
-  // Step 1: Generate image description with AI (same for both types)
-  const imageDesign = await model
-    .invoke(
+  // Setup model with design defaults (includes tracer callbacks)
+  const modelWithOptions = await setupDesignModel();
+
+  const imageDesign = await modelWithOptions
+    .invokeWithMessages(
       [
         new SystemMessage(imageDesignPrompt),
         new HumanMessage(
@@ -170,7 +133,8 @@ export async function generateImage(
         ),
       ],
       {
-        callbacks: [chaincraftDesignTracer],
+        agent: "image-design-generator",
+        workflow: "design",
       }
     )
     .catch((error) => {
@@ -194,7 +158,11 @@ export async function generateImage(
 
     const imageUrl = await rawImageGenTool
       .invoke(rawImagePrompt.content, {
-        callbacks: [chaincraftDesignTracer],
+        callbacks: modelWithOptions.invokeOptions.callbacks,
+        metadata: {
+          agent: "raw-image-generator",
+          workflow: "design",
+        },
         negativePrompt: rawImageNegativePrompt,
       })
       .catch((error) => {
@@ -216,7 +184,11 @@ export async function generateImage(
     });
     const imageUrl = await imageGenTool
       .invoke(imageGenPrompt.content, {
-        callbacks: [chaincraftDesignTracer],
+        callbacks: modelWithOptions.invokeOptions.callbacks,
+        metadata: {
+          agent: "cartridge-image-generator",
+          workflow: "design",
+        },
       })
       .catch((error) => {
         if (error.type && error.type == "overloaded_error") {
@@ -321,7 +293,6 @@ export async function generateNewDesignSpecification(
   );
   return await getFullDesignSpecification(conversationId);
 }
-
 
 export async function getConversationHistory(
   conversationId: string,
@@ -506,120 +477,6 @@ export async function isActiveConversation(
   return _isActiveConversation(graphType, conversationId);
 }
 
-async function _createDesignConversationNode(
-  mechanicsRegistry: string,
-  constraintsRegistry: string
-): Promise<
-  (state: typeof GameDesignState.State) => Promise<typeof GameDesignState.State>
-> {
-  const formattedSystemMessage = await conversationSystemMessage.format({
-    mechanics_registry: mechanicsRegistry,
-    constraints_registry: constraintsRegistry,
-  });
-
-  // Get the commit hash for the system prompt file
-  const promptVersion = await getFileCommitHash(
-    "./src/ai/design/game-design-prompts.ts"
-  );
-
-  return async (state: typeof GameDesignState.State) => {
-    const messages = [
-      new SystemMessage(formattedSystemMessage),
-      ...state.messages,
-    ];
-
-    const response = await model
-      .invoke(messages, {
-        callbacks: [chaincraftDesignTracer],
-      })
-      .catch((error) => {
-        if (error.type && error.type == "overloaded_error") {
-          throw new OverloadedError(error.message);
-        } else {
-          throw error;
-        }
-      });
-
-    const responseContent = response.content.toString();
-    const title = _extractGameTitle(responseContent);
-
-    // Check if this is a spec request
-    if (responseContent.includes(gameDesignSpecificationRequestTag)) {
-      return {
-        messages: [response],
-        specRequested: true,
-        title: title ?? state.title,
-        systemPromptVersion: promptVersion,
-        currentGameSpec: state.currentGameSpec,
-      };
-    }
-
-    // Normal conversation.  Invalidate the cached spec
-    return {
-      // Only return the response.  Since we are using a checkpointer to store the conversation,
-      // The input message will already be stored by the checkpointer and the reducer in the state
-      // will append the response to the messages array.
-      messages: [response],
-      title: title,
-      systemPromptVersion: promptVersion,
-      currentGameSpec: undefined,
-      specRequested: false,
-    };
-  };
-}
-
-async function _createDesignSpecificationNode(): Promise<
-  (state: typeof GameDesignState.State) => Promise<typeof GameDesignState.State>
-> {
-  return async (state: typeof GameDesignState.State) => {
-    // Filter out the AI's request message and keep previous context
-    const relevantMessages = state.messages.slice(0, -1);
-
-    const messages = [
-      new SystemMessage(gameDesignSpecificationPrompt),
-      ...relevantMessages,
-      new HumanMessage(
-        "Please provide a complete specification for this game design."
-      ),
-    ];
-
-    const response = await model
-      .invoke(messages, {
-        callbacks: [chaincraftDesignTracer],
-      })
-      .catch((error) => {
-        if (error.type && error.type == "overloaded_error") {
-          throw new OverloadedError(error.message);
-        } else {
-          throw error;
-        }
-      });
-
-    const designSpecification = _extractDesignSpecification(
-      response.content.toString()
-    );
-    const summary =
-      _extractGameSummary(response.content.toString()) ??
-      "No summary provided.";
-    const playerCount = _extractPlayerCount(response.content.toString()) ?? {
-      min: 1,
-      max: 4,
-    };
-
-    // Return the updated state.  Note that the messages reducer on the state
-    // will append messages so we return an empty array so nothing is appended.
-    return {
-      ...state,
-      messages: [],
-      currentGameSpec: {
-        summary,
-        playerCount,
-        designSpecification,
-      },
-    };
-  };
-}
-
 async function createDesignGraph(
   conversationId: string
 ): Promise<
@@ -629,37 +486,7 @@ async function createDesignGraph(
   >
 > {
   const saver = await getSaver(conversationId, graphType);
-  return await _createDesignGraph(saver);
-}
-
-async function _createDesignGraph(saver: BaseCheckpointSaver) {
-  const conversationNode = await _createDesignConversationNode(
-    "",
-    getConstraintsRegistry()
-  );
-  const specificationNode = await _createDesignSpecificationNode();
-
-  const workflow = new StateGraph(GameDesignState);
-
-  workflow.addNode("conversation", conversationNode);
-  workflow.addNode("specification", specificationNode);
-
-  workflow.addEdge(START, "conversation" as any);
-
-  workflow.addConditionalEdges("conversation" as any, (state) => {
-    if (
-      state.specRequested &&
-      (!state.currentGameSpec ||
-        state.currentGameSpec.designSpecification.length == 0)
-    ) {
-      return "specification";
-    }
-    return END;
-  });
-
-  workflow.addEdge("specification" as any, END);
-
-  return workflow.compile({ checkpointer: saver });
+  return await createMainDesignGraph(saver, getConstraintsRegistry(), "");
 }
 
 async function _processMessage(
@@ -672,13 +499,14 @@ async function _processMessage(
   let lastTitle = "";
   let lastPromptVersion = "";
   let updatedSpec: GameDesignSpecification | undefined = undefined;
+  let specDiffSummary: string | undefined = undefined;
 
   for await (const {
     messages,
     title,
     systemPromptVersion,
     currentGameSpec,
-    specRequested,
+    specDiff,
   } of await graph.stream(inputs, {
     ...config,
     streamMode: "values",
@@ -688,18 +516,17 @@ async function _processMessage(
 
     // Always process AI messages to capture the response content
     if (msg?.content && msg instanceof AIMessage) {
-      aiResponse = msg.content
-        .toString()
-        .replace(/<game_title>.*?<\/game_title>\n?/g, "");
+      aiResponse = msg.content.toString();
     }
 
-    // Track if we've generated a specification
-    if (specRequested) {
-      if (currentGameSpec && currentGameSpec.designSpecification.length > 0) {
-        updatedSpec = currentGameSpec;
-      }
-      // Note: Don't set aiResponse to "No spec received." here since we want to preserve
-      // the actual AI response content even if spec generation fails
+    // Capture the final spec if it was updated
+    if (currentGameSpec && currentGameSpec.designSpecification) {
+      updatedSpec = currentGameSpec;
+    }
+
+    // Capture the spec diff summary if present
+    if (specDiff) {
+      specDiffSummary = specDiff;
     }
 
     if (title) {
@@ -714,40 +541,11 @@ async function _processMessage(
     specification: updatedSpec,
     updatedTitle: lastTitle,
     systemPromptVersion: lastPromptVersion,
+    specDiff: specDiffSummary,
   };
 }
 
 function _extractGameTitle(content: string): string {
   const titleMatch = content.match(gameTitleRegex);
   return titleMatch ? titleMatch[1].trim() : "";
-}
-
-function _extractDesignSpecification(content: string): string {
-  const specMatch = content.match(gameSpecificationRegex);
-  return specMatch ? specMatch[1].trim() : "";
-}
-
-function _extractGameSummary(content: string): string | undefined {
-  const summaryMatch = content.match(gameSummaryRegex);
-  return summaryMatch ? summaryMatch[1].trim() : undefined;
-}
-
-function _extractPlayerCount(content: string): PlayerCount | undefined {
-  const playerCountMatch = content.match(gamePlayerCountRegex);
-
-  if (playerCountMatch) {
-    const playerCountStr = playerCountMatch[1].trim();
-    const parts = playerCountStr.split(":");
-
-    if (parts.length === 2) {
-      const min = parseInt(parts[0], 10);
-      const max = parseInt(parts[1], 10);
-
-      if (!isNaN(min) && !isNaN(max)) {
-        return { min, max };
-      }
-    }
-  }
-
-  return undefined;
 }
