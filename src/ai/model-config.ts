@@ -17,13 +17,14 @@ export interface ModelWithOptions {
   invokeOptions: {
     callbacks: any[];
   };
-  invoke: (prompt: string, metadata?: Record<string, any>) => Promise<ModelResponse>;
-  invokeWithMessages: (messages: BaseMessage[], metadata?: Record<string, any>) => Promise<ModelResponse>;
+  invoke: (prompt: string, metadata?: Record<string, any>, schema?: any) => Promise<ModelResponse | any>;
+  invokeWithMessages: (messages: BaseMessage[], metadata?: Record<string, any>, schema?: any) => Promise<ModelResponse | any>;
   invokeWithSystemPrompt: (
     systemPrompt: string,
     userPrompt?: string,
-    metadata?: Record<string, any>
-  ) => Promise<ModelResponse>;
+    metadata?: Record<string, any>,
+    schema?: any
+  ) => Promise<ModelResponse | any>;
 }
 
 /**
@@ -58,10 +59,7 @@ const DESIGN_DEFAULTS = {
  * Default configuration for simulation workflows
  */
 const SIMULATION_DEFAULTS = {
-  modelName:
-    process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
-    process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
-    "",
+  modelName: process.env.CHAINCRAFT_SIMULATION_MODEL_NAME || "",
   tracerProjectName:
     process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT ||
     "chaincraft-simulation",
@@ -140,13 +138,22 @@ export const setupModel = async (
   };
 
   // Create convenient invoke method that uses the pre-configured options
-  const invoke = async (prompt: string, metadata?: Record<string, any>): Promise<ModelResponse> => {
+  const invoke = async (prompt: string, metadata?: Record<string, any>, schema?: any): Promise<ModelResponse | any> => {
     const invokeOptionsWithMetadata = {
       ...invokeOptions,
       metadata: {
         ...metadata
-      }
+      },
+      ...(schema ? { maxTokens: 8192 } : {}) // Increased token limit for structured outputs only
     };
+    
+    if (schema) {
+      const structuredModel = (model as any).withStructuredOutput(schema);
+      return await structuredModel.invoke(
+        [new HumanMessage(prompt)],
+        invokeOptionsWithMetadata
+      );
+    }
     
     return (await model.invoke(
       [new HumanMessage(prompt)],
@@ -155,13 +162,22 @@ export const setupModel = async (
   };
 
   // Create invoke method that accepts full message history
-  const invokeWithMessages = async (messages: BaseMessage[], metadata?: Record<string, any>): Promise<ModelResponse> => {
+  const invokeWithMessages = async (messages: BaseMessage[], metadata?: Record<string, any>, schema?: any): Promise<ModelResponse | any> => {
     const invokeOptionsWithMetadata = {
       ...invokeOptions,
       metadata: {
         ...metadata
-      }
+      },
+      ...(schema ? { maxTokens: 8192 } : {}) // Increased token limit for structured outputs only
     };
+    
+    if (schema) {
+      const structuredModel = (model as any).withStructuredOutput(schema);
+      return await structuredModel.invoke(
+        messages,
+        invokeOptionsWithMetadata
+      );
+    }
     
     return (await model.invoke(
       messages,
@@ -173,19 +189,40 @@ export const setupModel = async (
   const invokeWithSystemPrompt = async (
     systemPrompt: string,
     userPrompt?: string,
-    metadata?: Record<string, any>
-  ): Promise<ModelResponse> => {
+    metadata?: Record<string, any>,
+    schema?: any
+  ): Promise<ModelResponse | any> => {
+    const messages = [
+      new SystemMessage(systemPrompt),
+      new HumanMessage(userPrompt || "Begin.")
+    ];
+    
+    if (schema) {
+      // withStructuredOutput accepts config as second parameter for Anthropic models
+      const structuredModel = (model as any).withStructuredOutput(schema, {
+        maxTokens: 8192
+      });
+      
+      const invokeOptionsWithMetadata = {
+        ...invokeOptions,
+        metadata: {
+          ...metadata
+        }
+      };
+      
+      console.log(`[DEBUG] invokeWithSystemPrompt using structured output with maxTokens: 8192 in config`);
+      return await structuredModel.invoke(
+        messages,
+        invokeOptionsWithMetadata
+      );
+    }
+    
     const invokeOptionsWithMetadata = {
       ...invokeOptions,
       metadata: {
         ...metadata
       }
     };
-    
-    const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(userPrompt || "Begin.")
-    ];
     
     return (await model.invoke(
       messages,
