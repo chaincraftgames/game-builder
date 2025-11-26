@@ -47,6 +47,7 @@ function createTestState(overrides: {
     lastSpecUpdate: undefined,
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: undefined,
+    metadataPlan: undefined,
   };
 }
 

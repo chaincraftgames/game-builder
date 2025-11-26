@@ -20,6 +20,7 @@ export function createMockState(overrides?: Partial<typeof GameDesignState.State
     metadataUpdateNeeded: false,
     specPlan: undefined,
     metadataChangePlan: undefined,
+    metadataPlan: undefined,
     spec: undefined,
     updatedSpec: undefined,
     metadata: undefined,

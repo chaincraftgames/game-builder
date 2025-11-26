@@ -67,29 +67,44 @@ const SIMULATION_DEFAULTS = {
 
 /**
  * Default configuration for spec-plan agent
- * Uses Haiku by default for fast, cost-effective metadata extraction
  */
 const SPEC_PLAN_DEFAULTS = {
-  modelName: process.env.CHAINCRAFT_SPEC_PLAN_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "claude-3-5-haiku-20241022",
+  modelName: process.env.CHAINCRAFT_SPEC_PLAN_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "",
   tracerProjectName: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
 };
 
 /**
  * Default configuration for spec-execute agent
- * Uses Sonnet by default for high-quality, comprehensive specification generation
  */
 const SPEC_EXECUTE_DEFAULTS = {
-  modelName: process.env.CHAINCRAFT_SPEC_EXECUTE_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "claude-3-5-sonnet-20241022",
+  modelName: process.env.CHAINCRAFT_SPEC_EXECUTE_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "",
   tracerProjectName: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
 };
 
 /**
  * Default configuration for spec-diff agent
- * Uses Haiku by default for fast, cost-effective diff analysis
  */
 const SPEC_DIFF_DEFAULTS = {
-  modelName: process.env.CHAINCRAFT_SPEC_DIFF_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "claude-3-5-haiku-20241022",
+  modelName: process.env.CHAINCRAFT_SPEC_DIFF_MODEL || process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "",
   tracerProjectName: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
+};
+
+/**
+ * Default configuration for schema extraction
+ * Falls back to SIMULATION_MODEL_NAME if not specified (override recommended with Sonnet)
+ */
+const SIM_SCHEMA_EXTRACTION_DEFAULTS = {
+  modelName: process.env.CHAINCRAFT_SIM_SCHEMA_EXTRACTION_MODEL || process.env.CHAINCRAFT_SIMULATION_MODEL_NAME || "",
+  tracerProjectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
+};
+
+/**
+ * Default configuration for transition extraction
+ * Uses SIMULATION_MODEL_NAME by default (Haiku 4.5 recommended for cost-effectiveness)
+ */
+const SIM_TRANSITIONS_EXTRACTION_DEFAULTS = {
+  modelName: process.env.CHAINCRAFT_SPEC_TRANSITIONS_MODEL || process.env.CHAINCRAFT_SIMULATION_MODEL_NAME || "",
+  tracerProjectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
 };
 
 /**
@@ -317,6 +332,41 @@ export const setupSpecDiffModel = async (
 ): Promise<ModelWithOptions> => {
   const modelName = options.modelName || SPEC_DIFF_DEFAULTS.modelName;
   const tracerProjectName = options.tracerProjectName || SPEC_DIFF_DEFAULTS.tracerProjectName;
+  return setupModel({ modelName, tracerProjectName });
+};
+
+/**
+ * Setup model specifically for spec processing (schema extraction)
+ * Uses Sonnet by default for high-quality schema generation with complex structured output
+ * Haiku hits token limits with detailed schemas, so Sonnet is required
+ * @param options Optional configuration overrides
+ * @returns Promise resolving to ModelSetup configured for spec processing
+ */
+export const setupSpecProcessingModel = async (
+  options: Omit<
+    ModelConfigOptions,
+    "useDesignDefaults" | "useSimulationDefaults"
+  > = {}
+): Promise<ModelWithOptions> => {
+  const modelName = options.modelName || SIM_SCHEMA_EXTRACTION_DEFAULTS.modelName;
+  const tracerProjectName = options.tracerProjectName || SIM_SCHEMA_EXTRACTION_DEFAULTS.tracerProjectName;
+  return setupModel({ modelName, tracerProjectName });
+};
+
+/**
+ * Setup model specifically for transition extraction
+ * Uses Haiku by default for cost-effective transition analysis
+ * @param options Optional configuration overrides
+ * @returns Promise resolving to ModelSetup configured for transition extraction
+ */
+export const setupSpecTransitionsModel = async (
+  options: Omit<
+    ModelConfigOptions,
+    "useDesignDefaults" | "useSimulationDefaults"
+  > = {}
+): Promise<ModelWithOptions> => {
+  const modelName = options.modelName || SIM_TRANSITIONS_EXTRACTION_DEFAULTS.modelName;
+  const tracerProjectName = options.tracerProjectName || SIM_TRANSITIONS_EXTRACTION_DEFAULTS.tracerProjectName;
   return setupModel({ modelName, tracerProjectName });
 };
 

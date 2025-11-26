@@ -62,6 +62,7 @@ async function runTest(testName: string, messages: any[], expectedFlags: any) {
     lastSpecUpdate: undefined,
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: undefined,
+    metadataPlan: undefined,
   };  console.log("\n📨 INPUT:");
   messages.forEach(msg => {
     const role = msg instanceof HumanMessage ? "USER" : "ASSISTANT";

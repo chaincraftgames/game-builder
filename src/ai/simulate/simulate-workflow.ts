@@ -1,47 +1,36 @@
 import "dotenv/config.js";
 
-import {
-  CompiledStateGraph,
-  END,
-  START,
-  StateGraph,
-} from "@langchain/langgraph";
-import { Runnable } from "@langchain/core/runnables";
-import { StructuredOutputParser } from "langchain/output_parsers";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { z, ZodSchema } from "zod";
+import { z } from "zod";
 
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
+import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
+import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
+import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import {
-  SimulationState,
-  SimulationStateType,
-} from "#chaincraft/ai/simulate/simulate-state.js";
-import { processGameSpecification } from "#chaincraft/ai/simulate/gameSpecificationProcessor.js";
-import {
-  runtimeInitializeTemplate,
-  runtimeProcessActionTemplate,
-} from "#chaincraft/ai/simulate/simulate-prompts.js";
-import { getModel } from "#chaincraft/ai/model.js";
-import {
-  deserializeSchema,
   getGameState,
   RUNTIME_VERSION,
-  serializeSchema,
 } from "#chaincraft/ai/simulate/schema.js";
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
 import { queueAction } from "./action-queues.js";
-import { GameDesignSpecification } from "../design/game-design-state.js";
 
-const simGraphCache = new GraphCache(
-  createSimulationGraph,
-  parseInt(process.env.CHAINCRAFT_SIMULATION_GRAPH_CACHE_SIZE ?? "100")
+// Cache for runtime graphs to avoid recompilation
+const runtimeGraphCache = new GraphCache(
+  async (threadId: string) => {
+    const saver = await getSaver(threadId, getConfig("simulation-graph-type"));
+    return await createRuntimeGraph(saver);
+  },
+  parseInt(process.env.CHAINCRAFT_RUNTIME_GRAPH_CACHE_SIZE ?? "100")
 );
 
-const chaincraftSimTracer = new LangChainTracer({
-  projectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME,
-});
+// Cache for spec processing graphs to avoid reprocessing specs
+const specGraphCache = new GraphCache(
+  async (specKey: string) => {
+    const saver = await getSaver(specKey, getConfig("simulation-graph-type"));
+    return await createSpecProcessingGraph(saver);
+  },
+  parseInt(process.env.CHAINCRAFT_SPEC_GRAPH_CACHE_SIZE ?? "50")
+);
 
 export interface RuntimePlayerState {
   illegalActionCount: number;
@@ -52,6 +41,59 @@ export interface RuntimePlayerState {
 
 /** Messages to the players.  Key is player id, value is message. */
 export type PlayerStates = Map<string, RuntimePlayerState>;
+
+export interface SpecArtifacts {
+  gameRules: string;
+  stateSchema: string;
+  stateTransitions: string;
+  phaseInstructions: Record<string, string>;
+}
+
+/**
+ * Get cached spec processing artifacts from checkpoint.
+ * Similar to getCachedDesignSpecification in design-workflow.
+ */
+async function getCachedSpecArtifacts(
+  specKey: string
+): Promise<SpecArtifacts | undefined> {
+  const saver = await getSaver(specKey, getConfig("simulation-graph-type"));
+  const config = { configurable: { thread_id: specKey } };
+
+  console.log("[simulate] Checking for cached spec artifacts:", specKey);
+
+  // Get latest checkpoint
+  const checkpointIterator = saver.list(config, { limit: 1 });
+  const firstCheckpoint = await checkpointIterator.next();
+
+  if (firstCheckpoint.done) {
+    console.log("[simulate] No cached artifacts found");
+    return undefined;
+  }
+
+  const latestCheckpoint = firstCheckpoint.value;
+  if (!latestCheckpoint.checkpoint.channel_values) {
+    return undefined;
+  }
+
+  const channelValues = latestCheckpoint.checkpoint.channel_values as any;
+  
+  // Check if we have all required artifacts
+  if (channelValues.gameRules && 
+      channelValues.stateSchema && 
+      channelValues.stateTransitions && 
+      channelValues.phaseInstructions) {
+    console.log("[simulate] Found cached spec artifacts");
+    return {
+      gameRules: channelValues.gameRules,
+      stateSchema: channelValues.stateSchema,
+      stateTransitions: channelValues.stateTransitions,
+      phaseInstructions: channelValues.phaseInstructions,
+    };
+  }
+
+  console.log("[simulate] Incomplete artifacts in checkpoint");
+  return undefined;
+}
 
 export type SimResponse = {
   publicMessage?: string;
@@ -79,6 +121,45 @@ export class ValidationError extends RuntimeError {
   }
 }
 
+/**
+ * Helper to extract SimResponse from RuntimeState
+ */
+function getRuntimeResponse(state: RuntimeStateType): SimResponse {
+  // Handle undefined or empty gameState
+  if (!state.gameState || state.gameState === "") {
+    return {
+      publicMessage: undefined,
+      playerStates: new Map(),
+      gameEnded: false,
+    };
+  }
+  
+  const gameState = JSON.parse(state.gameState);
+  
+  // Extract game and players from parsed state
+  const { game, players } = gameState;
+  
+  const publicMessage = game?.publicMessage;
+  const gameEnded = game?.gameEnded ?? false;
+  const playerStates: PlayerStates = new Map();
+  
+  for (const playerId in players) {
+    const privateMessage = players[playerId].privateMessage;
+    playerStates.set(playerId, {
+      privateMessage: privateMessage || undefined,
+      actionsAllowed: players[playerId].actionsAllowed ?? true,
+      actionRequired: players[playerId].actionRequired ?? false,
+      illegalActionCount: players[playerId].illegalActionCount ?? 0,
+    });
+  }
+  
+  return {
+    publicMessage,
+    playerStates,
+    gameEnded,
+  };
+}
+
 /** Creates a simulation.  Returns the player count. */
 export async function createSimulation(
   gameId: string,
@@ -89,23 +170,59 @@ export async function createSimulation(
 }> {
   try {
     console.log("[simulate] Creating simulation for game %s", gameId);
-    let gameRulesResponse = "The model failed to provide rules for this game.";
-    const graph = await simGraphCache.getGraph(gameId);
-    const config = { configurable: { thread_id: gameId } };
-
-    const inputs = {
-      gameSpecification,
-      updatedGameSpecVersion: gameSpecificationVersion,
-    };
-    for await (const { gameRules } of await graph.stream(inputs, {
-      ...config,
-      streamMode: "values",
-    })) {
-      gameRulesResponse = gameRules;
+    
+    // Create spec key from game ID and version
+    const specKey = `${gameId}-v${gameSpecificationVersion}`;
+    
+    // Step 1: Check for cached spec artifacts or generate new ones
+    let artifacts = await getCachedSpecArtifacts(specKey);
+    
+    if (!artifacts) {
+      console.log("[simulate] Processing game specification (not cached)");
+      
+      // Get or create spec processing graph for this spec
+      const specGraph = await specGraphCache.getGraph(specKey);
+      const config = { configurable: { thread_id: specKey } };
+      
+      // Invoke spec graph - results saved to checkpoint automatically
+      const specResult = await specGraph.invoke({
+        gameSpecification,
+      }, config);
+      
+      artifacts = {
+        gameRules: specResult.gameRules,
+        stateSchema: specResult.stateSchema,
+        stateTransitions: specResult.stateTransitions,
+        phaseInstructions: specResult.phaseInstructions,
+      };
+      
+      console.log("[simulate] Spec processing complete, artifacts cached");
+    } else {
+      console.log("[simulate] Using cached spec artifacts");
     }
-
+    
+    // Step 2: Store artifacts in runtime graph checkpoint
+    // Get cached runtime graph for this game
+    const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
+    const config = { configurable: { thread_id: gameId } };
+    
+    console.log("[simulate] Invoking runtime graph to store artifacts (should route to END)");
+    
+    // Store artifacts by invoking runtime graph
+    // Don't pass isInitialized or players - this routes to END and saves artifacts
+    const storeResult = await runtimeGraph.invoke({
+      ...artifacts,
+    }, config);
+    
+    console.log("[simulate] Artifact storage invoke completed, result:", {
+      hasGameRules: !!storeResult.gameRules,
+      hasStateSchema: !!storeResult.stateSchema,
+    });
+    
+    console.log("[simulate] Runtime graph initialized with artifacts for game %s", gameId);
+    
     return {
-      gameRules: gameRulesResponse,
+      gameRules: artifacts.gameRules,
     };
   } catch (error) {
     handleError("Failed to create simulation", error);
@@ -122,27 +239,41 @@ export async function initializeSimulation(
 }> {
   try {
     console.log("[simulate] Initializing simulation for game %s", gameId);
-    const graph = await simGraphCache.getGraph(gameId);
+    
+    // Get cached runtime graph with checkpointer
+    const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
     const config = { configurable: { thread_id: gameId } };
-    let publicMessage!: string | undefined;
-    let playerStates!: PlayerStates;
-
-    const inputs = {
+    
+    // Log checkpoint state to verify artifacts are present
+    const saver = await getSaver(gameId, getConfig("simulation-graph-type"));
+    const checkpoint = await saver.getTuple(config);
+    if (checkpoint?.checkpoint?.channel_values) {
+      const state = checkpoint.checkpoint.channel_values as any;
+      console.log("[simulate] Checkpoint artifacts present:", {
+        hasGameRules: !!state.gameRules,
+        hasStateSchema: !!state.stateSchema,
+        hasStateTransitions: !!state.stateTransitions,
+        hasPhaseInstructions: !!state.phaseInstructions,
+        gameRulesPreview: state.gameRules?.substring(0, 100) + "...",
+        stateSchemaPreview: state.stateSchema?.substring(0, 100) + "...",
+      });
+    } else {
+      console.log("[simulate] No checkpoint found before initialization");
+    }
+    
+    // Invoke runtime graph with players - artifacts loaded automatically from checkpoint
+    const result = await runtimeGraph.invoke({
       players,
       isInitialized: false,
+    }, config);
+    
+    // Extract response from return value
+    const simResponse = getRuntimeResponse(result as RuntimeStateType);
+    
+    return { 
+      publicMessage: simResponse.publicMessage, 
+      playerStates: simResponse.playerStates 
     };
-    for await (const state of await graph.stream(inputs, {
-      ...config,
-      streamMode: "values",
-    })) {
-      if (state.isInitialized) {
-        const simResponse = getSimResponse(state);
-        publicMessage = simResponse.publicMessage;
-        playerStates = simResponse.playerStates;
-      }
-    }
-
-    return { publicMessage, playerStates };
   } catch (error) {
     handleError("Failed to initialize simulation", error);
     return Promise.reject(error);
@@ -163,28 +294,22 @@ export async function processAction(
         playerId,
         action
       );
-      const graph = await simGraphCache.getGraph(gameId);
+      
+      // Get cached runtime graph with checkpointer
+      const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
       const config = { configurable: { thread_id: gameId } };
-      let simResponse!: SimResponse;
-
-      const inputs = {
+      
+      // Invoke runtime graph with player action - all state loaded automatically from checkpoint
+      const result = await runtimeGraph.invoke({
         playerAction: {
           playerId,
           playerAction: action,
         },
-      };
-
-      for await (const state of await graph.stream(inputs, {
-        ...config,
-        streamMode: "values",
-      })) {
-        // Check if state is valid before processing
-        if (!state) {
-          throw new Error("Invalid state received from graph");
-        }
-        simResponse = getSimResponse(state);
-      }
-
+      }, config);
+      
+      // Extract response from return value
+      const simResponse = getRuntimeResponse(result as RuntimeStateType);
+      
       // Validate that we got a response
       if (!simResponse) {
         throw new Error("No response generated from game state");
@@ -208,51 +333,19 @@ export async function getSimulationState(gameId: string): Promise<SimResponse> {
   try {
     console.log("[simulate] Getting game state for %s", gameId);
 
-    // Add logging to check if we can get the graph
-    const graph = await simGraphCache.getGraph(gameId);
-    console.log("[simulate] Retrieved graph from cache for %s", gameId);
-
+    // Load state directly from checkpoint without invoking graph
+    const saver = await getSaver(gameId, getConfig("simulation-graph-type"));
     const config = { configurable: { thread_id: gameId } };
-    let simResponse!: SimResponse;
-    let stateFound = false;
-
-    // We deliberately pass an empty object to avoid triggering any processing nodes
-    // The graph will load the state, go from START to END, and return the current state
-    const inputs = {};
-
-    console.log("[simulate] Starting graph stream for %s", gameId);
-    const stream = await graph.stream(inputs, {
-      ...config,
-      streamMode: "values",
-    });
-
-    for await (const state of stream) {
-      console.log(
-        "[simulate] Stream yielded state for %s: %o",
-        gameId,
-        Object.keys(state)
-      );
-      stateFound = true;
-      simResponse = getSimResponse(state);
-      console.log("[simulate] Generated simResponse for %s", gameId);
+    
+    const checkpoint = await saver.getTuple(config);
+    if (!checkpoint || !checkpoint.checkpoint) {
+      throw new Error("No game state found for this game.");
     }
 
-    console.log(
-      "[simulate] Stream completed for %s, state found: %s",
-      gameId,
-      stateFound
-    );
+    const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
+    const simResponse = getRuntimeResponse(state);
 
-    // If we get here without a state, the graph might have failed to properly load
-    if (!simResponse) {
-      console.error(
-        "[simulate] No state was processed in the stream for %s",
-        gameId
-      );
-
-      throw new Error("Failed to retrieve game state");
-    }
-
+    console.log("[simulate] Retrieved game state for %s", gameId);
     return simResponse;
   } catch (error) {
     console.error(
@@ -295,270 +388,6 @@ export const updateSimulation = async (
   gameId: string,
   gameSpecification: string
 ): Promise<void> => {};
-
-function createSpecProcessorNode() {
-  return async (state: SimulationStateType) => {
-    console.debug("[simulate] In spec processor node");
-    const response = await processGameSpecification(state.gameSpecification);
-
-    return {
-      ...state,
-      schema: serializeSchema(response.schemaFields),
-      currentGameSpecVersion: state.updatedGameSpecVersion,
-      gameRules: response.gameRules,
-    };
-  };
-}
-
-function createRuntimeInitNode() {
-  // Create a closure scoped variable to hold the chain that will be
-  // lazily initialized
-  let chain!: Runnable;
-  let currentGameSpecVersion!: string;
-  let schema!: ZodSchema;
-
-  return async (state: SimulationStateType) => {
-    console.debug("[simulate] In runtime init node");
-    // Lazy initialization using schema from state
-    if (
-      !chain ||
-      state.currentGameSpecVersion !== currentGameSpecVersion ||
-      state.currentRuntimeVersion != RUNTIME_VERSION
-    ) {
-      const { chain: newChain, schema: newSchema } = await createRuntimeChain(
-        state,
-        runtimeInitializeTemplate
-      );
-
-      chain = newChain;
-      schema = newSchema;
-      currentGameSpecVersion = state.currentGameSpecVersion;
-    }
-
-    const response = await chain.invoke(
-      {
-        gameStateSchema: schema,
-        players: state.players,
-      },
-      {
-        callbacks: [chaincraftSimTracer],
-      }
-    );
-
-    console.debug("[simulate] In runtime init node response: %o", response);
-
-    return {
-      ...state,
-      gameState: JSON.stringify(response),
-      isInitialized: true,
-    };
-  };
-}
-
-function createActionProcessingNode() {
-  // Create a closure scoped variable to hold the chain that will be
-  // lazily initialized
-  let chain!: Runnable;
-  let currentGameSpecVersion!: string;
-  let schema!: ZodSchema;
-
-  return async (state: SimulationStateType) => {
-    console.debug("[simulate] In action processor node");
-    // Lazy initialization using schema from state
-    if (
-      !chain ||
-      state.currentGameSpecVersion !== currentGameSpecVersion ||
-      state.currentRuntimeVersion != RUNTIME_VERSION
-    ) {
-      const { chain: newChain, schema: newSchema } = await createRuntimeChain(
-        state,
-        runtimeProcessActionTemplate
-      );
-      chain = newChain;
-      schema = newSchema;
-      currentGameSpecVersion = state.currentGameSpecVersion;
-    }
-
-    const response = await chain.invoke(
-      {
-        ...state.playerAction,
-        gameState: state.gameState,
-      },
-      {
-        callbacks: [chaincraftSimTracer],
-      }
-    );
-
-    return {
-      ...state,
-      gameState: JSON.stringify(response),
-      playerAction: undefined,
-    };
-  };
-}
-
-async function createRuntimeChain(
-  state: SimulationStateType,
-  promptTemplate: string
-): Promise<{
-  chain: Runnable;
-  schema: ZodSchema;
-}> {
-  const schema = deserializeSchema(state.schema);
-  const parser = StructuredOutputParser.fromZodSchema(schema);
-
-  const prompt = ChatPromptTemplate.fromTemplate(promptTemplate);
-
-  const model = await getModel(process.env.CHAINCRAFT_SIMULATION_MODEL_NAME);
-
-  const partialChain = await prompt.partial({
-    gameSpecification: state.gameSpecification,
-    formattingInstructions: parser.getFormatInstructions(),
-  });
-
-  const chain = partialChain.pipe(model).pipe(parser);
-  const chainWitRetry = chain.withRetry({
-    stopAfterAttempt: 2,
-    onFailedAttempt: (error) => {
-      console.error(
-        "[simulate] Chain failed to process. Error: %s",
-        error.message
-      );
-    },
-  });
-
-  return {
-    chain,
-    schema,
-  };
-}
-
-async function createSimulationGraph(
-  threadId: string
-): Promise<
-  CompiledStateGraph<SimulationStateType, Partial<SimulationStateType>>
-> {
-  const saver = await getSaver(threadId, getConfig("simulation-graph-type"));
-
-  const specProcessor = createSpecProcessorNode();
-  const runtimeInit = createRuntimeInitNode();
-  const actionProcessor = createActionProcessingNode();
-
-  // Create graph with our simulation state
-  const graph = new StateGraph(SimulationState);
-
-  // Add nodes
-  graph
-    .addNode("process_spec", specProcessor)
-    .addNode("init_runtime", runtimeInit)
-    .addNode("process_action", actionProcessor)
-    .addNode("get_current_state", async (state: SimulationStateType) => {
-      console.debug("[simulate] In get_current_state node");
-      return { ...state };
-    });
-
-  // Add edges with conditions
-  graph
-    .addConditionalEdges(START, (state) => {
-      console.debug("[simulate] In start node");
-      // Start with processing if spec version changed
-      if (shouldExecuteProcessSpecNode(state)) {
-        return "process_spec";
-      }
-      if (shouldExecuteInitRuntimeNode(state)) {
-        return "init_runtime";
-      }
-      if (shouldExecuteProcessActionNode(state)) {
-        return "process_action";
-      }
-      return "get_current_state";
-    })
-    //   return END;
-    // })
-    .addConditionalEdges("process_spec" as any, (state) => {
-      if (shouldExecuteInitRuntimeNode(state)) {
-        return "init_runtime";
-      }
-      if (shouldExecuteProcessActionNode(state)) {
-        return "process_action";
-      }
-      return END;
-    })
-    .addConditionalEdges("init_runtime" as any, (state) => {
-      if (shouldExecuteProcessActionNode(state)) {
-        return "process_action";
-      }
-      console.debug(
-        "[simulate] In init_runtime conditional edge returning END"
-      );
-      return END;
-    })
-    .addEdge("process_action" as any, END)
-    .addEdge("get_current_state" as any, END);
-
-  return graph.compile({ checkpointer: saver });
-}
-
-function shouldExecuteProcessSpecNode(state: SimulationStateType) {
-  return state.updatedGameSpecVersion !== state.currentGameSpecVersion;
-}
-
-function shouldExecuteInitRuntimeNode(state: SimulationStateType) {
-  // Init if we are not initialized and we have players.
-  return state.players?.length && !state.isInitialized;
-}
-
-function shouldExecuteProcessActionNode(state: SimulationStateType) {
-  return state.playerAction && state.isInitialized;
-}
-
-function getSimResponse(state: SimulationStateType): SimResponse {
-  console.debug("[simulate] Getting sim response");
-
-  // Check if state is undefined or null
-  if (!state) {
-    throw new Error("Cannot create response from undefined state");
-  }
-
-  const gameState = getGameState(state);
-
-  // If gameState is undefined, return a default response
-  if (!gameState) {
-    return {
-      publicMessage: "Error: Unable to get game state",
-      playerStates: new Map(),
-      gameEnded: false,
-    };
-  }
-
-  // Extract player states
-  const playerStates: PlayerStates = new Map<string, RuntimePlayerState>();
-
-  // Make sure players object exists
-  if (gameState.players) {
-    for (const [playerId, playerData] of Object.entries(
-      gameState.players as Record<string, RuntimePlayerState>
-    )) {
-      const playerState: RuntimePlayerState = {
-        illegalActionCount: playerData?.illegalActionCount || 0,
-        actionsAllowed: playerData?.actionsAllowed !== false,
-        actionRequired: playerData?.actionRequired === true,
-      };
-
-      const playerMessage = playerData?.privateMessage;
-      if (playerMessage && playerMessage.length > 0) {
-        playerState.privateMessage = playerMessage;
-      }
-      playerStates.set(playerId, playerState);
-    }
-  }
-
-  return {
-    publicMessage: gameState.game?.publicMessage,
-    playerStates,
-    gameEnded: gameState.game?.gameEnded === true,
-  };
-}
 
 const handleError = (message: string, error: unknown): never => {
   if (error instanceof z.ZodError) {

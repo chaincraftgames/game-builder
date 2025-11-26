@@ -44,6 +44,12 @@ export const SimulationState = Annotation.Root({
   schema: Annotation<string>({  // Store processed schema as JSON string
     reducer: (_, y) => y,
   }),
+  stateTransitions: Annotation<string>({  // Store transitions as JSON string
+    reducer: (_, y) => y,
+  }),
+  phaseInstructions: Annotation<string>({  // Store phase instructions as JSON string
+    reducer: (_, y) => y,
+  }),
   isInitialized: Annotation<boolean>({
     reducer: (_, y) => y,
   }),
