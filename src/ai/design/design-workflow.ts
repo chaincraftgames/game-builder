@@ -43,8 +43,8 @@ logApplicationEvent("design-workflow", "initializing", {
 
 // Check that required secrets are available without logging their values
 logSecretStatus(
-  "CHAINCRAFT_GAME_DESIGN_MODEL_NAME",
-  process.env.CHAINCRAFT_GAME_DESIGN_MODEL_NAME
+  "CHAINCRAFT_DESIGN_MODEL_NAME",
+  process.env.CHAINCRAFT_DESIGN_MODEL_NAME
 );
 
 const graphType = getConfig("design-graph-type");

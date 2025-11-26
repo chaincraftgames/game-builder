@@ -63,22 +63,67 @@ export function deserializeSchema(schemaJson: string): z.ZodObject<any> {
     throw new Error("Schema must be a ZodObject");
   }
   
+  // TODO(tech-debt): Add strict validation here to assert extractor
+  // produced required top-level fields such as `game` and `players`.
+  // Once the extractor is fully reliable we should remove `extendSchema`
+  // and rely solely on the extractor-produced schema. For now we keep
+  // `extendSchema` as a safety net but add explicit validation in the
+  // future to fail fast when extractor output is missing critical fields.
+  // See TODO item in repo task list: "Add strict schema validation TODO"
+
   return extendSchema(baseSchema);
 }
 
 // Apply runtime extensions to base schema
 export function extendSchema(schema: ZodObject<any>): z.ZodObject<any> {
+  // Extract the player schema
   const playerSchema =
     schema.shape.players instanceof ZodRecord
       ? schema.shape.players.valueSchema
       : schema.shape.players;
 
-  const extendedSchema = z.object({
-    game: runtimeGameStateSchemaExtension.merge(schema.shape.game),
-    players: z.record(runtimePlayerStateSchemaExtension.merge(playerSchema)),
-  });
+  // Get the game schema - handle both direct objects and ZodEffects wrappers
+  let gameShape: any = {};
+  if (schema.shape.game) {
+    if (schema.shape.game.shape) {
+      gameShape = schema.shape.game.shape;
+    } else if (schema.shape.game._def?.schema?.shape) {
+      // Handle ZodEffects wrapper
+      gameShape = schema.shape.game._def.schema.shape;
+    }
+  }
+  
+  // Get the player schema shape - handle both direct objects and ZodEffects wrappers  
+  let playerShape: any = {};
+  if (playerSchema) {
+    if (playerSchema.shape) {
+      playerShape = playerSchema.shape;
+    } else if (playerSchema._def?.schema?.shape) {
+      // Handle ZodEffects wrapper
+      playerShape = playerSchema._def.schema.shape;
+    }
+  }
 
-  return schema.merge(extendedSchema);
+  // Extend both shapes with runtime extensions
+  // Merge shapes but prefer existing schema fields when present.
+  // This ensures that a state schema produced by the extractor is not
+  // overwritten by the runtime-extension defaults; the runtime fields
+  // are only added when missing.
+  const extendedGameShape = {
+    ...runtimeGameStateSchemaExtension.shape,
+    ...gameShape,
+  };
+
+  const extendedPlayerShape = {
+    ...runtimePlayerStateSchemaExtension.shape,
+    ...playerShape,
+  };
+
+  // Rebuild the complete schema with extended shapes
+  return z.object({
+    game: z.object(extendedGameShape),
+    players: z.record(z.object(extendedPlayerShape)),
+  });
 }
 
 export const getGameState = (state: SimulationStateType) => {

@@ -3,6 +3,7 @@ import { BaseMessage } from "@langchain/core/messages";
 import type {
   PlayerCount,
   SpecPlan,
+  MetadataPlan,
   GameDesignSpecification,
   GamepieceMetadata,
   ValidationError,
@@ -12,6 +13,7 @@ import type {
 export type {
   PlayerCount,
   SpecPlan,
+  MetadataPlan,
   GameDesignSpecification,
   GamepieceMetadata,
   ValidationError,
@@ -55,6 +57,10 @@ export const GameDesignState = Annotation.Root({
   specPlan: Annotation<SpecPlan | undefined>({
     reducer: (_, y) => y,
   }),
+  metadataPlan: Annotation<MetadataPlan | undefined>({
+    reducer: (_, y) => y,
+  }),
+  // Legacy field - kept for backward compatibility, derived from metadataPlan.metadataChangePlan
   metadataChangePlan: Annotation<string | undefined>({
     reducer: (_, y) => y,
   }),
