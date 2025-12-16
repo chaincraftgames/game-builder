@@ -88,7 +88,8 @@ describe("Spec Processing Graph - End to End", () => {
     expect(result.gameRules).toBeDefined();
     expect(result.stateSchema).toBeDefined();
     expect(result.stateTransitions).toBeDefined();
-    expect(result.phaseInstructions).toBeDefined();
+    expect(result.playerPhaseInstructions).toBeDefined();
+    expect(result.transitionInstructions).toBeDefined();
     expect(result.exampleState).toBeDefined();
     
     console.log("✓ All artifacts generated");
@@ -118,6 +119,7 @@ describe("Spec Processing Graph - End to End", () => {
     expect(gameField.items?.properties?.publicMessage).toBeDefined();
     expect(playersField.items?.properties?.privateMessage).toBeDefined();
     expect(playersField.items?.properties?.illegalActionCount).toBeDefined();
+    // actionsAllowed should exist in schema as optional field
     expect(playersField.items?.properties?.actionsAllowed).toBeDefined();
     expect(playersField.items?.properties?.actionRequired).toBeDefined();
     
@@ -141,14 +143,15 @@ describe("Spec Processing Graph - End to End", () => {
     console.log(`✓ State transitions: ${result.stateTransitions.length} characters`);
     
     // Validate phase instructions
-    const phaseNames = Object.keys(result.phaseInstructions);
+    const phaseNames = Object.keys(result.playerPhaseInstructions || {});
+    const transitionNames = Object.keys(result.transitionInstructions || {});
     expect(phaseNames.length).toBeGreaterThan(0);
     
     phaseNames.forEach(phase => {
-      const instructions = result.phaseInstructions[phase];
+      const instructions = result.playerPhaseInstructions![phase];
       expect(instructions).toBeDefined();
       expect(instructions.length).toBeGreaterThan(200);
-      console.log(`✓ ${phase} phase instructions: ${instructions.length} characters`);
+      console.log(`✓ ${phase} player phase instructions: ${instructions.length} characters`);
     });
     
     // Print summary
@@ -157,9 +160,10 @@ describe("Spec Processing Graph - End to End", () => {
     console.log(`State Schema: ${schema.length} fields`);
     console.log(`Example State: ${playerIds.length} players`);
     console.log(`Transitions: ${result.stateTransitions.length} chars`);
-    console.log(`Instructions: ${phaseNames.length} phases`);
+    console.log(`Player Phase Instructions: ${phaseNames.length} phases`);
+    console.log(`Transition Instructions: ${transitionNames.length} transitions`);
     phaseNames.forEach(phase => {
-      console.log(`  - ${phase}: ${result.phaseInstructions[phase].length} chars`);
+      console.log(`  - ${phase}: ${result.playerPhaseInstructions![phase].length} chars`);
     });
     
     // Print a sample of each artifact for manual review
@@ -176,7 +180,9 @@ describe("Spec Processing Graph - End to End", () => {
     
     console.log("PHASE INSTRUCTIONS (first phase):");
     const firstPhase = phaseNames[0];
-    console.log(`${firstPhase}:`, result.phaseInstructions[firstPhase].substring(0, 300) + "...\n");
+    if (firstPhase) {
+      console.log(`${firstPhase}:`, result.playerPhaseInstructions![firstPhase].substring(0, 300) + "...\n");
+    }
     
     console.log("EXAMPLE STATE:");
     console.log(JSON.stringify(exampleState, null, 2).substring(0, 300) + "...\n");

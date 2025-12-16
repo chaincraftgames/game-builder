@@ -38,7 +38,12 @@ export const RuntimeState = Annotation.Root({
     reducer: (_, y) => y,
   }),
   
-  phaseInstructions: Annotation<Record<string, string>>({
+  playerPhaseInstructions: Annotation<Record<string, string>>({
+    reducer: (_, y) => y,
+    default: () => ({}),
+  }),
+  
+  transitionInstructions: Annotation<Record<string, string>>({
     reducer: (_, y) => y,
     default: () => ({}),
   }),
@@ -47,6 +52,11 @@ export const RuntimeState = Annotation.Root({
   gameState: Annotation<string>({
     reducer: (_, y) => y,
     default: () => "",
+  }),
+  
+  playerMapping: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => "{}",
   }),
   
   isInitialized: Annotation<boolean>({
@@ -76,11 +86,6 @@ export const RuntimeState = Annotation.Root({
   }),
   
   nextPhase: Annotation<string>({
-    reducer: (_, y) => y,
-    default: () => "",
-  }),
-  
-  plannedChanges: Annotation<string>({
     reducer: (_, y) => y,
     default: () => "",
   }),

@@ -13,7 +13,8 @@ import { SpecProcessingState } from "./spec-processing-state.js";
 import { setupSpecProcessingModel, setupSpecTransitionsModel } from "#chaincraft/ai/model-config.js";
 import { extractSchema } from "./nodes/extract-schema/index.js";
 import { extractTransitions } from "./nodes/extract-transitions/index.js";
-import { generateInstructions } from "./nodes/generate-instructions/index.js";
+import { extractInstructions } from "./nodes/extract-instructions/index.js";
+import { createValidationNode } from "./nodes/validate-transitions/index.js";
 
 /**
  * Creates and compiles the spec processing graph.
@@ -35,18 +36,21 @@ export async function createSpecProcessingGraph(
   // Create nodes
   const schemaNode = extractSchema(schemaModel);
   const transitionsNode = extractTransitions(transitionsModel);
-  const instructionsNode = generateInstructions(instructionsModel);
+  const validationNode = createValidationNode();
+  const instructionsNode = extractInstructions(instructionsModel);
   
   // Add nodes to graph
   workflow.addNode("extract_schema", schemaNode);
   workflow.addNode("extract_transitions", transitionsNode);
-  workflow.addNode("generate_instructions", instructionsNode);
+  workflow.addNode("validate_transitions", validationNode);
+  workflow.addNode("extract_instructions", instructionsNode);
   
-  // Define linear flow: START → schema → transitions → instructions → END
+  // Define linear flow: START → schema → transitions → validate → instructions → END
   workflow.addEdge(START, "extract_schema" as any);
   workflow.addEdge("extract_schema" as any, "extract_transitions" as any);
-  workflow.addEdge("extract_transitions" as any, "generate_instructions" as any);
-  workflow.addEdge("generate_instructions" as any, END);
+  workflow.addEdge("extract_transitions" as any, "validate_transitions" as any);
+  workflow.addEdge("validate_transitions" as any, "extract_instructions" as any);
+  workflow.addEdge("extract_instructions" as any, END);
   
   console.log("[SpecProcessingGraph] Graph compiled successfully");
   console.log(`[SpecProcessingGraph] Schema model: ${schemaModel.modelName}`);

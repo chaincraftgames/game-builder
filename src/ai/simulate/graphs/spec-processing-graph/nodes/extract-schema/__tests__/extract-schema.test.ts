@@ -8,9 +8,10 @@
  */
 
 import { describe, expect, it } from "@jest/globals";
-import { extractSchema } from "../graphs/spec-processing-graph/nodes/extract-schema/index.js";
+import { extractSchema } from "../index.js";
 import { setupSpecProcessingModel } from "#chaincraft/ai/model-config.js";
 import { buildStateSchema, SchemaField } from "#chaincraft/ai/simulate/schemaBuilder.js";
+import { deserializeSchema } from "#chaincraft/ai/simulate/schema.js";
 
 const RPS_SPEC = `
 # 3-Player Rock-Paper-Scissors Tournament
@@ -61,7 +62,8 @@ describe("Extract Schema Node", () => {
       gameRules: "",
       stateSchema: "",
       stateTransitions: "",
-      phaseInstructions: {},
+      playerPhaseInstructions: {},
+      transitionInstructions: {},
       exampleState: "",
     };
 
@@ -79,37 +81,54 @@ describe("Extract Schema Node", () => {
     expect(result.gameRules).toContain("Scissors");
     console.log("✓ Game rules extracted");
 
-    // Validate state schema
+    // Validate state schema (now JSON Schema format)
     expect(result.stateSchema).toBeDefined();
-    const schemaFields = JSON.parse(result.stateSchema!) as SchemaField[];
-    expect(schemaFields).toBeInstanceOf(Array);
-    expect(schemaFields.length).toBe(2); // game and players
-    
-    // Check top-level fields
-    const gameField = schemaFields.find(f => f.name === "game");
-    const playersField = schemaFields.find(f => f.name === "players");
-    expect(gameField).toBeDefined();
-    expect(playersField).toBeDefined();
+    const schema = JSON.parse(result.stateSchema!);
+    expect(schema.type).toBe("object");
+    expect(schema.properties).toBeDefined();
+    expect(schema.properties.game).toBeDefined();
+    expect(schema.properties.players).toBeDefined();
     console.log("✓ Schema has game and players fields");
     
     // Debug: Show the actual schema structure
-    console.log("\n=== Schema Structure ===");
-    console.log("Game field type:", gameField?.type);
-    console.log("Game properties:", Object.keys(gameField?.items?.properties || {}));
-    console.log("Players field type:", playersField?.type);
-    console.log("Players items type:", playersField?.items?.type);
-    console.log("Players properties:", Object.keys(playersField?.items?.properties || {}));
+    console.log("\n=== Schema Structure (JSON Schema) ===");
+    console.log("Game field type:", schema.properties.game.type);
+    console.log("Game properties:", Object.keys(schema.properties.game.properties || {}));
+    console.log("Players field type:", schema.properties.players.type);
+    console.log("Players additionalProperties:", schema.properties.players.additionalProperties ? "defined" : "undefined");
+    console.log("Player properties:", Object.keys(schema.properties.players.additionalProperties?.properties || {}));
+
+    // Print field descriptions to help verify .describe() usage
+    console.log('\n=== Generated Schema Field Descriptions ===');
+    console.log(`- Field: game (type=${schema.properties.game.type})`);
+    const gameProps = schema.properties.game.properties || {};
+    for (const [pname, pdef] of Object.entries(gameProps)) {
+      const desc = (pdef as any).description || null;
+      const ptype = (pdef as any).type || 'unknown';
+      const preq = schema.properties.game.required?.includes(pname) || false;
+      console.log(`  - ${pname}: type=${ptype} required=${preq} description=${desc}`);
+    }
+    
+    console.log(`- Field: players (type=${schema.properties.players.type})`);
+    const playerProps = schema.properties.players.additionalProperties?.properties || {};
+    for (const [pname, pdef] of Object.entries(playerProps)) {
+      const desc = (pdef as any).description || null;
+      const ptype = (pdef as any).type || 'unknown';
+      const preq = schema.properties.players.additionalProperties?.required?.includes(pname) || false;
+      console.log(`  - ${pname}: type=${ptype} required=${preq} description=${desc}`);
+    }
 
     // Check required runtime fields in game
-    const gameProperties = gameField?.items?.properties || {};
+    const gameProperties = schema.properties.game.properties || {};
     expect(gameProperties.gameEnded).toBeDefined();
     expect(gameProperties.publicMessage).toBeDefined();
     console.log("✓ Game has required runtime fields");
 
     // Check required runtime fields in players
-    const playerProperties = playersField?.items?.properties || {};
+    const playerProperties = schema.properties.players.additionalProperties?.properties || {};
     expect(playerProperties.illegalActionCount).toBeDefined();
     expect(playerProperties.privateMessage).toBeDefined();
+    // actionsAllowed should be defined in schema (optional field)
     expect(playerProperties.actionsAllowed).toBeDefined();
     expect(playerProperties.actionRequired).toBeDefined();
     console.log("✓ Players have required runtime fields");
@@ -133,19 +152,52 @@ describe("Extract Schema Node", () => {
     }
 
     // Validate schema can be used to build Zod schema
-    const zodSchema = buildStateSchema(schemaFields);
+    const zodSchema = deserializeSchema(result.stateSchema!);
     expect(zodSchema).toBeDefined();
     console.log("✓ Schema can be built into Zod schema");
-    
+
     // Note: We don't strictly validate example state against schema here because
     // the LLM may structure the example slightly differently than the schema builder expects.
     // The real validation happens when games are initialized and run.
     // This test focuses on verifying the schema has all required runtime fields.
 
+    // Validate the the generated schema extends the base schema (no missing fields)
+    const baseSchema = buildStateSchema([]);
+
+    // Helper to safely extract property keys from a Zod object shape
+    const extractZodKeys = (obj: any) => {
+      try {
+        if (!obj) return [];
+        // obj is a Zod schema with .shape
+        return Object.keys(obj.shape || {});
+      } catch (e) {
+        return [];
+      }
+    };
+
+    // Extract base schema keys for game and players
+    const baseGameKeys = extractZodKeys((baseSchema as any).shape.game);
+    const basePlayersKeys = extractZodKeys((baseSchema as any).shape.players?.value || (baseSchema as any).shape.players);
+
+    // Extract generated schema keys from the deserialized zod schema
+    const genGameKeys = extractZodKeys((zodSchema as any).shape.game);
+    const genPlayersKeys = extractZodKeys((zodSchema as any).shape.players?.value || (zodSchema as any).shape.players);
+
+    const missingGameKeys = baseGameKeys.filter(k => !genGameKeys.includes(k));
+    const missingPlayerKeys = basePlayersKeys.filter(k => !genPlayersKeys.includes(k));
+
+    if (missingGameKeys.length > 0 || missingPlayerKeys.length > 0) {
+      console.error('Missing required base schema fields:', { missingGameKeys, missingPlayerKeys });
+    }
+
+    expect(missingGameKeys).toEqual([]);
+    expect(missingPlayerKeys).toEqual([]);
+    console.log("✓ Generated schema extends the base schema (no missing fields)");
+
     console.log("\n=== Extract Schema Test Complete ===");
     console.log(`Game Rules Length: ${result.gameRules?.length} chars`);
-    console.log(`Schema Fields: ${schemaFields.length}`);
+    console.log(`Schema Type: JSON Schema`);
     console.log(`Game Properties: ${Object.keys(gameProperties).length}`);
     console.log(`Player Properties: ${Object.keys(playerProperties).length}`);
-  }, 60000); // 60s timeout for LLM calls
+  }, 120000); // 60s timeout for LLM calls
 });

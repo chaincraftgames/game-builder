@@ -35,8 +35,33 @@ const specGraphCache = new GraphCache(
 export interface RuntimePlayerState {
   illegalActionCount: number;
   privateMessage?: string;
-  actionsAllowed: boolean;
+  actionsAllowed?: boolean | null; // Optional, defaults to actionRequired
   actionRequired: boolean;
+}
+
+/**
+ * Get effective actionsAllowed value for a player.
+ * If actionsAllowed is explicitly set, use that value.
+ * Otherwise, default to match actionRequired.
+ * 
+ * Also validates and warns if actionRequired is true but actionsAllowed is false.
+ */
+export function getActionsAllowed(playerState: RuntimePlayerState): boolean {
+  // If explicitly set (not null/undefined), use that value
+  if (playerState.actionsAllowed !== null && playerState.actionsAllowed !== undefined) {
+    // Validate: if actionRequired is true, actionsAllowed cannot be false
+    if (playerState.actionRequired === true && playerState.actionsAllowed === false) {
+      console.warn(
+        '[getActionsAllowed] Invalid state: actionRequired is true but actionsAllowed is false. ' +
+        'Forcing actionsAllowed to true to match actionRequired.'
+      );
+      return true;
+    }
+    return playerState.actionsAllowed;
+  }
+  
+  // Default to match actionRequired
+  return playerState.actionRequired;
 }
 
 /** Messages to the players.  Key is player id, value is message. */
@@ -46,7 +71,8 @@ export interface SpecArtifacts {
   gameRules: string;
   stateSchema: string;
   stateTransitions: string;
-  phaseInstructions: Record<string, string>;
+  playerPhaseInstructions: Record<string, string>;
+  transitionInstructions: Record<string, string>;
 }
 
 /**
@@ -81,13 +107,15 @@ async function getCachedSpecArtifacts(
   if (channelValues.gameRules && 
       channelValues.stateSchema && 
       channelValues.stateTransitions && 
-      channelValues.phaseInstructions) {
+      channelValues.playerPhaseInstructions &&
+      channelValues.transitionInstructions) {
     console.log("[simulate] Found cached spec artifacts");
     return {
       gameRules: channelValues.gameRules,
       stateSchema: channelValues.stateSchema,
       stateTransitions: channelValues.stateTransitions,
-      phaseInstructions: channelValues.phaseInstructions,
+      playerPhaseInstructions: channelValues.playerPhaseInstructions,
+      transitionInstructions: channelValues.transitionInstructions,
     };
   }
 
@@ -145,9 +173,12 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   
   for (const playerId in players) {
     const privateMessage = players[playerId].privateMessage;
+    const actionsAllowed = players[playerId].actionsAllowed;
+    
     playerStates.set(playerId, {
       privateMessage: privateMessage || undefined,
-      actionsAllowed: players[playerId].actionsAllowed ?? true,
+      // Preserve actionsAllowed as-is (can be undefined/null) - helper will default it
+      actionsAllowed: actionsAllowed !== undefined ? actionsAllowed : undefined,
       actionRequired: players[playerId].actionRequired ?? false,
       illegalActionCount: players[playerId].illegalActionCount ?? 0,
     });
@@ -193,7 +224,8 @@ export async function createSimulation(
         gameRules: specResult.gameRules,
         stateSchema: specResult.stateSchema,
         stateTransitions: specResult.stateTransitions,
-        phaseInstructions: specResult.phaseInstructions,
+        playerPhaseInstructions: specResult.playerPhaseInstructions,
+        transitionInstructions: specResult.transitionInstructions,
       };
       
       console.log("[simulate] Spec processing complete, artifacts cached");
@@ -253,7 +285,8 @@ export async function initializeSimulation(
         hasGameRules: !!state.gameRules,
         hasStateSchema: !!state.stateSchema,
         hasStateTransitions: !!state.stateTransitions,
-        hasPhaseInstructions: !!state.phaseInstructions,
+        hasPlayerPhaseInstructions: !!state.playerPhaseInstructions,
+        hasTransitionInstructions: !!state.transitionInstructions,
         gameRulesPreview: state.gameRules?.substring(0, 100) + "...",
         stateSchemaPreview: state.stateSchema?.substring(0, 100) + "...",
       });

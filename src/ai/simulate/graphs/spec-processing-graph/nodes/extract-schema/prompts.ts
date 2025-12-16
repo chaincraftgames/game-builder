@@ -6,38 +6,69 @@
  * Planner prompt - Analyzes game specification to understand state structure
  */
 export const planSchemaTemplate = `
-You are a game design expert analyzing requirements for a text-based game.
-Your task is to perform a thorough analysis to determine:
-1. The game rules and how to play
-2. The state structure needed to track the game
-3. The schema definition for that state
+You are a game design analyst planning the game state schema for a turn based game. 
+Using the provided game specification and the base schema, produce exactly two sections 
+only (no extra commentary):
+
+1) Natural summary (1–3 short sentences): a concise plain-English summary of the 
+minimal state the runtime must capture to run the game (keep it focused on 
+decision-relevant state).
+
+2) Fields: a compact JSON array describing any new fields required 
+beyond the provided base schema. Each field entry must be an object with the following keys:
+   - "name" (string): dot-path (example: "players.<id>.currentMove")
+   - "type" (string): one of "number|string|boolean|enum|object|array|record"
+   - "path" (string): either "game" or "player" indicating wether the field is at the
+     game-level or player-level
+   - "source" (string): either "system" (set by system), "player input" (input from players),
+   - "purpose" (string): one short phrase (<=10 words) explaining why it is required
+   - "constraints" (optional string): e.g. "enum:[rock,paper,scissors]" or "maxItems:3"
+
+Rules for the planner output:
+- Do NOT output full JSON schemas or example state objects
+- Do not include histories unless explicitly required by the game spec.  Prefer cumulative
+  updates to current state fields.
+- Do NOT add "players.<id>.ready" or player-join tracking fields unless the 
+  specification explicitly states players can join after the game starts.
+- Keep the field list to at most 6 entries. If no new fields are required, return an 
+  empty array "[]".
+- The Natural summary may be plain text (1–3 sentences). The Fields section MUST be valid 
+  JSON parseable by the executor.
+- ⚠️ CRITICAL: Keep state structure FLAT. Only one level of properties under "game" and 
+  under "players". Do NOT create nested objects like game.settings.difficulty or 
+  players.<id>.inventory.gold. Use simple flat fields: game.difficulty, players.<id>.gold.
 
 Review the following detailed specification for a game:
 <game_specification>
 {gameSpecification}
 </game_specification>
 
-You are provided with a formal schema definition for the game state, generated from a Zod schema:
+You are provided with a formal schema definition for the base game state.  The final schema
+must match the shape of this schema:
 <schema>
 {schema}
 </schema>
 
-Use the provided schema as a base. Add any required fields for game state and runtime (such as gameEnded, publicMessage, player action flags, etc.) to ensure reliable gameplay. Return an updated schema reflecting all necessary fields.
+Output format (exactly):
 
-Perform your analysis of the game description and the provided schema to understand the state structure. Conduct your analysis inside a <game_analysis> tag.
+Natural summary:
+"<one to three short sentences>"
 
-<game_analysis>
-- Identify core game state (game-level fields)
-- Identify player-specific state (per-player fields)
-- Identify required runtime fields
-- Map fields to game vs player level
-- Note any additional fields or extensions present in the schema
-</game_analysis>
+Fields:
+<JSON array as described above>
 
-After your analysis, provide a clear description of:
-1. The game rules (how to play, phases, win conditions, etc.)
-2. The complete state structure with all fields and their types
-3. Which fields go at game level vs player level
+Example (exact formatting expected):
+Natural summary:
+"Game has 3 rounds. Each round all players submit one move; rounds resolve when all 
+moves are in. Scores updated per head-to-head matches."
+
+Fields:
+[
+  {{"name":"currentPhase","type":"string","purpose":"Track current game phase",
+    "path": "game","source":"system"}}, 
+  {{"name":"Choice","type":"enum","purpose":"player selection",
+    "path":"player","source":"player","constraints":"enum:[rock,paper,scissors]"}}
+]
 `;
 
 /**
@@ -50,17 +81,22 @@ Based on the following analysis of a game specification and the provided schema,
 {plannerAnalysis}
 </analysis>
 
-Game specification for reference:
-<game_specification>
-{gameSpecification}
-</game_specification>
-
 Formal schema definition for the game state (from Zod):
 <schema>
 {schema}
 </schema>
 
-Use the provided schema as a base. Add any required fields for game state and runtime (such as gameEnded, publicMessage, player action flags, etc.) to ensure reliable gameplay. Return an updated schema reflecting all necessary fields.
+⚠️ CRITICAL: You MUST add ALL fields from the planner analysis to the stateSchema.
+
+For EACH field in the planner's "Fields" array:
+- If path="game": add to stateSchema.properties.game.properties[fieldName]
+- If path="player": add to stateSchema.properties.players.additionalProperties.properties[fieldName]
+
+DO NOT skip any fields. If the planner identified a field as required, you MUST include it 
+in the schema. Dropping fields will cause validation failures later.
+
+Use the provided schema as a base. Add the planner's fields PLUS any additional runtime fields 
+(such as gameEnded, publicMessage, player action flags, etc.) to ensure reliable gameplay.
 
 You MUST generate a JSON response with exactly THREE required fields:
 
@@ -68,31 +104,64 @@ FIELD 1 - gameRules (string, REQUIRED):
 A clear description of the game rules (how to play, phases, win conditions, etc.)
 
 FIELD 2 - state (object, REQUIRED):
-An example of the initial game state structure with "game" and "players" objects, matching the updated schema exactly.
+An example of the initial game state structure with "game" and "players" objects, 
+matching the updated schema exactly.
 
 FIELD 3 - stateSchema (object, REQUIRED):
-A formal schema definition with a "fields" array containing game and players schema definitions, matching the updated schema exactly.
+A JSON Schema object defining the complete game state structure. This should be a 
+standard JSON Schema (Draft 7) that extends the base schema with game-specific fields.
 
-The 'stateSchema' object MUST have the exact shape (literal JSON example follows):
+The 'stateSchema' MUST be a valid JSON Schema object with this structure:
 
 {{
-	"fields": [
-		{{ "name": "game", "type": "object", "required": true, "items": {{ "type": "object", "properties": {{ /* game properties */ }} }} }},
-		{{ "name": "players", "type": "object", "required": true, "items": {{ "type": "object", "properties": {{ /* player properties */ }} }} }}
-	]
+  "type": "object",
+  "properties": {{
+    "game": {{
+      "type": "object",
+      "required": ["gameEnded", "publicMessage", /* other required game fields */],
+      "properties": {{
+        "gameEnded": {{ "type": "boolean", "description": "Whether the game has ended" }},
+        "publicMessage": {{ "type": "string", "description": "Message visible to all players" }},
+        /* Add game-specific fields here */
+      }}
+    }},
+    "players": {{
+      "type": "object",
+      "additionalProperties": {{
+        "type": "object",
+        "required": ["ready", /* other required player fields */],
+        "properties": {{
+          "ready": {{ "type": "boolean", "description": "Whether player is ready" }},
+          /* Add player-specific fields here */
+        }}
+      }}
+    }}
+  }},
+  "required": ["game", "players"]
 }}
 
 CRITICAL RULES:
-- The 'fields' array MUST include both 'game' and 'players' entries (exactly these two top-level names).
-- Each entry must include 'name', 'type', 'required', and 'items' as shown above.
-- 'items.properties' must list property objects with 'name', 'type', and 'required' booleans.
-- If you extended the provided schema, reflect those extensions in the 'fields' array.
- -Each entry must include 'name', 'type', 'required', and 'items' as shown above.
- -'items.properties' MUST be an object mapping property names to property definitions (NOT an array).
-	 Each property definition must be an object with 'name', 'type', and 'required' booleans.
-	 Example (literal):
-	 {{ "properties": {{ "gameEnded": {{ "name": "gameEnded", "type": "boolean", "required": true }} }} }}
- -If you extended the provided schema, reflect those extensions in the 'fields' array.
+- Use standard JSON Schema syntax (type, properties, required, additionalProperties, items, enum, description)
+- Include ALL fields from the base schema PLUS game-specific fields identified in the analysis
+- For fixed objects (like "game"), use "properties" to define fields
+- For records/maps (like "players"), use "additionalProperties" since keys are dynamic player IDs
+- For arrays, use "items" to define the schema of array elements
+- Use "required" arrays to specify which fields are mandatory
+- Include "description" for all game-specific fields you add
+- Keep it simple: use object, array, string, number, boolean, integer types and enum for constrained strings
+- ⚠️ CRITICAL: Keep structure FLAT - only ONE level of properties under "game" and under 
+  "players". Do NOT nest objects. Example: use "difficulty" directly under game.properties, 
+  NOT "settings.properties.difficulty". All player fields go directly under 
+  players.additionalProperties.properties, NOT nested inside other objects.
 
-**CRITICAL**: Your response must be ONLY valid JSON with the three fields (gameRules, state, stateSchema). Do not include any explanatory text, XML tags, or markdown.
+Example game-specific additions:
+- Game phase tracking: {{ "currentPhase": {{ "type": "string", "description": "Current game phase - valid values defined by transitions artifact" }} }}
+- Round counter: {{ "round": {{ "type": "number" }} }}
+- Player choices: {{ "choice": {{ "type": "string", "enum": ["rock", "paper", "scissors"] }} }}
+- Player scores: {{ "score": {{ "type": "number" }} }}
+
+IMPORTANT: Do NOT use enum for phase/currentPhase fields. Phases are defined in the transitions artifact which is generated AFTER the schema. The currentPhase field should be a plain string type.
+
+**CRITICAL**: Your response must be ONLY valid JSON with the three fields (gameRules, 
+state, stateSchema). Do not include any explanatory text, XML tags, or markdown.
 `;

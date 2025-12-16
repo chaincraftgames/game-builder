@@ -1,46 +1,98 @@
 /**
  * Prompt for Execute Changes Node
  * 
- * Formats planned changes as valid JSON state
+ * LLM resolves template variables and computes mechanics, returns stateDelta operations.
+ * The runtime applies these operations to maintain complete, consistent state.
  */
 
 export const executeChangesTemplate = `
-You are formatting planned state changes into valid JSON.
+You are resolving template variables and computing game mechanics to produce state delta operations.
 
-Planned Changes:
-<changes>
-{plannedChanges}
-</changes>
+Player IDs:
+<players>
+{players}
+</players>
 
-Current State (JSON):
+Player Action (if present):
+<playerAction>
+{playerAction}
+</playerAction>
+
+Current State:
 <state>
 {gameState}
 </state>
 
-State Schema:
-<schema>
-{stateSchema}
-</schema>
+Instructions:
+<instructions>
+{selectedInstructions}
+</instructions>
 
-Your task: Generate the COMPLETE updated game state as valid JSON.
+# Your Task
 
-CRITICAL RULES:
-1. Start with the current state as your base
-2. Apply ONLY the specific changes listed in the plan
-3. Keep ALL fields that are not mentioned in the changes (unchanged fields stay the same)
-4. Maintain the exact structure defined in the schema
-5. Include ALL top-level objects (game, players, etc.)
-6. Include ALL players with ALL their fields
-7. Preserve data types (numbers as numbers, not strings)
-8. Use null for optional fields that should be cleared
-9. Follow the schema structure exactly
+The instructions contain stateDelta operations with template variables like {{playerId}}, {{input.move}}, {{winnerId}}, etc.
 
-Common mistakes to avoid:
-- Don't omit unchanged fields
-- Don't omit any players
-- Don't change field types
-- Don't add fields not in schema
-- Don't use placeholder values
+Your job is to:
+1. Resolve ALL template variables to literal values
+2. Apply mechanicsGuidance rules if present (determine winners, compute scores, etc.)
+3. Return the RESOLVED stateDelta operations as an array
 
-Return ONLY the complete JSON state, no explanations or markdown.
+**YOU DO NOT RETURN THE UPDATED STATE**. You only return the state delta operations with all templates resolved.
+
+**NOTE ON RNG**: Any RNG operations have been PRE-RESOLVED by the router. Template variables like {{randomValue}} already contain concrete values.
+
+# How to Resolve Templates
+
+## 1. Deterministic Operations (NO templates)
+
+If operations have NO templates, return them as-is:
+{{ "op": "set", "path": "game.round", "value": 1 }}
+
+## 2. Player Actions
+
+When playerAction is provided:
+- {{{{playerId}}}} → playerAction.playerId
+- {{{{input.*}}}} → from playerAction.playerAction string
+
+Example:
+playerAction = {{"playerId": "p1", "playerAction": "rock"}}
+Template: {{"op": "set", "path": "players.{{{{playerId}}}}.currentMove", "value": "{{{{input.move}}}}"}}
+Resolved: {{"op": "set", "path": "players.p1.currentMove", "value": "rock"}}
+
+## 3. Mechanics Computation
+
+When mechanicsGuidance is present:
+1. Apply the rules to current state
+2. Compute template variables ({{{{winnerId}}}}, {{{{score}}}}, {{{{outcome}}}})
+3. Resolve templates in stateDelta
+
+Example:
+mechanicsGuidance: {{"rules": ["Rock beats scissors"]}}
+Current state: p1.currentMove="rock", p2.currentMove="scissors"
+Compute: winnerId="p1", outcome="Rock beats scissors"
+Template: {{"op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1}}
+Resolved: {{"op": "increment", "path": "players.p1.score", "value": 1}}
+
+## 4. Message Templates
+
+Resolve message templates the same way:
+- Public message: Replace {{{{game.roundNumber}}}}, {{{{p1Name}}}}, etc.
+- Private messages: Key is playerId, value is resolved message text
+
+# Output Format
+
+Return JSON object with these fields:
+
+{{
+  "rationale": "Brief explanation of what you computed",
+  "stateDelta": [/* Array of resolved stateDelta operations */],
+  "publicMessage": "Resolved public message if instructions specify one",
+  "privateMessages": {{
+    "p1": "Resolved private message for p1 if instructions specify one"
+  }}
+}}
+
+**CRITICAL**: ALL template variables {{{{...}}}} must be resolved to literal values. The runtime cannot process templates - it only applies the resolved operations.
+
+Begin.
 `;
