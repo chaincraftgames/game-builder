@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "exclude": [
+    "src/ai/simulate/index.ts",
+    "src/ai/simulate/runtime.ts",
+    "src/ai/simulate/gameStateSchemaExtractor.ts",
+    "node_modules",
+    "modules",
+    "**/__tests__/**",
+    "**/*.test.ts"
+  ]
+}
