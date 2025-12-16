@@ -1,25 +1,152 @@
 import { z } from 'zod';
 
-type SchemaFieldType = 'string' | 'number' | 'boolean' | 'array' | 'object';
+/**
+ * Simplified JSON Schema types for game state schemas
+ * Supports a constrained subset of JSON Schema Draft 7
+ */
+export type JSONSchemaType = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'integer' | 'null';
 
-const isValidFieldType = (type: string): type is SchemaFieldType => {
-    return ['string', 'number', 'boolean', 'array', 'object'].includes(type);
-};
+export interface JSONSchemaObject {
+  // Type can be single or array (for nullable types like ["string", "null"])
+  type?: JSONSchemaType | JSONSchemaType[];
+  properties?: Record<string, JSONSchemaObject>;
+  additionalProperties?: JSONSchemaObject | boolean;
+  items?: JSONSchemaObject;
+  required?: string[];
+  // Enum can contain strings, numbers, or null
+  enum?: (string | number | null)[];
+  description?: string;
+  // Note: anyOf, allOf, oneOf are in the type but NOT implemented in buildFromJsonSchema
+  // They're here for TypeScript compatibility but will be ignored by converter
+  anyOf?: JSONSchemaObject[];
+  allOf?: JSONSchemaObject[];
+  oneOf?: JSONSchemaObject[];
+}
 
+/**
+ * Legacy custom format type for backwards compatibility
+ * @deprecated Use JSONSchemaObject instead
+ */
 export type SchemaField = {
     name: string;
-    type: SchemaFieldType;
+    type: string;
     description?: string;
     required?: boolean;
-    properties?: Record<string, SchemaField>;  // For objects
-    patternProperties?: Record<string, SchemaField>;  // For records with patterns
+    properties?: Record<string, SchemaField>;
+    patternProperties?: Record<string, SchemaField>;
+    additionalProperties?: SchemaField;
     items?: {
-        type: SchemaFieldType;
+        type: string;
         properties?: Record<string, SchemaField>;
     };
 };
 
-export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
+/**
+ * Convert JSON Schema to Zod schema
+ * 
+ * Supports a constrained subset of JSON Schema Draft 7 suitable for game state schemas.
+ * This function handles BOTH:
+ * 1. Standard JSON Schema objects (current format)
+ * 2. Legacy custom format arrays (backwards compatibility)
+ * 
+ * SUPPORTED JSON SCHEMA CONSTRUCTS:
+ * - Primitives: string, number, integer, boolean
+ * - Objects: properties (fixed), additionalProperties (dynamic maps)
+ * - Arrays: items
+ * - Enums: string[], number[], or mixed with null
+ * - Required fields: via required array
+ * - Nullable types: via type array ["string", "null"]
+ * 
+ * INTENTIONALLY NOT SUPPORTED (for simplicity):
+ * - $ref and definitions (prefer inlining)
+ * - allOf, anyOf, oneOf (prefer explicit properties)
+ * - patternProperties (use additionalProperties)
+ * - Validation keywords: minLength, maxLength, pattern, format, etc.
+ * 
+ * ALL FIELDS ARE MADE NULLABLE by default for game state flexibility.
+ * Required vs optional is controlled by the required array in parent object.
+ * 
+ * See schema-validator-alignment.test.ts for comprehensive test coverage
+ * of supported constructs.
+ */
+export function buildStateSchema(input: JSONSchemaObject | SchemaField[]): z.ZodSchema {
+    // Handle legacy custom format (array of SchemaField)
+    if (Array.isArray(input)) {
+        return buildFromLegacyFormat(input);
+    }
+    
+    // Handle JSON Schema format
+    return buildFromJsonSchema(input);
+}
+
+/**
+ * Build Zod schema from JSON Schema
+ * Internal implementation - use buildStateSchema() as public API
+ */
+function buildFromJsonSchema(schema: JSONSchemaObject): z.ZodTypeAny {
+    // Handle enum
+    if (schema.enum && schema.enum.length > 0) {
+        return z.enum(schema.enum as [string, ...string[]]).nullable();
+    }
+    
+    // Handle type-based schemas
+    switch (schema.type) {
+        case 'string':
+            return z.string().nullable();
+        
+        case 'number':
+        case 'integer':
+            return z.number().nullable();
+        
+        case 'boolean':
+            return z.boolean().nullable();
+        
+        case 'array':
+            if (schema.items) {
+                const itemSchema = buildFromJsonSchema(schema.items);
+                return z.array(z.union([itemSchema, z.null()]));
+            }
+            return z.array(z.any().nullable());
+        
+        case 'object':
+            // Handle records/maps with additionalProperties
+            if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+                const valueSchema = buildFromJsonSchema(schema.additionalProperties);
+                return z.record(valueSchema);
+            }
+            
+            // Handle fixed objects with properties
+            if (schema.properties) {
+                const schemaObject: Record<string, z.ZodTypeAny> = {};
+                const requiredFields = new Set(schema.required || []);
+                
+                for (const [key, propSchema] of Object.entries(schema.properties)) {
+                    let fieldSchema = buildFromJsonSchema(propSchema);
+                    
+                    // Make optional if not in required array
+                    if (!requiredFields.has(key)) {
+                        fieldSchema = fieldSchema.optional();
+                    }
+                    
+                    schemaObject[key] = fieldSchema;
+                }
+                
+                return z.object(schemaObject);
+            }
+            
+            // Default: any record
+            return z.record(z.any().nullable());
+        
+        default:
+            return z.any().nullable();
+    }
+}
+
+/**
+ * Legacy support for custom format
+ * @deprecated Will be removed once all fixtures use JSON Schema
+ */
+function buildFromLegacyFormat(fields: SchemaField[]): z.ZodSchema {
     const schemaObject: Record<string, z.ZodTypeAny> = {};
     
     for (const field of fields) {
@@ -37,10 +164,6 @@ export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
                 break;
             case 'array':
                 if (field.items) {
-                    if (!isValidFieldType(field.items.type)) {
-                        throw new Error(`Invalid field type: ${field.items.type}`);
-                    }
-                    
                     // Handle array items based on their type
                     if (field.items.type === 'object' && field.items.properties) {
                         const subFields = Object.entries(field.items.properties).map(
@@ -52,10 +175,8 @@ export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
                                 items: fieldDef.items
                             })
                         );
-                        // Make array items nullable but not the array itself
-                        fieldSchema = z.array(z.union([buildStateSchema(subFields), z.null()]));
+                        fieldSchema = z.array(z.union([buildFromLegacyFormat(subFields), z.null()]));
                     } else {
-                        // For primitive types, create a simple array with nullable primitive items
                         let primitiveSchema: z.ZodTypeAny;
                         switch (field.items.type) {
                             case 'string':
@@ -77,7 +198,6 @@ export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
                 }
                 break;
             case 'object':
-                // Handle direct properties (new format) or items.properties (old format)
                 const objectProperties = field.properties || field.items?.properties;
                 
                 if (objectProperties) {
@@ -92,11 +212,24 @@ export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
                             items: fieldDef.items
                         })
                     );
-                    // Don't make the object itself nullable
-                    fieldSchema = buildStateSchema(subFields);
+                    fieldSchema = buildFromLegacyFormat(subFields);
+                } else if (field.additionalProperties) {
+                    if (field.additionalProperties.type === 'object' && field.additionalProperties.properties) {
+                        const valueSubFields = Object.entries(field.additionalProperties.properties).map(
+                            ([key, fieldDef]) => ({
+                                name: key,
+                                type: fieldDef.type,
+                                required: fieldDef.required ?? false,
+                                description: fieldDef.description,
+                                properties: fieldDef.properties,
+                                items: fieldDef.items
+                            })
+                        );
+                        fieldSchema = z.record(buildFromLegacyFormat(valueSubFields));
+                    } else {
+                        fieldSchema = z.record(z.any().nullable());
+                    }
                 } else if (field.patternProperties) {
-                    // Handle pattern properties (e.g., players object with dynamic keys)
-                    // Take the first pattern's schema as the value schema for the record
                     const patterns = Object.values(field.patternProperties);
                     if (patterns.length > 0 && patterns[0].properties) {
                         const valueSubFields = Object.entries(patterns[0].properties).map(
@@ -109,7 +242,7 @@ export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
                                 items: fieldDef.items
                             })
                         );
-                        fieldSchema = z.record(buildStateSchema(valueSubFields));
+                        fieldSchema = z.record(buildFromLegacyFormat(valueSubFields));
                     } else {
                         fieldSchema = z.record(z.any().nullable());
                     }
@@ -121,7 +254,6 @@ export function buildStateSchema(fields: SchemaField[]): z.ZodSchema {
                 fieldSchema = z.any().nullable();
         }
         
-        // Make the field optional if not required (default to required if not specified)
         schemaObject[field.name] = (field.required ?? true) ? fieldSchema : fieldSchema.optional();
     }
     

@@ -43,6 +43,7 @@ export interface ModelConfigOptions {
   tracerProjectName?: string;
   useDesignDefaults?: boolean;
   useSimulationDefaults?: boolean;
+  maxTokens?: number;
 }
 
 /**
@@ -108,6 +109,16 @@ const SIM_TRANSITIONS_EXTRACTION_DEFAULTS = {
 };
 
 /**
+ * Default configuration for instructions planning extraction
+ * Uses Sonnet 4.5 by default for high-quality planning
+ */
+const SIM_INSTRUCTIONS_DEFAULTS = {
+  modelName: process.env.CHAINCRAFT_SIM_INSTRUCTIONS_MODEL || process.env.CHAINCRAFT_SIMULATION_MODEL_NAME || "",
+  tracerProjectName: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
+  maxTokens: 16384, // Required for comprehensive instruction planning output
+};
+
+/**
  * Configure the model with flexible options for different workflows
  * @param options Configuration options for the model setup
  * @returns Promise resolving to ModelSetup with model instance and configuration
@@ -142,57 +153,68 @@ export const setupModel = async (
     );
   }
 
-  const model = await getModel(modelName);
+  const model = await getModel(modelName, options.maxTokens);
 
   // Create tracer callbacks based on configuration
   const callbacks = createTracerCallbacks(tracerProjectName);
 
-  // Create invoke options object
+  // Create invoke options object (maxTokens now set in model constructor, not here)
   const invokeOptions = {
     callbacks,
   };
 
   // Create convenient invoke method that uses the pre-configured options
   const invoke = async (prompt: string, metadata?: Record<string, any>, schema?: any): Promise<ModelResponse | any> => {
-    const invokeOptionsWithMetadata = {
-      ...invokeOptions,
-      metadata: {
-        ...metadata
-      },
-      ...(schema ? { maxTokens: 8192 } : {}) // Increased token limit for structured outputs only
-    };
-    
     if (schema) {
-      const structuredModel = (model as any).withStructuredOutput(schema);
+      const structuredModel = (model as any).withStructuredOutput(schema, {
+        maxTokens: 8192
+      });
+      
+      const invokeOptionsWithMetadata = {
+        ...invokeOptions,
+        ...(metadata ? { metadata } : {}),
+      };
+      
       return await structuredModel.invoke(
         [new HumanMessage(prompt)],
         invokeOptionsWithMetadata
       );
     }
     
+    // Non-schema path: maxTokens set in model constructor
+    const invokeOptionsWithMetadata = {
+      ...invokeOptions,
+      ...(metadata ? { metadata } : {}),
+    };
+    
     return (await model.invoke(
-      [new HumanMessage(prompt)],
+      prompt,
       invokeOptionsWithMetadata
     )) as ModelResponse;
   };
 
   // Create invoke method that accepts full message history
   const invokeWithMessages = async (messages: BaseMessage[], metadata?: Record<string, any>, schema?: any): Promise<ModelResponse | any> => {
-    const invokeOptionsWithMetadata = {
-      ...invokeOptions,
-      metadata: {
-        ...metadata
-      },
-      ...(schema ? { maxTokens: 8192 } : {}) // Increased token limit for structured outputs only
-    };
-    
     if (schema) {
-      const structuredModel = (model as any).withStructuredOutput(schema);
+      const structuredModel = (model as any).withStructuredOutput(schema, {
+        maxTokens: 8192
+      });
+      
+      const invokeOptionsWithMetadata = {
+        ...invokeOptions,
+        ...(metadata ? { metadata } : {}),
+      };
+      
       return await structuredModel.invoke(
         messages,
         invokeOptionsWithMetadata
       );
     }
+    
+    const invokeOptionsWithMetadata = {
+      ...invokeOptions,
+      ...(metadata ? { metadata } : {}),
+    };
     
     return (await model.invoke(
       messages,
@@ -220,12 +242,9 @@ export const setupModel = async (
       
       const invokeOptionsWithMetadata = {
         ...invokeOptions,
-        metadata: {
-          ...metadata
-        }
+        ...(metadata ? { metadata } : {}),
       };
       
-      console.log(`[DEBUG] invokeWithSystemPrompt using structured output with maxTokens: 8192 in config`);
       return await structuredModel.invoke(
         messages,
         invokeOptionsWithMetadata
@@ -234,9 +253,7 @@ export const setupModel = async (
     
     const invokeOptionsWithMetadata = {
       ...invokeOptions,
-      metadata: {
-        ...metadata
-      }
+      ...(metadata ? { metadata } : {}),
     };
     
     return (await model.invoke(
@@ -368,6 +385,24 @@ export const setupSpecTransitionsModel = async (
   const modelName = options.modelName || SIM_TRANSITIONS_EXTRACTION_DEFAULTS.modelName;
   const tracerProjectName = options.tracerProjectName || SIM_TRANSITIONS_EXTRACTION_DEFAULTS.tracerProjectName;
   return setupModel({ modelName, tracerProjectName });
+};
+
+/**
+ * Setup model specifically for transition extraction
+ * Uses Haiku by default for cost-effective transition analysis
+ * @param options Optional configuration overrides
+ * @returns Promise resolving to ModelSetup configured for transition extraction
+ */
+export const setupSpecInstructionsModel = async (
+  options: Omit<
+    ModelConfigOptions,
+    "useDesignDefaults" | "useSimulationDefaults"
+  > = {}
+): Promise<ModelWithOptions> => {
+  const modelName = options.modelName || SIM_INSTRUCTIONS_DEFAULTS.modelName;
+  const tracerProjectName = options.tracerProjectName || SIM_INSTRUCTIONS_DEFAULTS.tracerProjectName;
+  const maxTokens = options.maxTokens || SIM_INSTRUCTIONS_DEFAULTS.maxTokens;
+  return setupModel({ modelName, tracerProjectName, maxTokens });
 };
 
 /**

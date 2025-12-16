@@ -33,7 +33,12 @@ export const SpecProcessingState = Annotation.Root({
     default: () => "",
   }),
   
-  phaseInstructions: Annotation<Record<string, string>>({
+  playerPhaseInstructions: Annotation<Record<string, string>>({
+    reducer: (_, y) => y,
+    default: () => ({}),
+  }),
+  
+  transitionInstructions: Annotation<Record<string, string>>({
     reducer: (_, y) => y,
     default: () => ({}),
   }),

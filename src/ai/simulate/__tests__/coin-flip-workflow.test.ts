@@ -10,6 +10,11 @@ import { setConfig } from "#chaincraft/config.js";
 describe("Coin Flip Simulation", () => {
   setConfig("simulation-graph-type", "test-game-simulation");
   const gameId = `coinflip-${Math.random().toString(36).substring(7)}`;
+  
+  // Use realistic UUID-style player IDs to match RPS test pattern
+  const player1Id = `player-${crypto.randomUUID()}`;
+  const player2Id = `player-${crypto.randomUUID()}`;
+  
   const coinFlipSpec = `
     A coin flip game for 2 players. The game lasts 2 rounds.
     
@@ -37,8 +42,8 @@ describe("Coin Flip Simulation", () => {
 
   test("should initialize coin flip game with 2 players", async () => {
     const { publicMessage, playerStates } = await initializeSimulation(gameId, [
-      "alice",
-      "bob",
+      player1Id,
+      player2Id,
     ]);
 
     console.log("[coin-flip-test] Public message:", publicMessage);
@@ -57,6 +62,7 @@ describe("Coin Flip Simulation", () => {
       ["heads", "tails"],    // Round 1
       ["tails", "heads"],    // Round 2
     ];
+    const playerIds = [player1Id, player2Id];
     
     let finalGameEnded = false;
     
@@ -64,7 +70,7 @@ describe("Coin Flip Simulation", () => {
       console.log(`[coin-flip-test] === Round ${round} ===`);
       
       for (let playerIndex = 0; playerIndex < 2; playerIndex++) {
-        const playerId = playerIndex === 0 ? "alice" : "bob";
+        const playerId = playerIds[playerIndex];
         const call = playerCalls[round - 1][playerIndex];
         
         console.log(`[coin-flip-test] ${playerId} calls: ${call}`);
