@@ -296,7 +296,7 @@ export const PlayerActionInstructionSchema = z.object({
   // Messages (may contain {{templates}})
   messages: z
     .object({
-      private: MessageTemplateSchema.nullable().optional(),
+      private: z.array(MessageTemplateSchema).nullable().optional(),
       public: MessageTemplateSchema.nullable().optional(),
     })
     .nullable()
@@ -343,7 +343,7 @@ export const AutomaticTransitionInstructionSchema = z.object({
   // Messages (may contain {{templates}})
   messages: z
     .object({
-      private: MessageTemplateSchema.nullable().optional(),
+      private: z.array(MessageTemplateSchema).nullable().optional(),
       public: MessageTemplateSchema.nullable().optional(),
     })
     .nullable()
