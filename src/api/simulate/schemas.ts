@@ -4,7 +4,7 @@ import { z } from "zod";
 export const RuntimePlayerStateSchema = z.object({
   illegalActionCount: z.number().min(0),
   privateMessage: z.string().optional(),
-  actionsAllowed: z.array(z.string()),
+  actionsAllowed: z.boolean(),
   actionRequired: z.boolean(),
 });
 
