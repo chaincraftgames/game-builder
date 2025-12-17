@@ -287,22 +287,23 @@ Generate a JSON object with complete instructions for all phases:
 
 ALL state changes must be expressed as atomic StateDelta operations:
 
-**set**: Set a value at a path
+**set**: Set a value at a path (REQUIRED: must include 'value' field)
 {{ "op": "set", "path": "game.phase", "value": "reveal" }}
+{{ "op": "set", "path": "game.publicMessage", "value": "Game starting!" }}
 
-**increment**: Add to a numeric value
+**increment**: Add to a numeric value (REQUIRED: must include 'value' field)
 {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
 
-**append**: Add item to array
+**append**: Add item to array (REQUIRED: must include 'value' field)
 {{ "op": "append", "path": "game.history", "value": {{ "round": "{{{{game.round}}}}" }} }}
 
-**delete**: Remove a field
+**delete**: Remove a field (NO 'value' field - only 'path')
 {{ "op": "delete", "path": "players.{{{{playerId}}}}.choice" }}
 
-**transfer**: Move numeric value between paths
+**transfer**: Move numeric value between paths (uses 'amount' not 'value')
 {{ "op": "transfer", "fromPath": "game.pot", "toPath": "players.{{{{winnerId}}}}.chips", "amount": 10 }}
 
-**merge**: Shallow merge object properties
+**merge**: Shallow merge object properties (REQUIRED: must include 'value' field)
 {{ "op": "merge", "path": "players.{{{{playerId}}}}", "value": {{ "ready": true }} }}
 
 **rng**: Random selection from choices with probabilities (NOTE: probabilities must sum to 1.0)
@@ -315,6 +316,12 @@ ALL state changes must be expressed as atomic StateDelta operations:
 {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
 
 **Prefer Atomic Operations**: Break complex changes into simple atomic ops.
+
+**CRITICAL VALIDATION**: All operations EXCEPT 'delete' MUST include the appropriate value/amount field:
+- set, increment, append, merge → MUST have 'value' field
+- transfer → MUST have 'amount' field (not 'value')
+- delete → ONLY has 'path' field (NO 'value')
+- rng → MUST have 'choices' and 'probabilities' arrays
 
 ## 2. JsonLogic Validation
 
@@ -373,19 +380,34 @@ When planner hints include mechanicsDescription, format as structured guidance:
 
 ## 4. Message Templates
 
-Create templates with {{{{variables}}}} for runtime values:
+**⚠️ CRITICAL: DO NOT use stateDelta operations to set message fields!**
 
-**Private message**:
+Use the \`messages\` section to generate player communications:
+- **messages.private**: Array of private messages to specific players
+- **messages.public**: Single public message visible to all players
+
+**DO NOT** use stateDelta to set \`game.publicMessage\` or \`players.*.privateMessage\`.
+The runtime automatically populates these state fields from your messages section.
+
+**Messages structure** (part of instruction output):
 {{
-  "to": "{{{{playerId}}}}",
-  "template": "You submitted {{{{input.choice}}}} for round {{{{game.round}}}}"
+  "stateDelta": [
+    // State changes here - NO message operations
+  ],
+  "messages": {{
+    "private": [
+      {{ "to": "{{{{playerId}}}}", "template": "You submitted {{{{input.choice}}}} for round {{{{game.round}}}}" }},
+      {{ "to": "{{{{opponentId}}}}", "template": "{{{{playerName}}}} is waiting for you" }}
+    ],
+    "public": {{ "template": "{{{{winnerName}}}} wins round {{{{game.round}}}}! Score: {{{{p1Name}}}} {{{{p1Score}}}}, {{{{p2Name}}}} {{{{p2Score}}}}" }}
+  }}
 }}
 
-**Public message**:
-{{
-  "to": "all",
-  "template": "{{{{winnerName}}}} wins round {{{{game.round}}}}! Score: {{{{p1Name}}}} {{{{p1Score}}}}, {{{{p2Name}}}} {{{{p2Score}}}}"
-}}
+**Key points:**
+- \`private\`: Array of message objects, each with \`to\` (player ID template) and \`template\` (message text)
+- \`public\`: Single message object with just \`template\` (goes to all players)
+- Both private and public are optional
+- Use {{{{variables}}}} in both \`to\` and \`template\` fields
 
 ## 5. Template Variable Patterns
 
@@ -455,8 +477,10 @@ Common variable patterns:
     {{ "op": "set", "path": "players.{{{{playerId}}}}.actionRequired", "value": false }}
   ],
   "messages": {{
-    "private": {{ "to": "{{{{playerId}}}}", "template": "Choice recorded: {{{{input.choice}}}}" }},
-    "public": {{ "to": "all", "template": "{{{{playerName}}}} has submitted their choice" }}
+    "private": [
+      {{ "to": "{{{{playerId}}}}", "template": "Choice recorded: {{{{input.choice}}}}" }}
+    ],
+    "public": {{ "template": "{{{{playerName}}}} has submitted their choice" }}
   }}
 }}
 
@@ -475,12 +499,12 @@ Common variable patterns:
     {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }},
     {{ "op": "delete", "path": "players.p1.choice" }},
     {{ "op": "delete", "path": "players.p2.choice" }},
-    {{ "op": "increment", "path": "game.round", "value": 1 }},
-    {{ "op": "set", "path": "players.p1.actionRequired", "value": true }},
     {{ "op": "set", "path": "players.p2.actionRequired", "value": true }}
   ],
   "messages": {{
-    "public": {{ "to": "all", "template": "Round {{{{game.round}}}}: {{{{p1Name}}}} ({{{{p1Choice}}}}) vs {{{{p2Name}}}} ({{{{p2Choice}}}}). {{{{outcome}}}}! Scores: {{{{p1Score}}}}-{{{{p2Score}}}}" }}
+    "public": {{ "template": "Round {{{{game.round}}}}: {{{{p1Name}}}} ({{{{p1Choice}}}}) vs {{{{p2Name}}}} ({{{{p2Choice}}}}). {{{{outcome}}}}! Scores: {{{{p1Score}}}}-{{{{p2Score}}}}" }}
+  }}
+}}  "public": {{ "to": "all", "template": "Round {{{{game.round}}}}: {{{{p1Name}}}} ({{{{p1Choice}}}}) vs {{{{p2Name}}}} ({{{{p2Choice}}}}). {{{{outcome}}}}! Scores: {{{{p1Score}}}}-{{{{p2Score}}}}" }}
   }}
 }}
 
@@ -497,7 +521,7 @@ Common variable patterns:
     {{ "op": "set", "path": "players.{{{{playerId}}}}.trustLevel", "value": 0 }}
   ],
   "messages": {{
-    "public": {{ "to": "all", "template": "You stand before the oracle. The air is thick with ancient power." }}
+    "public": {{ "template": "You stand before the oracle. The air is thick with ancient power." }}
   }}
 }}
 

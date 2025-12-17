@@ -21,7 +21,7 @@ export const PlayerActionHintSchema = z.object({
   
   actionName: z.string().describe("Human-readable action name (e.g., 'Submit Move')"),
   
-  description: z.string().max(200).describe("Brief description of what this action does"),
+  description: z.string().max(500).describe("Brief description of what this action does"),
   
   // What state changes this action requires
   stateChanges: z.array(z.string()).describe(
@@ -78,7 +78,7 @@ export const AutomaticTransitionHintSchema = z.object({
   
   transitionName: z.string().describe("Human-readable name (e.g., 'Score Round', 'End Game')"),
   
-  description: z.string().max(200).describe("Brief description of what triggers this and what it does"),
+  description: z.string().max(500).describe("Brief description of what triggers this and what it does"),
   
   // When this should trigger
   trigger: z.object({
