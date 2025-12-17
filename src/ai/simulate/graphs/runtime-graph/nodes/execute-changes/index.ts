@@ -16,7 +16,7 @@ import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { executeChangesTemplate } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes/prompts.js";
 import { executeChangesResponseSchema } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes//schema.js";
 import { applyStateDeltas, type StateDeltaOp } from "#chaincraft/ai/simulate/logic/statedelta.js";
-import { deserializePlayerMapping, transformStateToAliases } from "#chaincraft/ai/simulate/player-mapping.js";
+import { deserializePlayerMapping, reversePlayerMapping, transformStateToAliases } from "#chaincraft/ai/simulate/player-mapping.js";
 import { expandAndTransformOperation, isDeterministicOperation, applyDeterministicOperations, mergeDeterministicOverrides } from "#chaincraft/ai/simulate/deterministic-ops.js";
 
 export function executeChanges(model: ModelWithOptions) {
@@ -50,6 +50,13 @@ export function executeChanges(model: ModelWithOptions) {
     // Transform player IDs array to aliases for prompt
     const aliasedPlayerIds = Object.keys(playerMapping).sort(); // ["p1", "p2", ...]
     
+    // Transform playerAction to use alias instead of UUID
+    const reverseMap = reversePlayerMapping(playerMapping);
+    const aliasedPlayerAction = state.playerAction ? {
+      playerId: reverseMap[state.playerAction.playerId] || state.playerAction.playerId,
+      playerAction: state.playerAction.playerAction
+    } : null;
+    
     const prompt = SystemMessagePromptTemplate.fromTemplate(executeChangesTemplate);
     
     // Format the prompt with aliased state (LLM sees p1, p2, not UUIDs)
@@ -57,7 +64,7 @@ export function executeChanges(model: ModelWithOptions) {
       selectedInstructions: state.selectedInstructions || "{}",
       gameState: JSON.stringify(aliasedState), // Pass aliased state to LLM
       players: JSON.stringify(aliasedPlayerIds), // Pass aliased player IDs to LLM
-      playerAction: state.playerAction ? JSON.stringify(state.playerAction) : "null",
+      playerAction: aliasedPlayerAction ? JSON.stringify(aliasedPlayerAction) : "null",
     });
     
     console.debug("[execute_changes] Invoking LLM to resolve templates...");

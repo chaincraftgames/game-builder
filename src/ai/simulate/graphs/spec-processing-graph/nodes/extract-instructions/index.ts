@@ -296,7 +296,7 @@ function validateStateDelta(
       case 'append':
       case 'merge':
         if (!op.path) {
-          errors.push(`${context}: stateDelta[${i}] op '${op.op}' missing 'path' field`);
+          errors.push(`${context}: stateDelta[${i}] op 'set' missing 'path' field`);
         }
         if (op.value === undefined) {
           errors.push(`${context}: stateDelta[${i}] op '${op.op}' missing 'value' field`);
