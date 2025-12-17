@@ -173,15 +173,20 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   
   for (const playerId in players) {
     const privateMessage = players[playerId].privateMessage;
+    const actionRequired = players[playerId].actionRequired ?? false;
     const actionsAllowed = players[playerId].actionsAllowed;
     
-    playerStates.set(playerId, {
+    // Build player state with actionsAllowed defaulted to actionRequired
+    const playerState: RuntimePlayerState = {
       privateMessage: privateMessage || undefined,
-      // Preserve actionsAllowed as-is (can be undefined/null) - helper will default it
-      actionsAllowed: actionsAllowed !== undefined ? actionsAllowed : undefined,
-      actionRequired: players[playerId].actionRequired ?? false,
+      actionRequired,
       illegalActionCount: players[playerId].illegalActionCount ?? 0,
-    });
+      actionsAllowed: actionsAllowed !== undefined && actionsAllowed !== null 
+        ? actionsAllowed 
+        : actionRequired, // Default to actionRequired if not explicitly set
+    };
+    
+    playerStates.set(playerId, playerState);
   }
   
   return {
