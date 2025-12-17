@@ -12,6 +12,11 @@
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { SpecProcessingStateType } from "../../spec-processing-state.js";
+import { 
+  extractSchemaFields, 
+  isValidFieldReference, 
+  extractFieldReferences 
+} from "../../schema-utils.js";
 import {
   planInstructionsTemplate,
   executeInstructionsTemplate,
@@ -170,8 +175,11 @@ export function extractInstructions(model: ModelWithOptions) {
       throw new Error(`Executor output validation failed: ${error}`);
     }
 
-    // Validate executor output
-    validateInstructionsArtifact(instructions);
+    // Validate executor output with schema field validation
+    const schema = typeof state.stateSchema === 'string'
+      ? JSON.parse(state.stateSchema)
+      : state.stateSchema;
+    validateInstructionsArtifact(instructions, schema);
 
     // ========================================================================
     // RETURN RESULTS
@@ -263,7 +271,8 @@ function validateStateDelta(
   stateDelta: any[],
   context: string,
   errors: string[],
-  warnings: string[]
+  warnings: string[],
+  schemaFields?: Set<string>
 ): void {
   const validOps = ['set', 'increment', 'append', 'delete', 'transfer', 'merge', 'rng'];
   
@@ -332,15 +341,43 @@ function validateStateDelta(
         }
         break;
     }
+    
+    // Validate field references if schema provided
+    if (schemaFields) {
+      const pathField = op.path || op.fromPath || op.toPath;
+      if (pathField && typeof pathField === 'string') {
+        // Extract field path without template variables
+        const cleanPath = pathField.replace(/\{\{[^}]+\}\}/g, '*');
+        // Skip validation if path is fully templated or contains complex expressions
+        if (!cleanPath.includes('{{') && cleanPath !== '*') {
+          if (!isValidFieldReference(cleanPath, schemaFields)) {
+            warnings.push(
+              `${context}: stateDelta[${i}] references unknown field: ${pathField}`
+            );
+          }
+        }
+      }
+    }
   }
 }
 
 /**
  * Validate instructions artifact for correctness and completeness
  */
-function validateInstructionsArtifact(artifact: InstructionsArtifact): void {
+function validateInstructionsArtifact(artifact: InstructionsArtifact, schema?: any): void {
   const errors: string[] = [];
   const warnings: string[] = [];
+  
+  // Extract schema fields for validation if schema provided and in correct format
+  // Schema should be a JSON Schema object with type: "object" and properties
+  let schemaFields: Set<string> | undefined;
+  if (schema && schema.type === 'object' && schema.properties) {
+    schemaFields = extractSchemaFields(schema);
+  } else if (schema) {
+    console.debug(
+      '[extract_instructions][validation] Schema format not recognized for field validation (expected JSON Schema with type="object" and properties). Skipping field validation.'
+    );
+  }
 
   // Check coverage
   if (!artifact.playerPhases && !artifact.transitions) {
@@ -384,7 +421,7 @@ function validateInstructionsArtifact(artifact: InstructionsArtifact): void {
         warnings.push(`Action '${action.id}' has no stateDelta operations`);
       } else {
         // Validate stateDelta operations
-        validateStateDelta(action.stateDelta, `Action '${action.id}'`, errors, warnings);
+        validateStateDelta(action.stateDelta, `Action '${action.id}'`, errors, warnings, schemaFields);
       }
     }
 
@@ -400,7 +437,7 @@ function validateInstructionsArtifact(artifact: InstructionsArtifact): void {
       warnings.push(`Transition '${transition.id}' has no stateDelta operations`);
     } else {
       // Validate stateDelta operations
-      validateStateDelta(transition.stateDelta, `Transition '${transition.id}'`, errors, warnings);
+      validateStateDelta(transition.stateDelta, `Transition '${transition.id}'`, errors, warnings, schemaFields);
     }
 
     // Check that transitions with mechanics guidance have properly formatted rules

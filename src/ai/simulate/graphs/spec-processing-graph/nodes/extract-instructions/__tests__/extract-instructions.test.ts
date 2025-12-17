@@ -42,31 +42,39 @@ FINISHED:
 - Player with highest score wins
 `;
 
-    const stateSchema = JSON.stringify([
-      {
-        name: "game",
-        type: "object",
-        description: "Core game state",
-        properties: {
-          phase: { name: "phase", type: "string", description: "Current phase: choice, reveal, or finished" },
-          round: { name: "round", type: "number", description: "Current round (1-3)" },
-          gameEnded: { name: "gameEnded", type: "boolean", description: "Whether game has ended" }
-        }
-      },
-      {
-        name: "players",
-        type: "object",
-        description: "Player state keyed by player ID",
-        items: {
+    const stateSchema = JSON.stringify({
+      type: "object",
+      properties: {
+        game: {
           type: "object",
+          description: "Core game state",
           properties: {
-            name: { name: "name", type: "string", description: "Player name" },
-            choice: { name: "choice", type: "string", description: "Player's choice (rock/paper/scissors)" },
-            score: { name: "score", type: "number", description: "Player's current score" }
+            phase: { type: "string", description: "Current phase: choice, reveal, or finished" },
+            round: { type: "number", description: "Current round (1-3)" },
+            gameEnded: { type: "boolean", description: "Whether game has ended" },
+            publicMessage: { type: "string", description: "Public message to all players" }
+          },
+          required: ["phase", "round", "gameEnded"]
+        },
+        players: {
+          type: "object",
+          description: "Player state keyed by player ID",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Player name" },
+              choice: { type: ["string", "null"], description: "Player's choice (rock/paper/scissors)" },
+              score: { type: "number", description: "Player's current score" },
+              actionRequired: { type: "boolean", description: "Whether player action is required" },
+              illegalActionCount: { type: "number", description: "Count of illegal actions" },
+              privateMessage: { type: "string", description: "Private message to player" }
+            },
+            required: ["score", "actionRequired", "illegalActionCount"]
           }
         }
-      }
-    ]);
+      },
+      required: ["game", "players"]
+    });
 
     const transitionsArtifact = JSON.stringify({
       phases: ["choice", "reveal", "finished"],
