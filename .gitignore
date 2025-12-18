@@ -7,3 +7,6 @@ data/*
 logs/*.log
 **/.DS_Store
 *.js
+*.log
+src/ai/simulate/test/fixtures/**
+test-results/**
