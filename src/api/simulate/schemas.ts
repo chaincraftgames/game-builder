@@ -19,6 +19,19 @@ export const SimResponseSchema = z.object({
   publicMessage: z.string().optional(),
   playerStates: PlayerStatesSchema,
   gameEnded: z.boolean(),
+  gameError: z
+    .object({
+      errorType: z.enum([
+        "deadlock",
+        "invalid_state",
+        "rule_violation",
+        "transition_failed",
+      ]),
+      errorMessage: z.string(),
+      errorContext: z.any().optional(),
+      timestamp: z.string(),
+    })
+    .optional(),
 });
 
 // Create simulation schemas

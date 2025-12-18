@@ -155,6 +155,19 @@ export function router() {
       // Validate player exists in state before checking input
       const actingPlayer = hasPlayerInput ? gameState.players[state.playerAction!.playerId] : undefined;
       
+      // If player input provided but player not found, return error
+      if (hasPlayerInput && !actingPlayer) {
+        return handleError(
+          gameState,
+          'invalid_state',
+          `Player ID not found in game state: ${state.playerAction!.playerId}`,
+          { 
+            playerId: state.playerAction!.playerId,
+            availablePlayers: Object.keys(gameState.players || {})
+          }
+        );
+      }
+      
       if (
         phaseMetadata?.requiresPlayerInput &&
         hasPlayerInput && 
