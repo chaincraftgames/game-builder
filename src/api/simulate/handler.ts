@@ -114,6 +114,7 @@ export async function handleProcessAction(
       publicMessage: response.publicMessage,
       playerStates,
       gameEnded: response.gameEnded,
+      gameError: response.gameError,
     };
   } catch (error) {
     console.error("Error in processAction:", error);
@@ -147,6 +148,7 @@ export async function handleGetSimulationState(
       publicMessage: response.publicMessage,
       playerStates,
       gameEnded: response.gameEnded,
+      gameError: response.gameError,
     };
   } catch (error) {
     console.error("Error in getSimulationState:", error);
@@ -205,6 +207,7 @@ export async function handleContinueSimulation(
       publicMessage: response.publicMessage,
       playerStates,
       gameEnded: response.gameEnded,
+      gameError: response.gameError,
     };
   } catch (error) {
     console.error("Error in continueSimulation:", error);

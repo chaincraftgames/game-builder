@@ -127,6 +127,12 @@ export type SimResponse = {
   publicMessage?: string;
   playerStates: PlayerStates;
   gameEnded: boolean;
+  gameError?: {
+    errorType: 'deadlock' | 'invalid_state' | 'rule_violation' | 'transition_failed';
+    errorMessage: string;
+    errorContext?: any;
+    timestamp: string;
+  };
 };
 
 type PlayerCount = {
@@ -159,6 +165,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
       publicMessage: undefined,
       playerStates: new Map(),
       gameEnded: false,
+      gameError: undefined,
     };
   }
   
@@ -169,6 +176,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   
   const publicMessage = game?.publicMessage;
   const gameEnded = game?.gameEnded ?? false;
+  const gameError = game?.gameError || undefined;
   const playerStates: PlayerStates = new Map();
   
   for (const playerId in players) {
@@ -193,6 +201,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
     publicMessage,
     playerStates,
     gameEnded,
+    gameError,
   };
 }
 
@@ -277,6 +286,9 @@ export async function initializeSimulation(
   try {
     console.log("[simulate] Initializing simulation for game %s", gameId);
     
+    // Normalize player IDs to lowercase for consistent handling
+    const normalizedPlayers = players.map(p => p.toLowerCase());
+    
     // Get cached runtime graph with checkpointer
     const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
     const config = { configurable: { thread_id: gameId } };
@@ -301,7 +313,7 @@ export async function initializeSimulation(
     
     // Invoke runtime graph with players - artifacts loaded automatically from checkpoint
     const result = await runtimeGraph.invoke({
-      players,
+      players: normalizedPlayers,
       isInitialized: false,
     }, config);
     
@@ -333,6 +345,9 @@ export async function processAction(
         action
       );
       
+      // Normalize player ID to lowercase for consistent handling
+      const normalizedPlayerId = playerId.toLowerCase();
+      
       // Get cached runtime graph with checkpointer
       const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
       const config = { configurable: { thread_id: gameId } };
@@ -340,7 +355,7 @@ export async function processAction(
       // Invoke runtime graph with player action - all state loaded automatically from checkpoint
       const result = await runtimeGraph.invoke({
         playerAction: {
-          playerId,
+          playerId: normalizedPlayerId,
           playerAction: action,
         },
       }, config);
