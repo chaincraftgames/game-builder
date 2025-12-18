@@ -1,0 +1,205 @@
+{
+  "$schema": "./gamepiece-metadata.schema.json",
+  "description": "Few-shot examples for Metadata Extractor. Shows how to extract gamepiece metadata from game specifications. Each example includes an abbreviated input spec (focused on gamepiece-relevant details) and the expected JSON output.",
+  "examples": [
+    {
+      "name": "Simple Game - Rock Paper Scissors",
+      "input_spec": "Rock, Paper, Scissors. Players simultaneously choose from 3 options: rock, paper, or scissors. Rock beats scissors, scissors beats paper, paper beats rock.",
+      "notes": "Simple game with identical pieces. No expansion needed. Each instance gets a brief description explaining its role.",
+      "output": {
+        "gamepiece_types": [
+          {
+            "id": "rps_choice",
+            "type": "other",
+            "quantity": 3,
+            "description": "Player choices in Rock, Paper, Scissors",
+            "template": "",
+            "instances": [
+              {
+                "id": "rock",
+                "name": "Rock",
+                "brief_description": "A closed fist representing a rock. Beats scissors, loses to paper.",
+                "needs_expansion": false,
+                "copy_count": 1
+              },
+              {
+                "id": "paper",
+                "name": "Paper",
+                "brief_description": "An open hand representing paper. Beats rock, loses to scissors.",
+                "needs_expansion": false,
+                "copy_count": 1
+              },
+              {
+                "id": "scissors",
+                "name": "Scissors",
+                "brief_description": "Two fingers forming scissors. Beats paper, loses to rock.",
+                "needs_expansion": false,
+                "copy_count": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Standard Template - Poker Deck",
+      "input_spec": "Texas Hold'em poker using a standard 52-card deck. Each player receives 2 hole cards (private), and 5 community cards are dealt face-up in phases (flop, turn, river). Players make the best 5-card hand.",
+      "notes": "Uses standard template. When template is specified, instances array is empty (template defines all instances). No expansion needed for standard components.",
+      "output": {
+        "gamepiece_types": [
+          {
+            "id": "playing_card",
+            "type": "card",
+            "quantity": 52,
+            "description": "Standard 52-card poker deck with 4 suits (hearts, diamonds, clubs, spades) and 13 ranks (A, 2-10, J, Q, K)",
+            "template": "standard_52_deck",
+            "instances": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Complex Game - Fantasy Creatures",
+      "input_spec": "Fantasy card battle game with 100 unique creature cards. Each creature has attack, defense, mana cost, and special abilities like flying, first strike, or spell casting. Players build decks of 40 cards and summon creatures to battle opponents.",
+      "notes": "Complex unique instances requiring expansion. Brief descriptions include hints about rarity (rare/common/uncommon), power level (high/medium/low), theme (fire/ice/nature), and role (attacker/defender/support). These hints guide Content Generator.",
+      "output": {
+        "gamepiece_types": [
+          {
+            "id": "creature_card",
+            "type": "card",
+            "quantity": 100,
+            "description": "Unique creature cards with varied stats and special abilities",
+            "template": "",
+            "instances": [
+              {
+                "id": "fire_drake",
+                "name": "Fire Drake",
+                "brief_description": "A rare, high-powered fire-themed attacker. A fierce dragon that breathes fire and rules the volcanic mountains. Expected to have high attack, medium defense, flying ability.",
+                "needs_expansion": true,
+                "copy_count": 1
+              },
+              {
+                "id": "ice_wizard",
+                "name": "Ice Wizard",
+                "brief_description": "A common, medium-powered ice-themed support character. A master of frost magic who can freeze enemies in their tracks. Expected to have medium attack, low defense, freezing spell ability.",
+                "needs_expansion": true,
+                "copy_count": 3
+              },
+              {
+                "id": "forest_guardian",
+                "name": "Forest Guardian",
+                "brief_description": "An uncommon, medium-powered nature-themed defender. An ancient treant protecting the sacred groves. Expected to have low attack, high defense, healing or regeneration ability.",
+                "needs_expansion": true,
+                "copy_count": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Multiple Types - Resource Game",
+      "input_spec": "Catan-style resource collection game. Players collect 5 types of resources: wood (19 cards), brick (19 cards), sheep (19 cards), wheat (19 cards), ore (19 cards). Resources are used to build settlements and roads. The game board has 19 terrain hexes that produce resources.",
+      "notes": "Multiple gamepiece types. Resource cards are semi-identical (grouped by type), so only one example instance per resource type is needed. Board spaces would be a separate gamepiece type.",
+      "output": {
+        "gamepiece_types": [
+          {
+            "id": "resource_card",
+            "type": "card",
+            "quantity": 95,
+            "description": "Resource cards representing five resource types: wood, brick, sheep, wheat, and ore. Players collect and trade these to build.",
+            "template": "",
+            "instances": [
+              {
+                "id": "wood_card",
+                "name": "Wood",
+                "brief_description": "A resource card representing lumber from forests. Used for building roads and settlements.",
+                "needs_expansion": false,
+                "copy_count": 19
+              },
+              {
+                "id": "brick_card",
+                "name": "Brick",
+                "brief_description": "A resource card representing clay bricks from hills. Used for building roads and settlements.",
+                "needs_expansion": false,
+                "copy_count": 19
+              },
+              {
+                "id": "sheep_card",
+                "name": "Sheep",
+                "brief_description": "A resource card representing wool from pastures. Used for building settlements and development cards.",
+                "needs_expansion": false,
+                "copy_count": 19
+              },
+              {
+                "id": "wheat_card",
+                "name": "Wheat",
+                "brief_description": "A resource card representing grain from fields. Used for building settlements and cities.",
+                "needs_expansion": false,
+                "copy_count": 19
+              },
+              {
+                "id": "ore_card",
+                "name": "Ore",
+                "brief_description": "A resource card representing metal from mountains. Used for building cities and development cards.",
+                "needs_expansion": false,
+                "copy_count": 19
+              }
+            ]
+          },
+          {
+            "id": "terrain_hex",
+            "type": "tile",
+            "quantity": 19,
+            "description": "Hexagonal terrain tiles that produce resources when their number is rolled. Five terrain types corresponding to the five resources.",
+            "template": "",
+            "instances": [
+              {
+                "id": "forest_hex",
+                "name": "Forest",
+                "brief_description": "A forest hex that produces wood when its number is rolled.",
+                "needs_expansion": false,
+                "copy_count": 4
+              },
+              {
+                "id": "hills_hex",
+                "name": "Hills",
+                "brief_description": "A hills hex that produces brick when its number is rolled.",
+                "needs_expansion": false,
+                "copy_count": 3
+              },
+              {
+                "id": "pasture_hex",
+                "name": "Pasture",
+                "brief_description": "A pasture hex that produces sheep when its number is rolled.",
+                "needs_expansion": false,
+                "copy_count": 4
+              },
+              {
+                "id": "fields_hex",
+                "name": "Fields",
+                "brief_description": "A fields hex that produces wheat when its number is rolled.",
+                "needs_expansion": false,
+                "copy_count": 4
+              },
+              {
+                "id": "mountains_hex",
+                "name": "Mountains",
+                "brief_description": "A mountains hex that produces ore when its number is rolled.",
+                "needs_expansion": false,
+                "copy_count": 3
+              },
+              {
+                "id": "desert_hex",
+                "name": "Desert",
+                "brief_description": "A desert hex that produces no resources.",
+                "needs_expansion": false,
+                "copy_count": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

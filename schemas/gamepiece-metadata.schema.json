@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gamepiece Metadata Schema",
+  "description": "Schema for gamepiece metadata after XML->JSON conversion. This is the internal representation used by UX Generator, Content Generator, and SWE.",
+  "type": "object",
+  "properties": {
+    "gamepiece_types": {
+      "type": "array",
+      "description": "Array of gamepiece types in the game",
+      "items": {
+        "$ref": "#/definitions/GamepieceType"
+      }
+    }
+  },
+  "required": ["gamepiece_types"],
+  "definitions": {
+    "GamepieceType": {
+      "type": "object",
+      "description": "A type of gamepiece (e.g., 'card', 'token', 'dice')",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Canonical identifier for this gamepiece type (lowercase, underscores)",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Category of gamepiece",
+          "enum": ["card", "token", "dice", "tile", "board", "space", "other"]
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Total number of instances of this type",
+          "minimum": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "High-level description of this gamepiece type"
+        },
+        "template": {
+          "type": "string",
+          "description": "Optional reference to a standard template (e.g., 'standard_52_deck')",
+          "examples": ["standard_52_deck", "standard_dice_d6", "monopoly_pieces"]
+        },
+        "instances": {
+          "type": "array",
+          "description": "Array of individual gamepiece instances",
+          "items": {
+            "$ref": "#/definitions/GamepieceInstance"
+          }
+        }
+      },
+      "required": ["id", "type", "quantity", "description", "instances"]
+    },
+    "GamepieceInstance": {
+      "type": "object",
+      "description": "A specific instance of a gamepiece (e.g., 'Ace of Spades', 'Fire Drake')",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this instance (lowercase, underscores)",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name for this instance"
+        },
+        "brief_description": {
+          "type": "string",
+          "description": "High-level description of this instance (1-2 sentences)"
+        },
+        "needs_expansion": {
+          "type": "boolean",
+          "description": "Flag indicating if this instance needs detailed content generation"
+        },
+        "copy_count": {
+          "type": "integer",
+          "description": "Number of physical copies of this instance in the game",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "required": ["id", "name", "brief_description", "needs_expansion"]
+    }
+  }
+}

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Gamepiece Metadata Schema (XML Format)
+  
+  This schema defines the structure for gamepiece metadata output from the Metadata Extractor.
+  LLMs produce this XML format, which is then parsed to JSON for downstream use.
+  
+  Design decisions:
+  - XML chosen for LLM generation (better handling of multi-line text, clear structure)
+  - Self-documenting tags reduce errors
+  - Whitespace-insensitive (indentation doesn't break parsing)
+-->
+
+<!-- Root element: Contains all gamepiece types for a game -->
+<gamepiece_metadata>
+  
+  <!-- Example: Simple game (Rock Paper Scissors) -->
+  <gamepiece_type>
+    <id>rps_choice</id>
+    <type>piece</type>
+    <quantity>3</quantity>
+    <description>Player choices in Rock, Paper, Scissors</description>
+    
+    <!-- Optional: Reference to standard template -->
+    <template></template>
+    
+    <!-- Instances: One entry per unique gamepiece (sum of copy_counts must equal quantity) -->
+    <instances>
+      <instance>
+        <id>rock</id>
+        <name>Rock</name>
+        <brief_description>Rock crushes scissors</brief_description>
+        <needs_expansion>false</needs_expansion>
+        <copy_count>1</copy_count>
+      </instance>
+      
+      <instance>
+        <id>paper</id>
+        <name>Paper</name>
+        <brief_description>Paper covers rock</brief_description>
+        <needs_expansion>false</needs_expansion>
+        <copy_count>1</copy_count>
+      </instance>
+      
+      <instance>
+        <id>scissors</id>
+        <name>Scissors</name>
+        <brief_description>Scissors cuts paper</brief_description>
+        <needs_expansion>false</needs_expansion>
+        <copy_count>1</copy_count>
+      </instance>
+    </instances>
+  </gamepiece_type>
+  
+  <!-- Example: Standard template (Poker deck) -->
+  <gamepiece_type>
+    <id>playing_card</id>
+    <type>card</type>
+    <quantity>52</quantity>
+    <description>Standard 52-card poker deck</description>
+    
+    <!-- Template reference tells parser to expand using standard template -->
+    <template>standard_52_deck</template>
+    
+    <!-- Template-based: Parser auto-generates 52 instances -->
+    <instances>
+      <!-- When template is specified, instances can be empty or minimal -->
+      <!-- Parser will expand based on template definition -->
+    </instances>
+  </gamepiece_type>
+  
+  <!-- Example: Complex game (Fantasy creatures needing expansion) -->
+  <gamepiece_type>
+    <id>creature_card</id>
+    <type>card</type>
+    <quantity>150</quantity>
+    <description>Unique fantasy creature cards with special abilities</description>
+    
+    <instances>
+      <instance>
+        <id>fire_drake</id>
+        <name>Fire Drake</name>
+        <brief_description>A rare, high-powered fire-themed attacker. A fierce dragon that breathes fire and rules the volcanic mountains.</brief_description>
+        <needs_expansion>true</needs_expansion>
+        <copy_count>1</copy_count> <!-- Legendary: single copy -->
+      </instance>
+      
+      <instance>
+        <id>ice_wizard</id>
+        <name>Ice Wizard</name>
+        <brief_description>A common, medium-powered ice-themed support character. A master of frost magic who can freeze enemies in their tracks.</brief_description>
+        <needs_expansion>true</needs_expansion>
+        <copy_count>3</copy_count> <!-- Common: 3 copies -->
+      </instance>
+      
+      <instance>
+        <id>forest_guardian</id>
+        <name>Forest Guardian</name>
+        <brief_description>An uncommon, medium-powered nature-themed defender. An ancient treant protecting the sacred groves.</brief_description>
+        <needs_expansion>true</needs_expansion>
+        <copy_count>2</copy_count> <!-- Uncommon: 2 copies -->
+      </instance>
+      
+      <!-- ... More creature instances with varying copy_counts totaling 150 -->
+    </instances>
+  </gamepiece_type>
+  
+  <!-- Example: Tokens (simple, identical pieces) -->
+  <gamepiece_type>
+    <id>resource_token</id>
+    <type>token</type>
+    <quantity>100</quantity>
+    <description>Generic resource tokens used for tracking resources</description>
+    
+    <instances>
+      <!-- For identical tokens, instances can be minimal -->
+      <instance>
+        <id>token_1</id>
+        <name>Resource Token</name>
+        <brief_description>A generic token representing one unit of resources</brief_description>
+        <needs_expansion>false</needs_expansion>
+      </instance>
+      <!-- Note: Even though there are 100 tokens, they're all identical,
+           so we might only define one and note quantity at type level -->
+    </instances>
+  </gamepiece_type>
+  
+</gamepiece_metadata>
