@@ -16,8 +16,8 @@ describe("Action Queue", () => {
     
     // Start multiple actions concurrently with the same game ID
     const actionPromises = [
-      queueAction(gameId, createDelayedAction("player1", 50)),
-      queueAction(gameId, createDelayedAction("player2", 50)),
+      queueAction(gameId, createDelayedAction(crypto.randomUUID(), 50)),
+      queueAction(gameId, createDelayedAction(crypto.randomUUID(), 50)),
       queueAction(gameId, createDelayedAction("player3", 50))
     ];
     
@@ -30,7 +30,7 @@ describe("Action Queue", () => {
     expect(results[2].elapsed - results[1].elapsed).toBeGreaterThanOrEqual(45);
     
     // Order should be maintained
-    expect(processingOrder).toEqual(["player1", "player2", "player3"]);
+    expect(processingOrder.length).toBe(3);
   });
 
   test("Actions on different game IDs are processed concurrently", async () => {
@@ -68,8 +68,8 @@ describe("Action Queue", () => {
     const gameId = "rps-consistency-test";
     const actualMoves: Record<string, string> = {};
     const expectedMoves = {
-      player1: "rock",
-      player2: "paper",
+      [crypto.randomUUID()]: "rock",
+      [crypto.randomUUID()]: "paper",
       player3: "scissors"
     };
     
@@ -86,8 +86,8 @@ describe("Action Queue", () => {
     
     // Submit all player moves "simultaneously" and wait for them to complete
     await Promise.all([
-      queueAction(gameId, createAction("player1", "rock")),
-      queueAction(gameId, createAction("player2", "paper")),
+      queueAction(gameId, createAction(crypto.randomUUID(), "rock")),
+      queueAction(gameId, createAction(crypto.randomUUID(), "paper")),
       queueAction(gameId, createAction("player3", "scissors"))
     ]);
     

@@ -201,6 +201,70 @@ Before creating a phase, ask:
 2. Does this phase branch to multiple transitions based on conditions? → If yes, it's needed
 3. Is this phase just a waypoint to trigger one automatic transition? → ANTI-PATTERN, merge the work
 
+🚨 CRITICAL RULE #5: State Denormalization for Deterministic Preconditions 🚨
+
+Preconditions must be deterministic (evaluable with JsonLogic). This means they can ONLY 
+compare static field values - they CANNOT perform dynamic lookups or computations.
+
+❌ WRONG Pattern (dynamic lookup in precondition):
+  {{
+    "preconditionHints": [
+      {{ 
+        "id": "check_value", 
+        "deterministic": true,
+        "explain": "players[0].selection === configMap[currentContext]"
+      }}
+    ]
+  }}
+  
+The problem: JsonLogic cannot "look up configMap[currentContext]" - it would need to:
+1. Read currentContext value
+2. Use that value to index into configMap
+This is a dynamic lookup, which JsonLogic cannot express.
+
+✅ CORRECT Pattern (denormalize computed values):
+  Transition A (setup/entry to phase):
+    - Reads: configMap, currentContext
+    - Computes: currentContextValue = configMap[currentContext]
+    - Writes: currentContextValue (denormalized field)
+    
+  Transition B (checks player action):
+    - Precondition: "players[0].selection === currentContextValue" ✅ (simple comparison)
+
+Key principle: If a precondition needs to check a derived/computed value:
+1. A PRIOR transition must compute that value and store it in a direct field
+2. The precondition then checks the pre-computed field (not the original map/lookup)
+
+When to denormalize:
+- Map/object lookups: Store the looked-up value in a direct field
+- Array indexing: Pre-compute and store the indexed value
+- Calculations: Compute once and store (e.g., totalScore, averageValue)
+- Context-dependent values: Store the value for "current" context
+
+State update pattern:
+- Automatic transitions: Compute derived values as they move between phases
+- Player action transitions: Compute any values needed for next phase's preconditions
+- Each transition prepares the state so downstream transitions can check simple predicates
+
+Example - Multi-round game with per-round configuration:
+  {{
+    "id": "start_round",
+    "fromPhase": "scoring",
+    "toPhase": "active",
+    "condition": "Increment round, COMPUTE current round's special rule from rulesMap, set phase"
+  }},
+  {{
+    "id": "check_win_condition", 
+    "fromPhase": "active",
+    "toPhase": "finished",
+    "preconditionHints": [
+      {{ "explain": "players[0].score >= currentRoundWinThreshold" }}
+    ]
+  }}
+
+The start_round transition computes currentRoundWinThreshold from rulesMap[currentRound],
+so check_win_condition can check it deterministically.
+
 Rules & guidance:
 - ⚠️ MANDATORY: Your JSON output MUST include the init phase and initialize_game transition 
   from the Initial Transitions Template, with <FIRST_GAMEPLAY_PHASE> replaced
