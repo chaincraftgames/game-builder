@@ -56,15 +56,25 @@ function validatePlannerFieldsInSchema(
   for (const field of plannerFields) {
     const fieldPath = field.path === 'game' ? 'game' : 'player';
     
+    // Extract bare field name by stripping path prefix if present
+    let bareFieldName = field.name;
+    if (fieldPath === 'game' && field.name.startsWith('game.')) {
+      bareFieldName = field.name.substring('game.'.length);
+    } else if (fieldPath === 'player' && field.name.includes('.')) {
+      // Handle patterns like "players.<id>.fieldName" or "player.fieldName"
+      const lastDotIndex = field.name.lastIndexOf('.');
+      bareFieldName = field.name.substring(lastDotIndex + 1);
+    }
+    
     if (fieldPath === 'game') {
-      // Check game.properties[fieldName] exists
-      if (!executorSchema?.properties?.game?.properties?.[field.name]) {
-        missingFields.push(`game.${field.name}`);
+      // Check game.properties[bareFieldName] exists
+      if (!executorSchema?.properties?.game?.properties?.[bareFieldName]) {
+        missingFields.push(field.name);
       }
     } else {
-      // Check players.additionalProperties.properties[fieldName] exists
-      if (!executorSchema?.properties?.players?.additionalProperties?.properties?.[field.name]) {
-        missingFields.push(`players[*].${field.name}`);
+      // Check players.additionalProperties.properties[bareFieldName] exists
+      if (!executorSchema?.properties?.players?.additionalProperties?.properties?.[bareFieldName]) {
+        missingFields.push(field.name);
       }
     }
   }
