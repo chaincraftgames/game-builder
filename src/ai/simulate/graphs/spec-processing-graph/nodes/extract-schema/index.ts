@@ -46,8 +46,9 @@ function extractPlannerFields(plannerOutput: string): Array<{name: string, path:
 
 /**
  * Validate that all planner-identified fields are present in executor schema
+ * Exported for testing
  */
-function validatePlannerFieldsInSchema(
+export function validatePlannerFieldsInSchema(
   plannerFields: Array<{name: string, path: string}>,
   executorSchema: any
 ): { valid: boolean; missingFields: string[] } {
@@ -60,7 +61,7 @@ function validatePlannerFieldsInSchema(
     let bareFieldName = field.name;
     if (fieldPath === 'game' && field.name.startsWith('game.')) {
       bareFieldName = field.name.substring('game.'.length);
-    } else if (fieldPath === 'player' && field.name.includes('.')) {
+    } else if (fieldPath === 'player' && (field.name.startsWith('players.') || field.name.startsWith('player.'))) {
       // Handle patterns like "players.<id>.fieldName" or "player.fieldName"
       const lastDotIndex = field.name.lastIndexOf('.');
       bareFieldName = field.name.substring(lastDotIndex + 1);
