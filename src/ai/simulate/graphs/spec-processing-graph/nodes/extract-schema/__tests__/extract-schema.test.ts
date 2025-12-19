@@ -8,10 +8,122 @@
  */
 
 import { describe, expect, it } from "@jest/globals";
-import { extractSchema } from "../index.js";
+import { extractSchema, validatePlannerFieldsInSchema } from "../index.js";
 import { setupSpecProcessingModel } from "#chaincraft/ai/model-config.js";
 import { buildStateSchema, SchemaField } from "#chaincraft/ai/simulate/schemaBuilder.js";
 import { deserializeSchema } from "#chaincraft/ai/simulate/schema.js";
+
+describe("validatePlannerFieldsInSchema", () => {
+  const mockSchema = {
+    type: "object",
+    properties: {
+      game: {
+        type: "object",
+        properties: {
+          turnNumber: { type: "number" },
+          score: { type: "number" },
+          currentPhase: { type: "string" }
+        }
+      },
+      players: {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          properties: {
+            selectedChoice: { type: "number" },
+            ready: { type: "boolean" }
+          }
+        }
+      }
+    }
+  };
+
+  it("should validate game fields with 'game.' prefix when path is 'game'", () => {
+    const plannerFields = [
+      { name: "game.turnNumber", path: "game" },
+      { name: "game.score", path: "game" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("should validate player fields with 'players.<id>.' prefix when path is 'player'", () => {
+    const plannerFields = [
+      { name: "players.<id>.selectedChoice", path: "player" },
+      { name: "players.<id>.ready", path: "player" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("should validate bare field names without prefix", () => {
+    const plannerFields = [
+      { name: "turnNumber", path: "game" },
+      { name: "selectedChoice", path: "player" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("should fail validation when game field has wrong prefix (player. instead of game.)", () => {
+    const plannerFields = [
+      { name: "player.turnNumber", path: "game" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toEqual(["player.turnNumber"]);
+  });
+
+  it("should fail validation when player field has wrong prefix (game. instead of players.)", () => {
+    const plannerFields = [
+      { name: "game.selectedChoice", path: "player" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toEqual(["game.selectedChoice"]);
+  });
+
+  it("should fail validation for missing fields", () => {
+    const plannerFields = [
+      { name: "game.nonExistentField", path: "game" },
+      { name: "players.<id>.missingField", path: "player" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toContain("game.nonExistentField");
+    expect(result.missingFields).toContain("players.<id>.missingField");
+    expect(result.missingFields).toHaveLength(2);
+  });
+
+  it("should pass validation for mixed valid fields with and without prefixes", () => {
+    const plannerFields = [
+      { name: "game.turnNumber", path: "game" },
+      { name: "score", path: "game" },
+      { name: "players.<id>.selectedChoice", path: "player" },
+      { name: "ready", path: "player" }
+    ];
+
+    const result = validatePlannerFieldsInSchema(plannerFields, mockSchema);
+
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+});
 
 const RPS_SPEC = `
 # 3-Player Rock-Paper-Scissors Tournament
