@@ -5,11 +5,12 @@
  */
 
 import { rpsTest } from "./rps.test.js";
+import { westwardPerilTest } from "./westward-peril.test.js";
 import type { GameTest } from "../harness/types.js";
 
 export const gameTests: Record<string, GameTest> = {
   "rps": rpsTest,
-  // Add more game tests here as they are created
+  "westward-peril": westwardPerilTest,
 };
 
 export function getGameTest(name: string): GameTest | undefined {

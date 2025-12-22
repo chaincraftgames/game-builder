@@ -4,6 +4,40 @@
 
 This guide explains how to create test files for game specifications. These test files are used by the game test harness to validate that the simulation workflow correctly implements a game from its specification.
 
+## Testing Philosophy
+
+**Tests validate behavior and completion, not implementation details.**
+
+Since game artifacts (schemas, transitions, execution logic) are AI-generated and may vary between runs, tests must be **robust across different artifact generations**. The LLM may choose different field names, structures, or implementations for the same game specification.
+
+### Key Principles
+
+1. **Only check guaranteed base runtime fields** - Don't assume game-specific field names
+2. **Validate behavior, not structure** - Check that the game completes and follows rules
+3. **Use pattern matching for outcomes** - Match message keywords, not exact text
+4. **Log comprehensively** - Include detailed logs for manual review when needed
+
+### Base Runtime State (Guaranteed Fields)
+
+These fields are **always present** because they're part of the simulation runtime contract:
+
+- `state.game.currentPhase` - Current phase key
+- `state.game.gameEnded` - Boolean indicating completion
+- `state.game.publicMessage` - Latest public message to all players
+- `state.players[playerId].actionRequired` - Boolean indicating player needs to act
+- `state.players[playerId].illegalActionCount` - Count of invalid actions
+- `state.players[playerId].privateMessage` - Latest private message to player
+
+### Game-Specific Fields (NOT Guaranteed)
+
+These fields may vary across artifact generations:
+
+- Round counters: `round` vs `roundNumber` vs `currentRound`
+- Scores: `score` vs `points` vs `totalScore`
+- Status: `isAlive` vs `alive` vs `dead`
+- Phase names: `"finished"` vs `"gameOver"` vs `"end"`
+- Custom game logic fields
+
 ## Test File Structure
 
 Each test file exports:
@@ -74,29 +108,66 @@ Actions represent player inputs during simulation:
   playerId: string;         // Which player acts
   actionType: string;       // Type of action (game-specific)
   actionData: any;          // Action payload (game-specific)
-  expectedPhase?: string;   // Phase where this should occur (optional validation)
-}
-```
+  ex✅ Reliable Assertion Patterns
 
-### Examples:
-
-**Rock Paper Scissors:**
+**Check game completion (base runtime field):**
 ```typescript
-{ playerId: crypto.randomUUID(), actionType: "submitMove", actionData: { move: "rock" } }
+(state) => ({
+  passed: state.game?.gameEnded === true,
+  message: "Game should complete after all actions"
+})
 ```
 
-**Space Odyssey:**
+**Check error-free execution (base runtime field):**
 ```typescript
-{ playerId: crypto.randomUUID(), actionType: "selectOption", actionData: { optionIndex: 2 } }
+(state) => ({
+  passed: Object.values(state.players).every(p => p.illegalActionCount === 0),
+  message: "No illegal actions should occur"
+})
 ```
 
-**Coin Flip:**
+**Check message patterns for outcomes:**
 ```typescript
-{ playerId: crypto.randomUUID(), actionType: "callSide", actionData: { call: "heads" } }
+(state) => ({
+  passed: state.game?.publicMessage?.toLowerCase().includes('wins'),
+  message: "Final message should indicate a winner"
+})
 ```
 
-**Note:** Always use `crypto.randomUUID()` for player IDs to match production format.
+**Check player action requirements:**
+```typescript
+(state) => ({
+  passed: Object.values(state.players).every(p => !p.actionRequired),
+  message: "No players should need actions after game ends"
+})
+```
 
+### ❌ Unreliable Assertion Patterns (Avoid)
+
+**Don't check game-specific field names:**
+```typescript
+// BAD - 'roundNumber' may not exist or be named differently
+(state) => ({
+  passed: state.game.roundNumber === 3,
+  message: "Should be on round 3"
+})
+```
+
+**Don't check game-specific field values:**
+```typescript
+// BAD - 'score' field may not exist
+(state) => ({
+  passed: state.players[player1].score > state.players[player2].score,
+  message: "Player 1 should have higher score"
+})
+```
+
+**Don't check exact phase names:**
+```typescript
+// BAD - phase may be "gameOver", "end", or other names
+(state) => ({
+  passed: state.game.currentPhase === "finished",
+  message: "Phase should be 'finished'
 ## Assertions
 
 Assertions are functions that validate final game state:
@@ -245,37 +316,95 @@ playerActions: [
   { playerId: player1Id, actionType: "move", actionData: { move: "rock" } },
   { playerId: player2Id, actionType: "move", actionData: { move: "paper" } },
   { playerIdcrypto.randomUUID(), actionType: "selectSafeOption", actionData: { round: 1 } }
-```
-
-### `submitWinningMove` / `submitLosingMove`
-
+```Use only base runtime fields**: Avoid game-specific field names that may change
+4. **Check behavior, not structure**: Validate completion and outcomes, not field values
+5. **Use message pattern matching**: Search for keywords in publicMessage instead of exact matches
+6. **Name scenarios clearly**: "Player wins by..." not "Test 1"
+7. **Write minimal assertions**: Check key outcomes, not every field
+8. **Use special actions for randomization**: Don't hardcode random outcomes
+9. **Test one thing per scenario**: Don't combine multiple edge cases
+10. **Include comprehensive logging**: Log full state for manual review when debugging
 For games like RPS where outcome depends on opponent's move:
 
 ```typescript
-const player1Id = crypto.randomUUID();
-const player2Id = crypto.randomUUID();
-{ playerId: player1Id, actionType: "submitWinningMove", actionData: { against: player2Id
-
-The test harness will query the generated artifacts to determine which option is safe/deadly.
-
+const playcheck game-specific field names:**
 ```typescript
-{ playerId: "p1", actionType: "selectSafeOption", actionData: { round: 1 } }
+// BAD - field names may vary across artifact generations
+(state) => state.game.roundNumber === 3
+(state) => state.players[id].isAlive === true
+(state) => state.game.currentPhase === "finished"
 ```
 
-### `submitWinningMove` / `submitLosingMove`
-
-For games like RPS where outcome depends on opponent's move:
-
+✅ **Do check base runtime fields and message patterns:**
 ```typescript
-{ playerId: "p1", actionType: "submitWinningMove", actionData: { against: "p2" } }
+// GOOD - guaranteed fields that always exist
+(state) => state.game?.gameEnded === true
+(state) => state.game?.publicMessage?.includes('expected outcome')
+(state) => state.players[id]?.illegalActionCount === 0
 ```
 
-### `awaitAutomaticPhase`
-
-For automatic transitions (no player input):
-
+❌ **Don't assume artifact structure:**
 ```typescript
-{ playerId: null, actionType: "awaitAutomaticPhase", actionData: { phase: "scoring" } }
+// BAD - assumes specific schema implementation
+assertion: (state) => state.game.round1DeadlyIndex === 2
+```
+
+✅ **Do test behavioral outcomes:**
+```typescript
+// GOOD - tests behavior without assuming structure
+assertion: (state) => state.game?.publicMessage?.includes('death')
+```
+
+❌ **Don't hardcode random outcomes:**
+```typescript
+// BAD - assumes specific coin flip
+{ playerId: "p1", actionData: { call: "heads" }, expectedResult: "win" }
+```
+
+✅ **Do test mechanics work correctly:**
+```typescript
+// GOOD - tests both outcomes
+scenarios: [
+  { name: "Win on correct call", ... },
+  { name: "Lose on incorrect call", ... }
+]
+```
+
+### Complete Example: Before & After
+
+**❌ Before (Unreliable):**
+```typescript
+assertions: [
+  (state) => ({
+    passed: state.game.roundNumber === 3,
+    message: "Should be on round 3"
+  }),
+  (state) => ({
+    passed: state.players[player1].score > state.players[player2].score,
+    message: "Player 1 should have higher score"
+  }),
+  (state) => ({
+    passed: state.game.currentPhase === "finished",
+    message: "Phase should be 'finished'"
+  })
+]
+```
+
+**✅ After (Reliable):**
+```typescript
+assertions: [
+  (state) => ({
+    passed: state.game?.gameEnded === true,
+    message: "Game should complete after all actions"
+  }),
+  (state) => ({
+    passed: state.game?.publicMessage?.toLowerCase().includes('wins'),
+    message: "Final message should indicate a winner"
+  }),
+  (state) => ({
+    passed: Object.values(state.players).every(p => p.illegalActionCount === 0),
+    message: "No illegal actions should occur"
+  })aticPhase", actionData: { phase: "scoring" } }
 ```
 
 ## Tips for Writing Good Tests
@@ -297,13 +426,24 @@ assertion: (state) => state.game.round1DeadlyIndex === 2
 
 ✅ **Do test spec-defined outcomes:**
 ```typescript
-// GOOD - tests win condition from spec
-assertion: (state) => state.players[0].isAlive === true
-```
-
-❌ **Don't hardcode random outcomes:**
-```typescript
-// BAD - assumes specific coin flip
+// GOO},
+      assertions: [
+        // Check game completion (base runtime field)
+        (state) => ({
+          passed: state.game?.gameEnded === true,
+          message: "Game should complete after all actions"
+        }),
+        
+        // Check no errors (base runtime field)
+        (state) => ({
+          passed: Object.values(state.players).every(p => p.illegalActionCount === 0),
+          message: "No illegal actions should occur"
+        }),
+        
+        // Check outcome via message pattern
+        (state) => ({
+          passed: state.game?.publicMessage?.toLowerCase().includes('expected outcome'),
+          message: "Should contain expected outcome message
 { playerId: "p1", actionData: { call: "heads" }, expectedResult: "win" }
 ```
 

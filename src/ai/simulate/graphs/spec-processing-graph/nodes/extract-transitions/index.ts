@@ -98,6 +98,50 @@ function formatComputedContextForPrompt(): string {
 }
 
 /**
+ * Check if JsonLogic contains forbidden array index access to players.
+ * Array indices like players[0], players[1] are not allowed.
+ * Wildcard patterns like players[*] are allowed.
+ */
+function containsForbiddenArrayAccess(logic: any): string | null {
+  if (!logic || typeof logic !== 'object') return null;
+  
+  // Check all string values for player array access patterns
+  const checkString = (str: string): string | null => {
+    // Match players[0], players[1], etc. but NOT players[*]
+    const forbiddenPattern = /players\[(\d+)\]/;
+    const match = str.match(forbiddenPattern);
+    if (match) {
+      return `players[${match[1]}]`;
+    }
+    return null;
+  };
+  
+  // Recursively check all values in the logic tree
+  if (typeof logic === 'string') {
+    return checkString(logic);
+  }
+  
+  if (Array.isArray(logic)) {
+    for (const item of logic) {
+      const result = containsForbiddenArrayAccess(item);
+      if (result) return result;
+    }
+  } else if (typeof logic === 'object') {
+    for (const value of Object.values(logic)) {
+      if (typeof value === 'string') {
+        const result = checkString(value);
+        if (result) return result;
+      } else {
+        const result = containsForbiddenArrayAccess(value);
+        if (result) return result;
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Format fields list for prompt injection.
  * Creates clear, readable list of available state fields.
  */
@@ -255,17 +299,25 @@ export function extractTransitions(model: ModelWithOptions) {
       transitionsResponse
     );
 
-    // validate any provided JsonLogic in the precondition hints
-    const invalid: Array<{ transitionId?: string; errors: any }> = [];
+    // validate all preconditions have valid JsonLogic (all must be deterministic now)
+    const invalid: Array<{ transitionId?: string; preconditionId?: string; errors: any }> = [];
     if (transitions && Array.isArray(transitions.transitions)) {
       for (const t of transitions.transitions) {
         const hints = Array.isArray(t.preconditions) ? t.preconditions : [];
         for (const h of hints) {
-          if (h.deterministic !== false && h.logic != null) {
+          // All preconditions must have logic (no null allowed)
+          if (h.logic == null) {
+            invalid.push({
+              transitionId: t.id,
+              preconditionId: h.id,
+              errors: "Precondition logic cannot be null - all preconditions must be deterministic",
+            });
+          } else {
             const parsed = JsonLogicSchema.safeParse(h.logic);
             if (!parsed.success) {
               invalid.push({
                 transitionId: t.id,
+                preconditionId: h.id,
                 errors: parsed.error.format(),
               });
             }
@@ -312,8 +364,24 @@ export function extractTransitions(model: ModelWithOptions) {
           ? (t as any).preconditions
           : [];
         for (const p of preconds) {
-          if (p && p.deterministic === false) {
-            nonDeterministic.push({ transitionId: t.id, preconditionId: p.id });
+          // Check for non-deterministic preconditions (deterministic === false OR logic === null)
+          if (p && (p.deterministic === false || p.logic === null)) {
+            nonDeterministic.push({ 
+              transitionId: t.id, 
+              preconditionId: p.id
+            });
+          }
+          
+          // Check for forbidden array index access
+          if (p && p.logic) {
+            const forbiddenAccess = containsForbiddenArrayAccess(p.logic);
+            if (forbiddenAccess) {
+              throw new Error(
+                `[extract_transitions] Forbidden array index access in transition '${t.id}', ` +
+                `precondition '${p.id}': ${forbiddenAccess}. ` +
+                `Use 'allPlayersCompletedActions' computed property or 'players[*]' wildcard instead.`
+              );
+            }
           }
         }
       }
@@ -337,9 +405,6 @@ export function extractTransitions(model: ModelWithOptions) {
 
     // Handle validation results: by default warn, but allow strict mode via state flags
     const enforceCoverage = Boolean((state as any)?.enforceTransitionCoverage);
-    const requireDeterministic = Boolean(
-      (state as any)?.requireDeterministicTransitions
-    );
 
     if (coverageErrors.length > 0) {
       const msg = `[extract_transitions] Transition coverage issues:\n${coverageErrors.join(
@@ -353,16 +418,13 @@ export function extractTransitions(model: ModelWithOptions) {
       }
     }
 
+    // ALWAYS enforce deterministic preconditions (no longer optional)
     if (nonDeterministic.length > 0) {
-      const msg = `[extract_transitions] Non-deterministic preconditions detected: ${JSON.stringify(
-        nonDeterministic
+      const msg = `[extract_transitions] Non-deterministic preconditions are not allowed. All preconditions must have valid JsonLogic. Found: ${JSON.stringify(
+        nonDeterministic, null, 2
       )}`;
-      if (requireDeterministic) {
-        console.error(msg);
-        throw new Error("Non-deterministic preconditions found");
-      } else {
-        console.warn(msg);
-      }
+      console.error(msg);
+      throw new Error("Non-deterministic preconditions are not supported. All preconditions must be deterministic and expressible as JsonLogic.");
     }
     // store JSON version for runtime use
     stateTransitionsJson = JSON.stringify(transitions, null, 2);
@@ -440,8 +502,10 @@ function validatePhaseCoverage(artifact: any): {
       ? (c as any).preconditionHints
       : [];
     for (const p of preconds) {
-      if (p && p.deterministic === false)
+      // Check for non-deterministic hints (no longer allowed)
+      if (p && (p.deterministic === false || !p.explain)) {
         nonDeterministicHints.push({ candidate: c.id, hint: p.id });
+      }
     }
   }
 

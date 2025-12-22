@@ -29,7 +29,7 @@ export interface ExpectedOutcome {
   finalPhase?: string;
 }
 
-export type Assertion = (state: any) => AssertionResult;
+export type Assertion = (state: { game: any; players: any }) => AssertionResult;
 
 export interface AssertionResult {
   passed: boolean;

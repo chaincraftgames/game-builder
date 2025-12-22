@@ -247,6 +247,37 @@ function applySingleOp(state: any, op: StateDeltaOp): string | null {
         return null;
       }
 
+      case "rng": {
+        // Validate probabilities
+        if (!op.choices || !Array.isArray(op.choices) || op.choices.length === 0) {
+          return `RNG operation requires non-empty choices array`;
+        }
+        if (!op.probabilities || !Array.isArray(op.probabilities) || op.probabilities.length !== op.choices.length) {
+          return `RNG operation probabilities must match choices length`;
+        }
+        
+        const sum = op.probabilities.reduce((acc, p) => acc + p, 0);
+        if (Math.abs(sum - 1.0) > 0.01) {
+          return `RNG operation probabilities must sum to 1.0 (got ${sum})`;
+        }
+        
+        // Generate random selection using cumulative probabilities
+        const rand = Math.random();
+        let cumulative = 0;
+        let selectedValue = op.choices[op.choices.length - 1]; // Default to last choice
+        
+        for (let i = 0; i < op.choices.length; i++) {
+          cumulative += op.probabilities[i];
+          if (rand <= cumulative) {
+            selectedValue = op.choices[i];
+            break;
+          }
+        }
+        
+        setByPath(state, op.path, selectedValue);
+        return null;
+      }
+
       default:
         return `Unknown operation type: ${(op as any).op}`;
     }
