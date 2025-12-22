@@ -76,9 +76,12 @@ export function isDeterministicOperation(op: StateDeltaOp): boolean {
   }
   
   if (op.op === 'rng') {
-    // RNG operations should be preprocessed by router
-    // Should not reach execute-changes as-is
-    return false;
+    // RNG operations are deterministic if path, choices, and probabilities have no templates
+    const rngOp = op as any;
+    if (hasTemplateVariables(rngOp.path)) return false;
+    if (hasTemplateVariables(rngOp.choices)) return false;
+    if (hasTemplateVariables(rngOp.probabilities)) return false;
+    return true;
   }
   
   return false;

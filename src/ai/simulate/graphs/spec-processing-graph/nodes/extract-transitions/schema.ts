@@ -4,14 +4,11 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 // Hint schema for planner (no JsonLogic here) -------------------------------------------------
 export const PreconditionHintSchema = z.object({
   id: z.string().describe("Stable id for this precondition hint, e.g. 'all_submitted'"),
-  deterministic: z
-    .boolean()
-    .describe("Whether this precondition can be evaluated deterministically by the router/executor"),
   explain: z
     .string()
     .max(500)
     .describe(
-      "One-line (or short paragraph) explanation of the condition. When non-deterministic, this should be an NL instruction an LLM can follow to return true/false. Reference state paths when possible."
+      "One-line explanation of the condition that will be synthesized into JsonLogic. Reference exact state paths using dot notation (e.g., 'game.currentRound', 'players[*].hasSubmitted'). Must be expressible as deterministic JsonLogic."
     ),
 });
 

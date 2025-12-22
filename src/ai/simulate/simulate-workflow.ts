@@ -6,10 +6,7 @@ import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
-import {
-  getGameState,
-  RUNTIME_VERSION,
-} from "#chaincraft/ai/simulate/schema.js";
+
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
 import { queueAction } from "./action-queues.js";
@@ -407,6 +404,44 @@ export async function getSimulationState(gameId: string): Promise<SimResponse> {
       error
     );
     handleError("Failed to get player messages", error);
+    return Promise.reject(error);
+  }
+}
+
+/**
+ * Retrieves the full canonical game state for testing and debugging.
+ * Returns the parsed game state object with game and player fields.
+ * @param gameId The ID of the game/conversation
+ * @returns The parsed game state object { game: {...}, players: {...} }
+ */
+export async function getGameState(gameId: string): Promise<{ game: any; players: any }> {
+  try {
+    console.log("[simulate] Getting full game state for %s", gameId);
+
+    // Load state directly from checkpoint without invoking graph
+    const saver = await getSaver(gameId, getConfig("simulation-graph-type"));
+    const config = { configurable: { thread_id: gameId } };
+    
+    const checkpoint = await saver.getTuple(config);
+    if (!checkpoint?.checkpoint?.channel_values) {
+      throw new Error("No checkpoint found for game");
+    }
+
+    const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
+    if (!state.gameState) {
+      throw new Error("No gameState in checkpoint");
+    }
+
+    const parsedState = JSON.parse(state.gameState);
+    console.log("[simulate] Retrieved full game state for %s", gameId);
+    return parsedState;
+  } catch (error) {
+    console.error(
+      "[simulate] Error in getGameState for %s: %o",
+      gameId,
+      error
+    );
+    handleError("Failed to get game state", error);
     return Promise.reject(error);
   }
 }

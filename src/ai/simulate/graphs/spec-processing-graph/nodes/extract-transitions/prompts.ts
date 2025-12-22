@@ -92,7 +92,7 @@ Output contract (RETURN EXACTLY two parts in this order):
       "condition": "game starts",
       "checkedFields": ["game.currentPhase"],
       "preconditionHints": [
-        {{ "id": "is_init", "deterministic": true, "explain": "Check if currentPhase is 'init'" }}
+        {{ "id": "is_init", "explain": "Check if currentPhase is 'init'" }}
       ],
       "humanSummary": "Initialize game state and transition to first gameplay phase"
     }},
@@ -105,7 +105,7 @@ Output contract (RETURN EXACTLY two parts in this order):
       "checkedFields": ["players[*].submittedMove", "game.currentRound"],
       "computedValues": {{ "submittedCount": "count(players[*].hasSubmitted)" }},
       "preconditionHints": [
-        {{ "id": "string", "deterministic": true|false, "explain": "brief explanation (aim <200 chars, max 500) or LLM-eval instructions when non-deterministic" }}
+        {{ "id": "string", "explain": "brief explanation referencing exact state paths (aim <200 chars, max 500)" }}
       ],
       "humanSummary": "one-line summary"
     }}
@@ -144,7 +144,7 @@ SEPARATE transitions with different preconditions and target phases.
     "fromPhase": "scoring",
     "toPhase": "round_active",
     "preconditionHints": [
-      {{ "id": "more_rounds", "deterministic": true, "explain": "roundNumber < 2" }}
+      {{ "id": "more_rounds", "explain": "roundNumber < 2" }}
     ],
     "condition": "Increment round and continue to next round"
   }},
@@ -154,7 +154,7 @@ SEPARATE transitions with different preconditions and target phases.
     "toPhase": "finished",
     "priority": 2,  ← Lower priority (evaluated first) for game-ending condition
     "preconditionHints": [
-      {{ "id": "last_round", "deterministic": true, "explain": "roundNumber >= 2" }}
+      {{ "id": "last_round", "explain": "roundNumber >= 2" }}
     ],
     "condition": "All rounds complete, end game and declare winner"
   }}
@@ -201,69 +201,34 @@ Before creating a phase, ask:
 2. Does this phase branch to multiple transitions based on conditions? → If yes, it's needed
 3. Is this phase just a waypoint to trigger one automatic transition? → ANTI-PATTERN, merge the work
 
-🚨 CRITICAL RULE #5: State Denormalization for Deterministic Preconditions 🚨
+🚨 CRITICAL RULE #5: Deterministic Preconditions - Allowed Field Access Patterns 🚨
 
-Preconditions must be deterministic (evaluable with JsonLogic). This means they can ONLY 
-compare static field values - they CANNOT perform dynamic lookups or computations.
+ALL preconditions MUST use JsonLogic with only these allowed patterns:
 
-❌ WRONG Pattern (dynamic lookup in precondition):
-  {{
-    "preconditionHints": [
-      {{ 
-        "id": "check_value", 
-        "deterministic": true,
-        "explain": "players[0].selection === configMap[currentContext]"
-      }}
-    ]
-  }}
+✅ ALLOWED:
+• Game-level fields: game.currentPhase, game.roundNumber, game.nextPlayerId
+• Computed properties: allPlayersCompletedActions, activePlayerCount
+• Wildcard patterns: players[*].actionRequired (checks all players match condition)
+• Previously denormalized fields: Values computed and stored by prior transitions
+
+❌ NEVER ALLOWED:
+• Array indices: players[0].choice, players[1].score
+• Dynamic lookups: players.{{expression}}.field, configMap[currentContext]
+• Iteration/loops: Cannot iterate through players in preconditions  
+• Conditional access: if (condition) check player1 else check player2
+
+Denormalization Pattern:
+If you need to check player-specific or computed values, a PRIOR transition must:
+1. Compute that value (using LLM, RNG, or mechanics guidance)
+2. Store it in a direct game-level field
+3. Then this transition checks the pre-computed field
+
+Examples:
+  ❌ WRONG: "players[0].choice !== null" (array index)
+  ✅ RIGHT: "allPlayersCompletedActions === true" (computed property)
   
-The problem: JsonLogic cannot "look up configMap[currentContext]" - it would need to:
-1. Read currentContext value
-2. Use that value to index into configMap
-This is a dynamic lookup, which JsonLogic cannot express.
-
-✅ CORRECT Pattern (denormalize computed values):
-  Transition A (setup/entry to phase):
-    - Reads: configMap, currentContext
-    - Computes: currentContextValue = configMap[currentContext]
-    - Writes: currentContextValue (denormalized field)
-    
-  Transition B (checks player action):
-    - Precondition: "players[0].selection === currentContextValue" ✅ (simple comparison)
-
-Key principle: If a precondition needs to check a derived/computed value:
-1. A PRIOR transition must compute that value and store it in a direct field
-2. The precondition then checks the pre-computed field (not the original map/lookup)
-
-When to denormalize:
-- Map/object lookups: Store the looked-up value in a direct field
-- Array indexing: Pre-compute and store the indexed value
-- Calculations: Compute once and store (e.g., totalScore, averageValue)
-- Context-dependent values: Store the value for "current" context
-
-State update pattern:
-- Automatic transitions: Compute derived values as they move between phases
-- Player action transitions: Compute any values needed for next phase's preconditions
-- Each transition prepares the state so downstream transitions can check simple predicates
-
-Example - Multi-round game with per-round configuration:
-  {{
-    "id": "start_round",
-    "fromPhase": "scoring",
-    "toPhase": "active",
-    "condition": "Increment round, COMPUTE current round's special rule from rulesMap, set phase"
-  }},
-  {{
-    "id": "check_win_condition", 
-    "fromPhase": "active",
-    "toPhase": "finished",
-    "preconditionHints": [
-      {{ "explain": "players[0].score >= currentRoundWinThreshold" }}
-    ]
-  }}
-
-The start_round transition computes currentRoundWinThreshold from rulesMap[currentRound],
-so check_win_condition can check it deterministically.
+  ❌ WRONG: "configMap[currentContext] === targetValue" (dynamic lookup)
+  ✅ RIGHT: Prior transition sets "game.currentContextValue", then check that field
 
 Rules & guidance:
 - ⚠️ MANDATORY: Your JSON output MUST include the init phase and initialize_game transition 
@@ -285,29 +250,17 @@ Rules & guidance:
   without player input should have requiresPlayerInput: false.
 - Each transition's 'checkedFields' must be exact dot-paths (support simple '[*]' 
   wildcard for arrays) into the provided state schema.
-- 'preconditions' is an array of precondition objects; prefer deterministic  
-  in \`logic\` when possible.
-  - If a precondition cannot be expressed deterministically:
-   1) set \`logic\` to \`null\` and \`deterministic\`: \`false\`.
-   2) provide an \`explain\` field that includes a clear, concise natural-language 
-      instruction for how an LLM SHOULD evaluate this predicate at 
-      runtime. The \`explain\` text MUST:
-      - aim for under 200 characters (maximum 500 for complex mechanics),
-      - reference concrete state fields where possible (use exact dot-paths from the 
-        schema, e.g. \`players[*].textResponse\` or \`game.phase\`),
-      - include any disambiguation rules, fallback behaviors, or examples the LLM 
-        should use when the state is ambiguous, and
-      - keep the instruction short (1-3 short sentences) but precise enough for 
-        deterministic judge-like behavior.
-      - Example (non-deterministic explain): "Roll a dice (generate a random number 
-        between 1 and 6) to see if a monster attacks."
 
-  - The following computed variables described in the computedContextSchema can 
+Precondition guidelines:
+- 'preconditions' is an array of precondition objects that will be synthesized into JsonLogic.
+- The \`explain\` field should be a brief (aim <200 chars, max 500) description referencing 
+  exact state paths using dot notation (e.g., "game.currentRound > 2", "players[*].hasSubmitted == true").
+- Follow CRITICAL RULE #5 above - use only allowed field access patterns.
+- The following computed variables described in the computedContextSchema can 
     (and often should) be used to simplify precondition expressions.
   - During evaluation, preconditions will have access to BOTH the full game state 
     (from stateSchema) AND these computed context fields.
-  - These computed values will be available to the executor when synthesizing 
-    JsonLogic and to any LLM verifier called for non-deterministic preconditions.
+  - These computed values will be available to the executor when synthesizing JsonLogic.
   - Return at most 8 transitions. Use clear, stable ids for transitions.
   - Do NOT include side-effects or stateDelta ops in this output; transitions only 
     describe WHEN the game moves phases.
@@ -410,12 +363,10 @@ Executor responsibilities (strict):
   \`transition\` object matching \`TransitionSchema\` and include it in the 
   \`transitions\` array of the returned object.
 - For each \`preconditionHint\` in a candidate's \`preconditionHints\`:
-  - If \`deterministic\` is \`true\`: synthesize a JsonLogic object that implements 
-    the intent in the hint's \`explain\`. Place that object into the precondition's 
-    \`logic\` field and keep \`deterministic: true\`.
-  - If \`deterministic\` is \`false\`: set \`logic\` to \`null\`, keep 
-    \`deterministic: false\`, and copy the \`explain\` text unchanged. That \`explain\` 
-    must be a concise LLM-eval instruction (true/false) for runtime verification.
+  - Synthesize a JsonLogic object that implements the intent in the hint's \`explain\`.
+  - Place that JsonLogic object into the precondition's \`logic\` field.
+  - Set \`deterministic: true\` (all preconditions must be deterministic).
+  - Copy the \`explain\` text to help document what the JsonLogic checks.
 - Ensure each synthesized JsonLogic uses only the allowed operator set and references 
   state or computed context via \`var\` (e.g., {{ "var": "game.currentRound" }} or 
   {{ "var": "playerCount" }}).
@@ -442,9 +393,10 @@ JsonLogic synthesis rules & operator whitelist:
   - Use these instead of template variables or trying to access specific player IDs.
 - ⚠️ FORBIDDEN: Do NOT use \`reduce\`, \`forEach\`, \`find\`, or any other operations 
   not listed above. These will cause validation failures.
-- If you cannot express a precondition using ONLY the supported operations above, 
-  you MUST set \`deterministic: false\` and \`logic: null\`, then provide clear 
-  instructions in \`explain\` for LLM evaluation at runtime.
+- ⚠️ CRITICAL: If you cannot express a condition using the supported operations, the game 
+  design requires modification. You CANNOT create non-deterministic preconditions. Instead:
+  * Have a prior transition compute/generate the value and write it to state
+  * Then check that pre-computed state value in the precondition
 - Use \`var\` to reference fields or computed context names.
 - When synthesizing comparisons against booleans or strings, use strict equality 
   (\`==\`/\`!=\`).

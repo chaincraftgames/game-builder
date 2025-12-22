@@ -469,15 +469,3 @@ export function deserializeSchema(schemaJson: string): z.ZodObject<any> {
   return baseSchema;
 }
 
-export const getGameState = (state: SimulationStateType) => {
-  const schema = deserializeSchema(state.schema);
-  type GameState = z.infer<typeof schema> & BaseRuntimeState;
-
-  // Parse the JSON string into an object first
-  const gameState =
-    typeof state.gameState === "string"
-      ? JSON.parse(state.gameState)
-      : state.gameState;
-
-  return schema.parse(gameState) as GameState;
-};

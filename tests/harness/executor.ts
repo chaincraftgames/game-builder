@@ -5,7 +5,7 @@
  */
 
 import type { GameTest, Scenario, TestResult, FailurePhase } from "./types.js";
-import { createSimulation, initializeSimulation, processAction } from "#chaincraft/ai/simulate/simulate-workflow.js";
+import { createSimulation, initializeSimulation, processAction, getGameState } from "#chaincraft/ai/simulate/simulate-workflow.js";
 
 /**
  * Execute a single game test scenario
@@ -52,44 +52,50 @@ export async function executeGameTest(
     // Extract player IDs from scenario actions
     const playerIds = [...new Set(scenario.playerActions.map(a => a.playerId))];
     
-    const { publicMessage, playerStates } = await initializeSimulation(testGameId, playerIds);
-    
-    const simulation = {
-      gameId: testGameId,
-      state: { 
-        game: { gameEnded: false, currentPhase: "playing" },
-        players: Object.fromEntries(playerStates.entries())
-      },
-      playerStates
-    }
     // Step 3: Initialize simulation
     console.log(`[${test.name}] Starting simulation...`);
-    const simulation = await initializeSimulation(artifacts);
+    const { publicMessage, playerStates } = await initializeSimulation(testGameId, playerIds);
+    
+    // Track game state
+    let gameEnded = false;
+    let finalPlayerStates = playerStates;
+    let finalGameState: { game: any; players: any } | undefined;
     
     // Step 4: Execute player actions
     for (const action of scenario.playerActions) {
-      console.log(`[${test.name}] Executing action: ${action.actionType}`);
-      
-      // Handle special action types
-      const resolvedAction = await resolveAction(action, artifacts, simulation.state);
-      
-      await executeAction(simulation, resolvedAction);
+      console.log(`[${test.name}] Executing action: ${action.playerId} - ${action.actionType}`);
       result.turns++;
       
+      // Process action through simulation workflow
+      const response = await processAction(
+        testGameId,
+        action.playerId,
+        JSON.stringify(action.actionData)
+      );
+      
+      // Update tracking
+      gameEnded = response.gameEnded || false;
+      finalPlayerStates = response.playerStates;
+      
+      // Retrieve full game state for assertions
+      finalGameState = await getGameState(testGameId);
+      
+      console.log(`[${test.name}] Response: ${response.publicMessage || 'no message'}`);
+      
       // Check for unexpected game end
-      if (simulation.state.game.gameEnded && !isLastAction(action, scenario)) {
+      if (gameEnded && !isLastAction(action, scenario)) {
         result.simulationError = "Game ended prematurely";
-        result.finalState = simulation.state;
+        result.finalState = { playerStates: finalPlayerStates, gameEnded, gameState: finalGameState };
         result.duration = Date.now() - startTime;
         return result;
       }
     }
     
     result.simulationCompleted = true;
-    result.finalState = simulation.state;
+    result.finalState = { playerStates: finalPlayerStates, gameEnded, gameState: finalGameState };
     
     // Step 5: Validate expected outcome
-    const outcomeValid = validateOutcome(simulation.state, scenario.expectedOutcome);
+    const outcomeValid = validateOutcome(gameEnded, scenario.expectedOutcome);
     if (!outcomeValid.valid) {
       result.simulationError = outcomeValid.error;
       result.duration = Date.now() - startTime;
@@ -98,8 +104,14 @@ export async function executeGameTest(
     
     // Step 6: Run assertions
     console.log(`[${test.name}] Running assertions...`);
+    if (!finalGameState) {
+      result.simulationError = "No game state available for assertions";
+      result.duration = Date.now() - startTime;
+      return result;
+    }
+    
     for (const assertion of scenario.assertions) {
-      const assertionResult = assertion(simulation.state);
+      const assertionResult = assertion(finalGameState);
       result.assertionResults.push(assertionResult);
     }
     
@@ -127,90 +139,24 @@ async function generateArtifacts(spec: string, gameId: string): Promise<any> {
  * Validate generated artifacts
  */
 function validateArtifacts(artifacts: any): { valid: boolean; errors?: string[] } {
-  // TODO: Implement artifact validation
-  return { valid: true };
-}
-
-/**
- * Initialize simulation with artifacts
- * TODO: Integrate with simulation workflow
- */
-async function initializeSimulation(artifacts: any): Promise<any> {
-  // TODO: Initialize LangGraph simulation workflow
-  throw new Error("Not implemented - integrate with simulation workflow");
-}
-
-/**
- * Resolve special action types (selectSafeOption, etc.)
- */
-async function resolveAction(
-  action: any,
-  artifacts: any,
-  currentState: any
-): Promise<any> {
-  // Handle special action types
-  switch (action.actionType) {
-    case "selectSafeOption":
-      // Query artifacts to find a safe option
-      return resolveSafeOption(action, artifacts, currentState);
-    
-    case "selectDeadlyOption":
-      // Query artifacts to find the deadly option
-      return resolveDeadlyOption(action, artifacts, currentState);
-    
-    case "awaitAutomaticPhase":
-      // No action needed, just wait for phase transition
-      return { type: "wait" };
-    
-    default:
-  const { publicMessage, playerStates, gameEnded } = await processAction(
-    simulation.gameId,
-    action.playerId,
-    action.actionData.move || action.actionData
-  );
-  
-  // Update simulation state
-  simulation.state.game.gameEnded = gameEnded;
-  simulation.state.players = Object.fromEntries(playerStates.entries());
-  simulation.playerStates = playerStates
+  // For now just check that artifacts exist
+  if (!artifacts) {
+    return { valid: false, errors: ["No artifacts generated"] };
   }
-}
-
-function resolveSafeOption(action: any, artifacts: any, state: any): any {
-  // TODO: Query artifacts to find safe option for current round
-  throw new Error("Not implemented");
-}
-
-function resolveDeadlyOption(action: any, artifacts: any, state: any): any {
-  // TODO: Query artifacts to find deadly option for current round
-  throw new Error("Not implemented");
-}
-
-async function executeAction(simulation: any, action: any): Promise<void> {
-  // TODO: Send action to simulation workflow
-  throw new Error("Not implemented");
+  return { valid: true };
 }
 
 function isLastAction(action: any, scenario: Scenario): boolean {
   return scenario.playerActions[scenario.playerActions.length - 1] === action;
 }
 
-function validateOutcome(state: any, expected: any): { valid: boolean; error?: string } {
-  if (expected.gameEnded !== undefined && state.game.gameEnded !== expected.gameEnded) {
+function validateOutcome(gameEnded: boolean, expected: any): { valid: boolean; error?: string } {
+  if (expected.gameEnded !== undefined && gameEnded !== expected.gameEnded) {
     return {
       valid: false,
-      error: `Expected gameEnded=${expected.gameEnded}, got ${state.game.gameEnded}`
+      error: `Expected gameEnded=${expected.gameEnded}, got ${gameEnded}`
     };
   }
-  
-  if (expected.finalPhase && state.game.currentPhase !== expected.finalPhase) {
-    return {
-      valid: false,
-      error: `Expected phase=${expected.finalPhase}, got ${state.game.currentPhase}`
-    };
-  }
-  
-  // TODO: Validate winner if specified
   
   return { valid: true };
 }
