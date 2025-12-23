@@ -9,7 +9,8 @@ import { executeGameTest } from "./executor.js";
 import { getGameTest } from "../games/index.js";
 import { createGameId } from "./helpers.js";
 import { ConsoleCapture, saveTestResult } from "./test-logger.js";
-import type { TestResult } from "./types.js";
+import type { TestResult, ReliabilityReport } from "./types.js";
+import { runReliabilityTest as runReliabilityTestInternal, runFullReliabilityTest } from "./reliability.js";
 
 /**
  * Run a single game test scenario with full logging and assertions
@@ -140,4 +141,48 @@ export function assertSimulationCompleted(result: TestResult): void {
   expect(result.artifactsGenerated).toBe(true);
   expect(result.simulationCompleted).toBe(true);
   expect(result.simulationError).toBeUndefined();
+}
+
+/**
+ * Run reliability test for a game
+ * @param gameKey - Game identifier (e.g., "rps")
+ * @param scenarioIndex - Scenario to test (null for all scenarios)
+ * @param iterations - Number of iterations to run
+ */
+export async function runReliabilityTest(
+  gameKey: string,
+  scenarioIndex: number | null,
+  iterations: number
+): Promise<ReliabilityReport> {
+  const gameTest = getGameTest(gameKey);
+  if (!gameTest) {
+    throw new Error(`Game test not found: ${gameKey}`);
+  }
+  
+  if (scenarioIndex !== null) {
+    // Test specific scenario
+    if (scenarioIndex >= gameTest.scenarios.length) {
+      throw new Error(`Scenario index ${scenarioIndex} out of range for ${gameKey} (has ${gameTest.scenarios.length} scenarios)`);
+    }
+    
+    const scenario = gameTest.scenarios[scenarioIndex];
+    return runReliabilityTestInternal(gameTest, scenario, iterations);
+  } else {
+    // Test all scenarios
+    const reports = await runFullReliabilityTest(gameTest, iterations);
+    
+    // Aggregate into single report
+    const totalSuccess = reports.reduce((sum, r) => sum + r.successCount, 0);
+    const totalIterations = reports.reduce((sum, r) => sum + r.iterations, 0);
+    const avgDuration = reports.reduce((sum, r) => sum + r.averageDuration, 0) / reports.length;
+    
+    return {
+      testName: `${gameTest.name} (all scenarios)`,
+      iterations: totalIterations,
+      successCount: totalSuccess,
+      successRate: totalSuccess / totalIterations,
+      averageDuration: avgDuration,
+      failures: reports.flatMap(r => r.failures),
+    };
+  }
 }

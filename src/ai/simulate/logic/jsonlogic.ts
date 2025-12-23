@@ -53,6 +53,39 @@ jsonLogic.add_operation("anyPlayer", function(this: any, field: string, operator
   });
 });
 
+/**
+ * Custom lookup operation for dynamic array/object access.
+ * Enables accessing array elements or object properties using variable indices/keys.
+ * 
+ * Format: {"lookup": [collection, index]}
+ * - collection: JsonLogic expression that resolves to an array or object
+ * - index: JsonLogic expression that resolves to a number (for arrays) or string (for objects)
+ * 
+ * Examples:
+ * - {"lookup": [{"var": "game.deadlyOptions"}, {"var": "game.currentTurn"}]}
+ * - {"lookup": [{"var": "game.rounds"}, {"var": "game.currentRound"}]}
+ * 
+ * Returns: The value at the specified index/key, or undefined if not found
+ */
+jsonLogic.add_operation("lookup", function(this: any, collectionExpr: any, indexExpr: any) {
+  // Access the data context - json-logic binds 'this' to the data
+  const data = this;
+  
+  // Evaluate the collection expression to get the array/object
+  const collection = jsonLogic.apply(collectionExpr, data);
+  
+  // Evaluate the index expression to get the index/key
+  const index = jsonLogic.apply(indexExpr, data);
+  
+  // Handle null/undefined gracefully
+  if (collection === null || collection === undefined) {
+    return undefined;
+  }
+  
+  // Access the element
+  return collection[index];
+});
+
 // Export the configured jsonLogic instance with custom operations registered
 export { jsonLogic };
 
@@ -74,8 +107,8 @@ const SUPPORTED_JSONLOGIC_OPERATIONS = new Set([
   'in', 'cat', 'substr',
   // Misc
   'var', 'missing', 'missing_some', 'log',
-  // Custom player operations
-  'allPlayers', 'anyPlayer',
+  // Custom operations
+  'allPlayers', 'anyPlayer', 'lookup',
 ]);
 
 /**

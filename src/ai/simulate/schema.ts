@@ -101,7 +101,7 @@ const JsonLogicValidator = z
         code: z.ZodIssueCode.custom,
         message: `Unsupported JsonLogic operations: ${unsupportedOps.join(
           ", "
-        )}. Only standard json-logic-js operations are allowed: ==, !=, >, <, >=, <=, and, or, !, if, +, -, *, /, %, max, min, map, filter, all, none, some, merge, in, cat, substr, var, missing, missing_some, log`,
+        )}. Only standard json-logic-js operations are allowed: ==, !=, >, <, >=, <=, and, or, !, if, +, -, *, /, %, max, min, map, filter, all, none, some, merge, in, cat, substr, var, missing, missing_some, log. Custom operations: allPlayers, anyPlayer, lookup (for dynamic array/object access)`,
       });
     }
   });

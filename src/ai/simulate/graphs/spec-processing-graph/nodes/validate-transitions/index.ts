@@ -195,7 +195,20 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
       
       const referencedFields = extractFieldReferences(p.logic);
       referencedFields.forEach((field: string) => {
-        if (!isValidFieldReference(field, schemaFields)) {
+        // Check for indexed array access (both bracket and dot notation)
+        const hasIndexedAccess = /\[\d+\]|\.\d+\./.test(field);
+        
+        if (hasIndexedAccess) {
+          issues.push({
+            severity: 'error',
+            category: 'reference',
+            message: `Transition ${t.id} precondition uses indexed array access: ${field}. ` +
+                     `Indexed access is not allowed in preconditions. ` +
+                     `Use 'anyPlayer' or 'allPlayers' custom operators instead. ` +
+                     `Example: {"anyPlayer": ["${field.split('.').pop()}", "!=", null]}`,
+            context: { transition: t, precondition: p, field }
+          });
+        } else if (!isValidFieldReference(field, schemaFields)) {
           issues.push({
             severity: 'error',
             category: 'reference',
