@@ -82,13 +82,6 @@ export const UpdateSimulationResponseSchema = z.object({
   success: z.boolean(),
 });
 
-// Continue simulation schemas
-export const ContinueSimulationRequestSchema = z.object({
-  gameId: z.string().min(1),
-});
-
-export const ContinueSimulationResponseSchema = SimResponseSchema;
-
 // Type exports
 export type RuntimePlayerState = z.infer<typeof RuntimePlayerStateSchema>;
 export type PlayerStates = z.infer<typeof PlayerStatesSchema>;
@@ -118,10 +111,4 @@ export type UpdateSimulationRequest = z.infer<
 >;
 export type UpdateSimulationResponse = z.infer<
   typeof UpdateSimulationResponseSchema
->;
-export type ContinueSimulationRequest = z.infer<
-  typeof ContinueSimulationRequestSchema
->;
-export type ContinueSimulationResponse = z.infer<
-  typeof ContinueSimulationResponseSchema
 >;

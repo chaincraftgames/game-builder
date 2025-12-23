@@ -446,25 +446,6 @@ export async function getGameState(gameId: string): Promise<{ game: any; players
   }
 }
 
-/**
- * Continues the simulation by processing a system-level action that asks the AI
- * to continue the game or inform players what actions they need to take.
- * This is equivalent to the Discord "Continue Game" button functionality.
- * @param gameId The ID of the game/conversation
- * @returns The simulation response with updated game state and messages
- */
-export async function continueSimulation(gameId: string): Promise<SimResponse> {
-  const continueQuestion = `
-  The players of the game believe they have completed all actions and are 
-  waiting for the game to continue.  If waiting for a player action, please 
-  inform the player(s) you are waiting on via public message.  If not waiting 
-  on player actions, then you please take the appropriate game level actions to 
-  continue the game, e.g. judging, scoring, generating narrative, resolving 
-  non-player or ai controlled player actions.
-  `;
-
-  return processAction(gameId, "all players", `QUESTION: ${continueQuestion}`);
-}
 
 /**
  * Updates a simulation with an updated game description.  This will attempt to update the
