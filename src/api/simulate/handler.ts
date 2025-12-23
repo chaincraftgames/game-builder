@@ -15,9 +15,6 @@ import {
   UpdateSimulationRequest,
   UpdateSimulationRequestSchema,
   UpdateSimulationResponse,
-  ContinueSimulationRequest,
-  ContinueSimulationRequestSchema,
-  ContinueSimulationResponse,
 } from "#chaincraft/api/simulate/schemas.js";
 import {
   createSimulation,
@@ -25,7 +22,6 @@ import {
   processAction,
   getSimulationState,
   updateSimulation,
-  continueSimulation,
 } from "#chaincraft/ai/simulate/simulate-workflow.js";
 
 export async function handleCreateSimulation(
@@ -177,40 +173,6 @@ export async function handleUpdateSimulation(
     };
   } catch (error) {
     console.error("Error in updateSimulation:", error);
-    reply.code(500).send({ error: "Internal server error" });
-    return Promise.reject();
-  }
-}
-
-export async function handleContinueSimulation(
-  request: FastifyRequest<{ Body: ContinueSimulationRequest }>,
-  reply: FastifyReply
-): Promise<ContinueSimulationResponse> {
-  const result = ContinueSimulationRequestSchema.safeParse(request.body);
-
-  if (!result.success) {
-    reply.code(400).send({ error: "Invalid request", details: result.error });
-    return Promise.reject();
-  }
-
-  try {
-    const { gameId } = result.data;
-    const response = await continueSimulation(gameId);
-
-    // Convert Map to plain object for JSON serialization
-    const playerStates: Record<string, any> = {};
-    response.playerStates.forEach((state, playerId) => {
-      playerStates[playerId] = state;
-    });
-
-    return {
-      publicMessage: response.publicMessage,
-      playerStates,
-      gameEnded: response.gameEnded,
-      gameError: response.gameError,
-    };
-  } catch (error) {
-    console.error("Error in continueSimulation:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
