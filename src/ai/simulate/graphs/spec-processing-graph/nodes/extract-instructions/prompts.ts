@@ -150,10 +150,13 @@ Rules & Guidance:
 5. Randomness:
    - Use "rng" stateDelta operations for random value selection
    - Define choices array and probabilities array (must sum to 1.0)
+   - **CRITICAL**: Each RNG operation generates ONE value only
+   - To generate multiple random values, use multiple separate RNG operations
    - Examples:
-     * Oracle mood: {{ "op": "rng", "path": "game.oracleMood", "choices": ["calm", "irritable", "cryptic"], "probabilities": [0.33, 0.33, 0.34] }}
-     * Special event (5% chance): {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
-     * Dice roll: {{ "op": "rng", "path": "game.diceRoll", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
+     * Single value: {{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
+     * Boolean with bias: {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
+     * Numeric range: {{ "op": "rng", "path": "game.value", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
+     * Multiple values: Use separate operations to different paths or append to array
    - Router will handle RNG execution before passing instructions to LLM
 
 6. Required State Fields:
@@ -307,9 +310,13 @@ ALL state changes must be expressed as atomic StateDelta operations:
 {{ "op": "merge", "path": "players.{{{{playerId}}}}", "value": {{ "ready": true }} }}
 
 **rng**: Random selection from choices with probabilities (NOTE: probabilities must sum to 1.0)
-{{ "op": "rng", "path": "game.oracleMood", "choices": ["calm", "irritable", "cryptic"], "probabilities": [0.33, 0.33, 0.34] }}
+**CRITICAL**: Each RNG operation generates ONE value only. To generate multiple values, use multiple separate RNG operations.
+{{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
-{{ "op": "rng", "path": "game.diceRoll", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
+{{ "op": "rng", "path": "game.value", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
+For multiple random values, use separate operations:
+{{ "op": "rng", "path": "game.randomValue1", "choices": [0,1,2,3], "probabilities": [0.25,0.25,0.25,0.25] }}
+{{ "op": "rng", "path": "game.randomValue2", "choices": ["A","B","C"], "probabilities": [0.5,0.3,0.2] }}
 
 **Template Variables in Paths**: Use {{{{variableName}}}} for runtime values:
 {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
@@ -441,6 +448,27 @@ Common variable patterns:
 **State cleanup**: If planner hints indicate fields should be cleared/reset 
 (e.g., "clear both players' choice fields"), use delete ops or set to null as specified
 
+**⚠️ CRITICAL: Initialization Transitions (initialize_game, etc.)**
+
+When planner says "initialize X" or "set X to Y", you MUST generate explicit stateDelta operations.
+Do NOT assume schema defaults - runtime requires explicit set operations.
+
+**For ALL players** (when planner says "initialize player scores" or "set actionRequired for all players"):
+Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all player IDs in the game):
+{{ "op": "set", "path": "players.{{{{player1Id}}}}.score", "value": 0 }}
+{{ "op": "set", "path": "players.{{{{player2Id}}}}.score", "value": 0 }}
+{{ "op": "set", "path": "players.{{{{player1Id}}}}.actionRequired", "value": true }}
+{{ "op": "set", "path": "players.{{{{player2Id}}}}.actionRequired", "value": true }}
+
+**Common initializations** planner will request:
+- Player scores/counters → {{ "op": "set", "path": "players.{{{{playerNId}}}}.score", "value": 0 }}
+- Action flags → {{ "op": "set", "path": "players.{{{{playerNId}}}}.actionRequired", "value": true }}
+- Clear fields → {{ "op": "set", "path": "players.{{{{playerNId}}}}.currentChoice", "value": null }}
+- Game counters → {{ "op": "set", "path": "game.roundNumber", "value": 1 }}
+- Illegal action tracking → {{ "op": "set", "path": "players.{{{{playerNId}}}}.illegalActionCount", "value": 0 }}
+
+⚠️ Operations like "increment" WILL FAIL if field is undefined - must initialize first!
+
 **Increment counters**: Use increment op for round/turn counters
 
 **Error messages**: Provide clear, player-friendly error messages
@@ -522,6 +550,24 @@ Common variable patterns:
   ],
   "messages": {{
     "public": {{ "template": "You stand before the oracle. The air is thick with ancient power." }}
+  }}
+}}
+
+# Example Transition With Multiple RNG Operations
+
+{{
+  "id": "setup-game",
+  "transitionName": "Setup Game",
+  "description": "Initialize game with multiple random selections",
+  "priority": 1,
+  "stateDelta": [
+    {{ "op": "rng", "path": "game.startingPosition", "choices": ["north","south","east","west"], "probabilities": [0.25,0.25,0.25,0.25] }},
+    {{ "op": "rng", "path": "game.weatherCondition", "choices": ["sunny","rainy","stormy"], "probabilities": [0.5,0.3,0.2] }},
+    {{ "op": "rng", "path": "game.difficulty", "choices": [1,2,3], "probabilities": [0.2,0.5,0.3] }},
+    {{ "op": "set", "path": "game.phase", "value": "active" }}
+  ],
+  "messages": {{
+    "public": {{ "template": "Game initialized with starting position {{{{game.startingPosition}}}} under {{{{game.weatherCondition}}}} conditions." }}
   }}
 }}
 

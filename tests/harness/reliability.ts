@@ -4,8 +4,11 @@
  * Runs game tests multiple times to measure reliability.
  */
 
-import type { GameTest, Scenario, TestResult, ReliabilityReport, FailurePhase } from "./types.js";
+import type { GameTest, Scenario, TestResult, ReliabilityReport } from "./types.js";
+import { FailurePhase } from "./types.js";
 import { executeGameTest } from "./executor.js";
+import { writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
 
 /**
  * Run reliability test for a single scenario
@@ -15,28 +18,114 @@ export async function runReliabilityTest(
   scenario: Scenario,
   iterations: number
 ): Promise<ReliabilityReport> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const logDir = join(process.cwd(), 'test-results', 'reliability');
+  
+  // Ensure directory exists
+  try {
+    mkdirSync(logDir, { recursive: true });
+  } catch (err) {
+    console.warn('Could not create reliability log directory:', err);
+  }
+  
+  const logPrefix = `${test.name.toLowerCase().replace(/\s+/g, '-')}-${scenario.name.toLowerCase().replace(/\s+/g, '-')}-${timestamp}`;
+  
   console.log(`\n=== Running Reliability Test ===`);
   console.log(`Game: ${test.name}`);
   console.log(`Scenario: ${scenario.name}`);
-  console.log(`Iterations: ${iterations}\n`);
+  console.log(`Iterations: ${iterations}`);
+  console.log(`Log prefix: ${logPrefix}\n`);
   
   const results: TestResult[] = [];
   
   for (let i = 0; i < iterations; i++) {
     console.log(`[${i + 1}/${iterations}] Running iteration...`);
-    const result = await executeGameTest(test, scenario);
-    results.push(result);
     
-    if (result.passed) {
-      console.log(`  ✓ PASSED (${result.duration}ms)`);
-    } else {
-      console.log(`  ✗ FAILED: ${result.simulationError || 'Assertions failed'}`);
+    let result: TestResult;
+    try {
+      result = await executeGameTest(test, scenario);
+      results.push(result);
+      
+      // Save iteration result immediately
+      try {
+        const iterationLog = join(logDir, `${logPrefix}-iteration-${i + 1}.json`);
+        writeFileSync(iterationLog, JSON.stringify({
+          iteration: i + 1,
+          timestamp: new Date().toISOString(),
+          result
+        }, null, 2));
+      } catch (writeError) {
+        console.warn(`  Warning: Could not write iteration ${i + 1} log:`, writeError);
+      }
+      
+      if (result.passed) {
+        console.log(`  ✓ PASSED (${result.duration}ms)`);
+      } else {
+        console.log(`  ✗ FAILED: ${result.simulationError || 'Assertions failed'}`);
+      }
+    } catch (error) {
+      // If iteration throws, create a failed result
+      console.log(`  ✗ FAILED: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      result = {
+        testName: test.name,
+        scenarioName: scenario.name,
+        passed: false,
+        duration: 0,
+        artifactsGenerated: false,
+        simulationCompleted: false,
+        turns: 0,
+        simulationError: error instanceof Error ? error.message : 'Unknown error',
+        assertionResults: []
+      };
+      results.push(result);
+      
+      // Save failed iteration
+      try {
+        const iterationLog = join(logDir, `${logPrefix}-iteration-${i + 1}.json`);
+        writeFileSync(iterationLog, JSON.stringify({
+          iteration: i + 1,
+          timestamp: new Date().toISOString(),
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          result
+        }, null, 2));
+      } catch (writeError) {
+        console.warn(`  Warning: Could not write failed iteration ${i + 1} log:`, writeError);
+      }
+    }
+    
+    // Save intermediate report after each iteration
+    const intermediateReport = generateReport(test.name, results);
+    try {
+      const reportLog = join(logDir, `${logPrefix}-report.json`);
+      writeFileSync(reportLog, JSON.stringify({
+        completedIterations: i + 1,
+        totalIterations: iterations,
+        report: intermediateReport,
+        timestamp: new Date().toISOString()
+      }, null, 2));
+    } catch (writeError) {
+      console.warn(`  Warning: Could not write intermediate report:`, writeError);
     }
   }
   
-  // Generate report
+  // Generate final report
   const report = generateReport(test.name, results);
   printReport(report);
+  
+  // Save final report
+  try {
+    const finalReportLog = join(logDir, `${logPrefix}-final-report.json`);
+    writeFileSync(finalReportLog, JSON.stringify({
+      completedIterations: iterations,
+      totalIterations: iterations,
+      report,
+      timestamp: new Date().toISOString()
+    }, null, 2));
+    console.log(`\n📊 Full reliability report saved to: ${finalReportLog}`);
+  } catch (writeError) {
+    console.warn(`Warning: Could not write final report:`, writeError);
+  }
   
   return report;
 }

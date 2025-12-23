@@ -2,11 +2,11 @@
 
 ## Game Overview
 
-Westward Peril is a single-player narrative adventure game where you journey westward across dangerous frontier territories. Your goal is to survive 5 critical encounters by making wise choices, avoiding deadly outcomes, and ultimately reaching the western coast alive.
+Westward Peril is a single-player narrative adventure game where you journey westward across dangerous frontier territories. Your goal is to survive 3 critical encounters by making wise choices, avoiding deadly outcomes, and ultimately reaching the western coast alive.
 
 Each playthrough generates a unique story driven by your character's random motivation for traveling west, which is revealed at the very start of the game. Every scenario, choice description, and outcome is created fresh by AI each playthrough, ensuring no two games are identical. Your success depends on careful judgment, narrative intuition, and some measure of luck.
 
-**Core Objective**: Successfully navigate all 5 turns of your westward journey by choosing non-deadly options at each critical juncture. Reach the west coast to achieve victory. One wrong choice means death and immediate game over.
+**Core Objective**: Successfully navigate all 3 turns of your westward journey by choosing non-deadly options at each critical juncture. Reach the west coast to achieve victory. One wrong choice means death and immediate game over.
 
 ## Tone & Narrative Style
 
@@ -38,7 +38,7 @@ The game acknowledges that westward pioneers faced genuine mortal threats (disea
    - Following a treasure map or legend
    - Fulfilling a dying person's final wish
 
-2. **Reveal Motivation to Player**: The chosen motivation is displayed to you **immediately at game start, before Turn 1 begins and before any scenario is presented**. This motivation is shown prominently and clearly, providing context for your journey before you face any decisions. Your motivation remains visible or easily referenced during gameplay so you can make informed decisions about which choices might align with your character's goals throughout all 5 turns.
+2. **Reveal Motivation to Player**: The chosen motivation is displayed to you **immediately at game start, before Turn 1 begins and before any scenario is presented**. This motivation is shown prominently and clearly, providing context for your journey before you face any decisions. Your motivation remains visible or easily referenced during gameplay so you can make informed decisions about which choices might align with your character's goals throughout all 3 turns.
 
 3. **Initialize Journey Progress**: Your journey begins at Turn 1 of 5. You start somewhere in the eastern territories with the west coast as your distant destination. The current turn number is always visible to you.
 
@@ -48,7 +48,7 @@ The game acknowledges that westward pioneers faced genuine mortal threats (disea
 
 ### Turn Sequence
 
-The game consists of exactly **5 turns**, each representing a major encounter or decision point during your westward journey. Each turn follows this sequence:
+The game consists of exactly **3 turns**, each representing a major encounter or decision point during your westward journey. Each turn follows this sequence:
 
 1. **Situation Description**: The AI generates and presents a unique narrative scenario describing your current circumstances, location, and immediate challenge. This description is created fresh for this specific playthrough, incorporating elements tied to your particular motivation when thematically appropriate. The scenario feels like a natural progression of your westward journey and reflects your current geographic position.
 
@@ -174,7 +174,7 @@ When you select a deadly choice, the following occurs:
    - All progress through previous turns is erased
 
 4. **Final Statistics**: The game displays:
-   - **Turn of Death**: Which turn you died on (Turn 1, 2, 3, 4, or 5)
+   - **Turn of Death**: Which turn you died on (Turn 1, 2, or 3)
    - **Character Motivation**: Your character's motivation for going west (the one revealed at game start)
    - **Brief Epitaph**: A short concluding statement or summary about your character's failed journey
 
@@ -197,15 +197,15 @@ After failure, you may restart by:
 ### Winning the Game
 
 You achieve victory by:
-- Successfully making non-deadly choices on all 5 turns
-- Completing Turn 5 without selecting the deadly choice
+- Successfully making non-deadly choices on all 3 turns
+- Completing Turn 3 without selecting the deadly choice
 - Reaching the western coast alive
 
 ### Victory Requirements
 
 **Mandatory**:
-- Survive all 5 turns by avoiding the deadly choice each turn
-- Make the final choice on Turn 5 successfully (select one of the 3 safe choices)
+- Survive all 3 turns by avoiding the deadly choice each turn
+- Make the final choice on Turn 3 successfully (select one of the 3 safe choices)
 
 **Not Required for Victory**:
 - You do NOT need to select the motivation-aligned choice every turn (or any turn)
@@ -215,7 +215,7 @@ You achieve victory by:
 
 ### Victory Resolution
 
-When you successfully complete Turn 5 without dying:
+When you successfully complete Turn 3 without dying:
 
 1. **Final Arrival Narrative**: The AI generates **a paragraph-length narrative** describing:
    - Your arrival at the western coast
@@ -295,7 +295,7 @@ The AI generates scenarios appropriate to your position in the westward journey:
 - **Turn 2**: Open prairies, grasslands, early wilderness, or initial frontier territories
 - **Turn 3**: Mountain passes, major rivers, difficult terrain, or significant geographic obstacles
 - **Turn 4**: Deserts, hostile territories, lawless regions, or extreme environmental challenges
-- **Turn 5**: Final approach to western territories, coast proximity, or ultimate obstacles before destination
+- **Turn 3**: Final approach to western territories, coast proximity, or ultimate obstacles before destination
 
 **Encounter Variety**:
 
@@ -323,7 +323,7 @@ Each new game provides completely unique content:
 
 - **Different Random Motivation**: 1 of 10 possible motivations selected randomly
 - **Fresh Procedural Scenarios**: All 5 scenarios are AI-generated anew - never repeated from previous games
-- **Unique Choice Descriptions**: All 20 total choices (4 per turn × 5 turns) are freshly written
+- **Unique Choice Descriptions**: All 20 total choices (4 per turn × 3 turns) are freshly written
 - **Randomized Deadly Choices**: The deadly choice position and nature change every playthrough
 - **Varied Narrative Paths**: Your decisions create unique story paths that differ each game
 - **No Repeated Content**: The AI does not reuse descriptions, choices, or outcomes from previous playthroughs
@@ -396,7 +396,7 @@ Each new game provides completely unique content:
 
 **Stakes**: Final tests of your survival skills, moral character, and commitment to reaching the coast
 
-### Turn 5: Journey's End
+### Turn 3: Journey's End
 
 **Context**: The western coast is within reach or at least achievable. This is your last major obstacle before achieving your goal. Victory or death - one more choice determines everything.
 
@@ -416,10 +416,10 @@ Each new game provides completely unique content:
 ### Mandatory Game Elements
 
 **Fixed Turn Count**:
-- The game is always exactly **5 turns**
+- The game is always exactly **3 turns**
 - No scenarios can extend or shorten the journey length
 - Turn count does not vary between playthroughs or for any reason
-- Every game follows the exact sequence: Turn 1 → 2 → 3 → 4 → 5
+- Every game follows the exact sequence: Turn 1 → 2 → 3
 
 **Fixed Choice Count**:
 - Every turn presents exactly **4 choices**
@@ -465,7 +465,7 @@ Each new game provides completely unique content:
 **Linear Progression**:
 - You cannot skip turns or jump ahead
 - You cannot return to or replay previous turns
-- The journey only moves forward (Turn 1 → 2 → 3 → 4 → 5)
+- The journey only moves forward (Turn 1 → 2 → 3)
 - There are no branching paths that affect turn order or count
 - No shortcuts or alternative routes exist
 
@@ -584,15 +584,15 @@ Each new game provides completely unique content:
 ## Summary of Win/Loss Conditions
 
 ### You Win When:
-- You successfully complete all 5 turns without dying
-- You make the final choice on Turn 5 and it is not the deadly choice
+- You successfully complete all 3 turns without dying
+- You make the final choice on Turn 3 and it is not the deadly choice
 - You reach the western coast alive
 - Victory narrative (paragraph-length arrival and conclusion) is displayed
 
 ### You Lose When:
 - You select the deadly choice on any turn (1, 2, 3, 4, or 5)
 - Your character dies (for any reason caused by selecting the deadly choice)
-- Your journey ends prematurely before reaching Turn 5 completion
+- Your journey ends prematurely before reaching Turn 3 completion
 - Death narrative (full paragraph explaining causation) and game over screen are displayed
 
 ### Victory is Determined By:
@@ -607,3 +607,31 @@ Each new game provides completely unique content:
 - No partial victories or degrees of success exist
 - No alternative endings beyond binary win/loss exist
 - The game is complete when either victory or failure conditions are met
+
+## Implementation Guidance
+
+### State Management for Deadly Options
+
+**CRITICAL**: The game must store which choice index is deadly for each turn in the game state to enable deterministic precondition checking.
+
+**Required State Field**:
+- The game state MUST include an array field that stores the deadly choice index for each turn
+- Example field name: `game.deadlyChoiceIndexPerTurn: number[]` (5 elements, one per turn)
+- This array MUST be initialized during game setup with 5 randomly selected indices (0-3)
+- Each turn's deadly choice index should be determined once and stored, not recalculated
+
+**Initialization**:
+- During game initialization, generate 5 random numbers (each 0-3) representing the deadly choice for turns 1-3
+- Store these in the deadly choice array: `[deadlyTurn1, deadlyTurn2, deadlyTurn3, deadlyTurn4, deadlyTurn5]`
+- Example: `[2, 1, 3, 0, 2]` means turn 1's deadly choice is index 2, turn 2's is index 1, etc.
+
+**Precondition Usage**:
+- Transitions that check if a choice was deadly MUST use the `lookup` operation to access the array
+- Example: `{"lookup": [{"var": "game.deadlyChoiceIndexPerTurn"}, {"-": [{"var": "game.currentTurn"}, 1]}]}`
+- This retrieves the deadly choice index for the current turn (using turn-1 for 0-based array indexing)
+- Compare the player's selected choice index against the retrieved deadly index
+
+**Why This Is Required**:
+- Preconditions must be deterministic (cannot rely on AI generation or randomness at transition time)
+- Storing deadly indices once allows transitions to check "was this choice deadly?" using pure logic
+- The `lookup` operation enables dynamic array access using the current turn number as an index

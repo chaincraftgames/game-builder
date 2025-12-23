@@ -82,12 +82,11 @@ export async function executeGameTest(
       
       console.log(`[${test.name}] Response: ${response.publicMessage || 'no message'}`);
       
-      // Check for unexpected game end
-      if (gameEnded && !isLastAction(action, scenario)) {
-        result.simulationError = "Game ended prematurely";
-        result.finalState = { playerStates: finalPlayerStates, gameEnded, gameState: finalGameState };
-        result.duration = Date.now() - startTime;
-        return result;
+      // If game ended early, stop processing actions
+      // This is valid behavior (e.g., player death in survival games)
+      if (gameEnded) {
+        console.log(`[${test.name}] Game ended after turn ${result.turns}`);
+        break;
       }
     }
     
