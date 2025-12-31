@@ -116,4 +116,45 @@ describe("Design-to-Sim Integration", () => {
     console.log("   Design spec → Sim workflow retrieval works correctly\n");
 
   }, 180000); // 3 minute timeout for full integration test
+
+  test("should retrieve latest spec version when version omitted", async () => {
+    console.log("\n=== LATEST VERSION RETRIEVAL TEST ===\n");
+    
+    // Use a different gameId for this test
+    const latestGameId = `latest-test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    console.log("Game ID:", latestGameId);
+
+    // Create a spec in design workflow
+    console.log("\n--- Creating Spec v1 ---");
+    const response1 = await continueDesignConversation(
+      latestGameId,
+      "Create a coin flip game for 2 players. Each player calls heads or tails, flip the coin, winner gets a point."
+    );
+
+    let specVersion = response1.specification?.version;
+    if (!specVersion) {
+      const response2 = await continueDesignConversation(
+        latestGameId,
+        "Please create the full specification."
+      );
+      specVersion = response2.specification?.version;
+    }
+
+    console.log("✓ Spec v", specVersion, "created");
+
+    // Call createSimulation WITHOUT specifying version - should use latest
+    console.log("\n--- Creating Simulation Without Version ---");
+    console.log("Calling createSimulation(gameId) - no version specified");
+    
+    const { gameRules } = await createSimulation(latestGameId);
+    
+    console.log("✓ Simulation created using latest version");
+    console.log("✓ Game rules length:", gameRules.length);
+    expect(gameRules).toBeDefined();
+    expect(gameRules.length).toBeGreaterThan(50);
+    
+    console.log("\n✅ Latest version retrieval test completed!");
+    console.log("   Omitting version correctly uses latest spec\n");
+
+  }, 180000); // 3 minute timeout - spec processing can be slow
 });

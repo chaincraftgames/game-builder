@@ -6,7 +6,10 @@ import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
-import { getDesignSpecificationByVersion } from "#chaincraft/ai/design/design-workflow.js";
+import { 
+  getDesignSpecificationByVersion,
+  getCachedDesignSpecification 
+} from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
@@ -207,13 +210,13 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
  * Creates a simulation by processing game specification and storing artifacts.
  * 
  * @param gameId - The unique game identifier (same as conversationId from design workflow)
- * @param gameSpecificationVersion - The version number of the specification to use
+ * @param gameSpecificationVersion - Optional: The version number of the specification to use. If omitted, uses latest version.
  * @param gameSpecification - Optional override: if provided, uses this spec directly instead of retrieving from design workflow
  * @returns The extracted game rules
  */
 export async function createSimulation(
   gameId: string,
-  gameSpecificationVersion: number,
+  gameSpecificationVersion?: number,
   gameSpecification?: string
 ): Promise<{
   gameRules: string;
@@ -223,24 +226,48 @@ export async function createSimulation(
     
     // If gameSpecification not provided, retrieve it from design workflow
     let specToUse = gameSpecification;
+    let versionToUse = gameSpecificationVersion;
+    
     if (!specToUse) {
-      console.log("[simulate] Retrieving spec from design workflow:", gameId, "version:", gameSpecificationVersion);
-      const designSpec = await getDesignSpecificationByVersion(gameId, gameSpecificationVersion);
-      
-      if (!designSpec) {
-        throw new Error(
-          `Design specification not found for game ${gameId} version ${gameSpecificationVersion}`
-        );
+      // If no version specified, get the latest
+      if (!versionToUse) {
+        console.log("[simulate] No version specified, retrieving latest spec from design workflow:", gameId);
+        const latestSpec = await getCachedDesignSpecification(gameId);
+        
+        if (!latestSpec) {
+          throw new Error(
+            `Design specification not found for game ${gameId} (latest version)`
+          );
+        }
+        
+        specToUse = latestSpec.designSpecification;
+        versionToUse = latestSpec.version;
+        console.log("[simulate] Retrieved latest spec from design workflow, version:", versionToUse, "title:", latestSpec.title);
+      } else {
+        // Specific version requested
+        console.log("[simulate] Retrieving spec from design workflow:", gameId, "version:", versionToUse);
+        const designSpec = await getDesignSpecificationByVersion(gameId, versionToUse);
+        
+        if (!designSpec) {
+          throw new Error(
+            `Design specification not found for game ${gameId} version ${versionToUse}`
+          );
+        }
+        
+        specToUse = designSpec.designSpecification;
+        console.log("[simulate] Retrieved spec from design workflow, title:", designSpec.title);
       }
-      
-      specToUse = designSpec.designSpecification;
-      console.log("[simulate] Retrieved spec from design workflow, title:", designSpec.title);
     } else {
       console.log("[simulate] Using provided game specification (override mode)");
+      // If version not provided with override, default to 1 for testing
+      if (!versionToUse) {
+        versionToUse = 1;
+        console.log("[simulate] No version provided with override, defaulting to version 1");
+      }
     }
     
     // Create spec key from game ID and version
-    const specKey = `${gameId}-v${gameSpecificationVersion}`;
+    const specKey = `${gameId}-v${versionToUse}`;
     
     // Step 1: Check for cached spec artifacts or generate new ones
     let artifacts = await getCachedSpecArtifacts(specKey);
