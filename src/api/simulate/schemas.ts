@@ -37,8 +37,8 @@ export const SimResponseSchema = z.object({
 // Create simulation schemas
 export const CreateSimulationRequestSchema = z.object({
   gameId: z.string().min(1),
-  gameSpecification: z.string().min(1),
   gameSpecificationVersion: z.number().min(1),
+  gameSpecification: z.string().min(1).optional(), // Optional override - if not provided, retrieves from design workflow
 });
 
 export const CreateSimulationResponseSchema = z.object({

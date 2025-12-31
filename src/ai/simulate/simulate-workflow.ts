@@ -6,6 +6,7 @@ import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
+import { getDesignSpecificationByVersion } from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
@@ -202,16 +203,41 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   };
 }
 
-/** Creates a simulation.  Returns the player count. */
+/**
+ * Creates a simulation by processing game specification and storing artifacts.
+ * 
+ * @param gameId - The unique game identifier (same as conversationId from design workflow)
+ * @param gameSpecificationVersion - The version number of the specification to use
+ * @param gameSpecification - Optional override: if provided, uses this spec directly instead of retrieving from design workflow
+ * @returns The extracted game rules
+ */
 export async function createSimulation(
   gameId: string,
-  gameSpecification: string,
-  gameSpecificationVersion: number
+  gameSpecificationVersion: number,
+  gameSpecification?: string
 ): Promise<{
   gameRules: string;
 }> {
   try {
     console.log("[simulate] Creating simulation for game %s", gameId);
+    
+    // If gameSpecification not provided, retrieve it from design workflow
+    let specToUse = gameSpecification;
+    if (!specToUse) {
+      console.log("[simulate] Retrieving spec from design workflow:", gameId, "version:", gameSpecificationVersion);
+      const designSpec = await getDesignSpecificationByVersion(gameId, gameSpecificationVersion);
+      
+      if (!designSpec) {
+        throw new Error(
+          `Design specification not found for game ${gameId} version ${gameSpecificationVersion}`
+        );
+      }
+      
+      specToUse = designSpec.designSpecification;
+      console.log("[simulate] Retrieved spec from design workflow, title:", designSpec.title);
+    } else {
+      console.log("[simulate] Using provided game specification (override mode)");
+    }
     
     // Create spec key from game ID and version
     const specKey = `${gameId}-v${gameSpecificationVersion}`;
@@ -228,7 +254,7 @@ export async function createSimulation(
       
       // Invoke spec graph - results saved to checkpoint automatically
       const specResult = await specGraph.invoke({
-        gameSpecification,
+        gameSpecification: specToUse,
       }, config);
       
       artifacts = {

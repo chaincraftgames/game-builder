@@ -1,6 +1,11 @@
-import { continueDesignConversation, generateImage } from "../design-workflow.js";
+import { 
+  continueDesignConversation, 
+  generateImage,
+  getDesignSpecificationByVersion 
+} from "../design-workflow.js";
 
 let conversationId = `test-conversation-${Date.now()}`;
+let finalSpecVersion: number | undefined;
 
 async function testDesignWorkflow() {
   console.log("\n=== DESIGN WORKFLOW TEST ===\n");
@@ -109,6 +114,11 @@ async function testDesignWorkflow() {
     
     console.log("\n✅ Design workflow test completed successfully!");
     
+    // Store final version for retrieval test
+    if (responseFinal.specification) {
+      finalSpecVersion = responseFinal.specification.version;
+    }
+    
     return responseFinal;
     
   } catch (error) {
@@ -136,10 +146,86 @@ async function testImageGeneration() {
   }
 }
 
+async function testVersionRetrieval() {
+  console.log("\n=== SPECIFICATION VERSION RETRIEVAL TEST ===\n");
+
+  try {
+    if (!finalSpecVersion) {
+      throw new Error("No spec version available from previous test");
+    }
+
+    console.log("Testing retrieval of version:", finalSpecVersion);
+    console.log("From conversation:", conversationId);
+
+    // Test 1: Retrieve the final version
+    console.log("\n--- TEST 1: Retrieve Specific Version ---");
+    const retrievedSpec = await getDesignSpecificationByVersion(
+      conversationId,
+      finalSpecVersion
+    );
+
+    if (!retrievedSpec) {
+      throw new Error(`Failed to retrieve version ${finalSpecVersion}`);
+    }
+
+    console.log("✓ Retrieved spec version:", retrievedSpec.version);
+    console.log("✓ Title:", retrievedSpec.title);
+    console.log("✓ Summary:", retrievedSpec.summary.substring(0, 100) + "...");
+    console.log("✓ Spec length:", retrievedSpec.designSpecification.length, "characters");
+
+    if (retrievedSpec.version !== finalSpecVersion) {
+      throw new Error(
+        `Version mismatch: expected ${finalSpecVersion}, got ${retrievedSpec.version}`
+      );
+    }
+
+    // Test 2: Try to retrieve non-existent version
+    console.log("\n--- TEST 2: Non-existent Version Returns Undefined ---");
+    const nonExistentVersion = 99999;
+    const missingSpec = await getDesignSpecificationByVersion(
+      conversationId,
+      nonExistentVersion
+    );
+
+    if (missingSpec !== undefined) {
+      throw new Error(
+        `Expected undefined for non-existent version ${nonExistentVersion}, got spec`
+      );
+    }
+
+    console.log("✓ Non-existent version correctly returns undefined");
+
+    // Test 3: Retrieve earlier version if available (version 1)
+    console.log("\n--- TEST 3: Retrieve Earlier Version ---");
+    const earlierSpec = await getDesignSpecificationByVersion(
+      conversationId,
+      1
+    );
+
+    if (earlierSpec) {
+      console.log("✓ Retrieved earlier spec version:", earlierSpec.version);
+      console.log("✓ Earlier spec title:", earlierSpec.title);
+      
+      if (earlierSpec.version !== 1) {
+        throw new Error(`Expected version 1, got ${earlierSpec.version}`);
+      }
+    } else {
+      console.log("⚠ Version 1 not found (may have been overwritten or not saved)");
+    }
+
+    console.log("\n✅ Version retrieval test completed successfully!");
+
+  } catch (error) {
+    console.error("\n❌ Error in version retrieval test:", error);
+    throw error;
+  }
+}
+
 // Run the tests
 async function runTests() {
   try {
     await testDesignWorkflow();
+    await testVersionRetrieval();
     await testImageGeneration();
     console.log("\n🎉 All tests passed!\n");
   } catch (error) {

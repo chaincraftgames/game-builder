@@ -288,6 +288,69 @@ export async function getCachedDesignSpecification(
   return undefined;
 }
 
+/**
+ * Retrieves a specific version of the design specification from checkpoint history.
+ * Iterates through checkpoints to find the one with the matching version number.
+ * 
+ * @param conversationId - The conversation/game ID
+ * @param version - The specific version number to retrieve
+ * @returns The specification with matching version, or undefined if not found
+ */
+export async function getDesignSpecificationByVersion(
+  conversationId: string,
+  version: number
+): Promise<(GameDesignSpecification & { title: string }) | undefined> {
+  // Check if conversation exists
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
+
+  // Get the saver directly to access checkpoints
+  const saver = await getSaver(conversationId, graphType);
+  const config = { configurable: { thread_id: conversationId } };
+
+  console.log(
+    "[getDesignSpecificationByVersion] Searching for version",
+    version,
+    "in conversation:",
+    conversationId
+  );
+
+  // Iterate through checkpoints to find the matching version
+  for await (const checkpoint of saver.list(config)) {
+    if (!checkpoint.checkpoint.channel_values) {
+      continue;
+    }
+
+    const channelValues = checkpoint.checkpoint.channel_values as any;
+    const currentGameSpec = channelValues.currentSpec;
+    const title = channelValues.title;
+
+    if (currentGameSpec?.version === version) {
+      console.log(
+        "[getDesignSpecificationByVersion] Found spec version",
+        version,
+        "with title:",
+        title || "no title"
+      );
+
+      return {
+        ...currentGameSpec,
+        title: title || "Untitled Game",
+      };
+    }
+  }
+
+  // Version not found
+  console.log(
+    "[getDesignSpecificationByVersion] Version",
+    version,
+    "not found in conversation",
+    conversationId
+  );
+  return undefined;
+}
+
 // Function to generate a new specification (creates checkpoints)
 export async function generateNewDesignSpecification(
   conversationId: string

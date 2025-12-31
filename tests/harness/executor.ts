@@ -130,7 +130,8 @@ export async function executeGameTest(
  */
 async function generateArtifacts(spec: string, gameId: string): Promise<any> {
   // Use createSimulation which calls spec-processing-graph
-  const result = await createSimulation(gameId, spec, 1);
+  // Pass spec as optional third parameter for testing
+  const result = await createSimulation(gameId, 1, spec);
   return result;
 }
 

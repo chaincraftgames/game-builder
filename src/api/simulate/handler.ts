@@ -36,11 +36,11 @@ export async function handleCreateSimulation(
   }
 
   try {
-    const { gameId, gameSpecification, gameSpecificationVersion } = result.data;
+    const { gameId, gameSpecificationVersion, gameSpecification } = result.data;
     const response = await createSimulation(
       gameId,
-      gameSpecification,
-      gameSpecificationVersion
+      gameSpecificationVersion,
+      gameSpecification
     );
 
     return {

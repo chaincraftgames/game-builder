@@ -31,8 +31,8 @@ describe("Coin Flip Simulation", () => {
   test("should create coin flip simulation and return game rules", async () => {
     const { gameRules } = await createSimulation(
       gameId,
-      coinFlipSpec,
-      1 // Initial version
+      1, // Initial version
+      coinFlipSpec // Optional override for testing
     );
 
     expect(gameRules).toBeDefined();
