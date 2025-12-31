@@ -11,7 +11,7 @@
  */
 
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { GameDesignState } from "#chaincraft/ai/design/game-design-state.js";
+import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
 import { setupSpecPlanModel, setupSpecExecuteModel, setupModel } from "#chaincraft/ai/model-config.js";
 import { createSpecPlan } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-plan/index.js";
@@ -42,6 +42,40 @@ function routeFromConversation(
   else {
     return END;
   }
+}
+
+function routeFromSpecPlan(state: typeof GameDesignState.State): 
+  "execute_spec" | typeof END {
+  const accumulated = state.pendingSpecChanges || [];
+  const { planThreshold, charThreshold } = getConsolidationThresholds(state);
+  
+  console.log(`[router] Thresholds: ${planThreshold} plans, ${charThreshold} chars`);
+  console.log(`[router] Current: ${accumulated.length} plans, ${accumulated.reduce((sum, plan) => sum + plan.changes.length, 0)} chars`);
+  
+  // Always generate initial spec immediately (no existing spec to update)
+  if (!state.currentSpec) {
+    console.log('[router] Initial spec - generating immediately');
+    return "execute_spec";
+  }
+  
+  if (state.forceSpecGeneration) {
+    console.log('[router] Force flag set - generating immediately');
+    return "execute_spec";
+  }
+  
+  if (accumulated.length >= planThreshold) {
+    console.log(`[router] Auto-consolidate: ${accumulated.length}/${planThreshold} plans`);
+    return "execute_spec";
+  }
+  
+  const totalChars = accumulated.reduce((sum, plan) => sum + plan.changes.length, 0);
+  if (totalChars >= charThreshold) {
+    console.log(`[router] Auto-consolidate: ${totalChars}/${charThreshold} chars`);
+    return "execute_spec";
+  }
+  
+  console.log(`[router] Accumulating - below thresholds`);
+  return END; // Accumulate changes for later consolidation
 }
 
 /**
@@ -104,7 +138,7 @@ export async function createMainDesignGraph(
   // Define edges (using 'as any' to work around LangGraph's strict typing)
   workflow.addEdge(START, "conversation" as any);
   workflow.addConditionalEdges("conversation" as any, routeFromConversation as any);
-  workflow.addEdge("plan_spec" as any, "execute_spec" as any);
+  workflow.addConditionalEdges("plan_spec" as any, routeFromSpecPlan as any);
   workflow.addEdge("execute_spec" as any, "generate_diff" as any);
   workflow.addConditionalEdges("generate_diff" as any, routeAfterSpecDiff as any);
   // workflow.addEdge("update_metadata" as any, END);

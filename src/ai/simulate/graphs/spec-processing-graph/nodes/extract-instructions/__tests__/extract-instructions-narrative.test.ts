@@ -439,8 +439,10 @@ FINISHED PHASE:
           if (op.value && typeof op.value === 'string') collectTemplates(op.value);
         });
         
-        if (action.messages?.private?.template) {
-          collectTemplates(action.messages.private.template);
+        if (action.messages?.private) {
+          for (const privateMsg of action.messages.private) {
+            collectTemplates(privateMsg.template);
+          }
         }
         if (action.messages?.public?.template) {
           collectTemplates(action.messages.public.template);
@@ -455,8 +457,10 @@ FINISHED PHASE:
         if (op.value && typeof op.value === 'string') collectTemplates(op.value);
       });
       
-      if (transition.messages?.private?.template) {
-        collectTemplates(transition.messages.private.template);
+      if (transition.messages?.private) {
+        for (const privateMsg of transition.messages.private) {
+          collectTemplates(privateMsg.template);
+        }
       }
       if (transition.messages?.public?.template) {
         collectTemplates(transition.messages.public.template);

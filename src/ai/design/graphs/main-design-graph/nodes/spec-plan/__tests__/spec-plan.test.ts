@@ -42,21 +42,21 @@ import type { GameDesignSpecification, GamepieceMetadata, SpecPlan } from "#chai
 function createTestState(overrides: {
   messages?: any[];
   title?: string;
-  currentGameSpec?: GameDesignSpecification;
+  currentSpec?: GameDesignSpecification;
   lastSpecMessageCount?: number;
+  pendingSpecChanges?: SpecPlan[];
 } = {}) {
   return {
     messages: overrides.messages || [],
     title: overrides.title || "",
     systemPromptVersion: "1.0",
     specRequested: false,
-    currentGameSpec: overrides.currentGameSpec || undefined,
+    currentSpec: overrides.currentSpec || undefined,
     specVersion: 0,
     specUpdateNeeded: false,
     metadataUpdateNeeded: false,
     specPlan: undefined,
     metadataChangePlan: undefined,
-    spec: undefined,
     updatedSpec: undefined,
     metadata: undefined,
     specDiff: undefined,
@@ -67,6 +67,10 @@ function createTestState(overrides: {
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: overrides.lastSpecMessageCount,
     metadataPlan: undefined,
+    pendingSpecChanges: overrides.pendingSpecChanges || [],
+    forceSpecGeneration: false,
+    consolidationThreshold: 5,
+    consolidationCharLimit: 2000,
   };
 }
 
@@ -133,7 +137,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Yes, and first to win 2 rounds wins the match"),
       ],
       title: "Rock Paper Scissors",
-      currentGameSpec: undefined, // First spec
+      currentSpec: undefined, // First spec
       lastSpecMessageCount: undefined, // First spec
     });
 
@@ -210,7 +214,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Yes, and also make it best of 5 instead of best of 3"),
       ],
       title: "Rock Paper Scissors Volcano",
-      currentGameSpec: existingSpec,
+      currentSpec: existingSpec,
       lastSpecMessageCount: 4, // Only process messages after index 4
     });
 
@@ -254,7 +258,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Yes - action cards give one-time effects, treasure cards give gold, and victory cards give points but clog your deck since they don't do anything during play."),
       ],
       title: "Deck Builder",
-      currentGameSpec: undefined,
+      currentSpec: undefined,
       lastSpecMessageCount: undefined,
     });
 
@@ -287,7 +291,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Create a coin flip game - 2 players, whoever calls it right wins"),
       ],
       title: "Coin Flip",
-      currentGameSpec: undefined,
+      currentSpec: undefined,
       lastSpecMessageCount: undefined,
     });
 
@@ -342,7 +346,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Change it to best of 5 flips, and add a betting mechanic where players start with 10 coins and can bet on each flip"),
       ],
       title: "Betting Coin Flip",
-      currentGameSpec: existingSpec,
+      currentSpec: existingSpec,
       lastSpecMessageCount: 2,
     });
 
@@ -406,6 +410,166 @@ describe("Plan Spec - Plan Quality (Manual Inspection)", () => {
     // Verify it's NOT JSON
     expect(result.specPlan!.changes).not.toMatch(/^\{/); // Not JSON object
     expect(result.specPlan!.changes).not.toMatch(/^\[/); // Not JSON array
+  }, 30000);
+});
+
+describe("Plan Spec - Plan Accumulation", () => {
+  let model: any;
+  let planSpec: any;
+  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+
+  beforeAll(async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping accumulation tests - no API key configured");
+      return;
+    }
+
+    try {
+      model = await setupDesignModel();
+      planSpec = createSpecPlan(model);
+    } catch (error) {
+      console.log("⚠️  Failed to setup model:", error);
+    }
+  });
+
+  test("should return new plan in pendingSpecChanges array", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a simple dice rolling game for 2 players"),
+      ],
+      title: "Dice Game",
+      pendingSpecChanges: [], // Empty - first plan
+    });
+
+    const result = await planSpec(state);
+
+    // Should return pendingSpecChanges with the new plan
+    expect(result.pendingSpecChanges).toBeDefined();
+    expect(Array.isArray(result.pendingSpecChanges)).toBe(true);
+    expect(result.pendingSpecChanges).toHaveLength(1);
+    
+    // The returned plan should match specPlan
+    expect(result.pendingSpecChanges![0]).toEqual(result.specPlan);
+    expect(result.pendingSpecChanges![0].summary).toBe(result.specPlan!.summary);
+    expect(result.pendingSpecChanges![0].changes).toBe(result.specPlan!.changes);
+  }, 30000);
+
+  test("should append to existing pending changes", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    // Simulate one plan already accumulated
+    const existingPlan: SpecPlan = {
+      summary: "A simple dice game",
+      playerCount: { min: 2, max: 2 },
+      changes: "Create a game where players roll dice and highest roll wins",
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a dice game"),
+        new AIMessage("I'll generate that spec"),
+        // --- First plan generated, now in pendingSpecChanges ---
+        new HumanMessage("Actually, make it best of 3 rounds and add a scoring system"),
+      ],
+      title: "Dice Game",
+      pendingSpecChanges: [existingPlan], // One plan already accumulated
+      lastSpecMessageCount: 2,
+    });
+
+    const result = await planSpec(state);
+
+    // Should return pendingSpecChanges with the new plan
+    expect(result.pendingSpecChanges).toBeDefined();
+    expect(Array.isArray(result.pendingSpecChanges)).toBe(true);
+    expect(result.pendingSpecChanges).toHaveLength(1); // Node only returns NEW plan
+    
+    // The new plan should reference the changes
+    expect(result.pendingSpecChanges![0].changes.toLowerCase()).toMatch(/best of 3|round|scor/);
+  }, 30000);
+
+  test("should handle multiple successive accumulations", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    // Simulate the workflow: plan 1 → plan 2
+    
+    // First plan
+    const state1 = createTestState({
+      messages: [
+        new HumanMessage("Create a card game"),
+      ],
+      pendingSpecChanges: [],
+    });
+
+    const result1 = await planSpec(state1);
+    expect(result1.pendingSpecChanges).toHaveLength(1);
+    
+    // Simulate state after first plan (reducer would combine)
+    const pendingAfterFirst = result1.pendingSpecChanges!;
+
+    // Second plan
+    const state2 = createTestState({
+      messages: [
+        new HumanMessage("Create a card game"),
+        new AIMessage("Got it, working on the spec"),
+        new HumanMessage("Add a resource mechanic with gold coins"),
+      ],
+      pendingSpecChanges: pendingAfterFirst,
+      lastSpecMessageCount: 2,
+    });
+
+    const result2 = await planSpec(state2);
+    expect(result2.pendingSpecChanges).toHaveLength(1); // Returns just the new plan
+    
+    // Verify the plan references the new mechanic
+    expect(result2.pendingSpecChanges![0].changes.toLowerCase()).toMatch(/resource|gold|coin/);
+  }, 60000);
+
+  test("pending changes should preserve full SpecPlan structure", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a racing game for 2-4 players"),
+      ],
+      pendingSpecChanges: [],
+    });
+
+    const result = await planSpec(state);
+
+    expect(result.pendingSpecChanges).toBeDefined();
+    expect(result.pendingSpecChanges).toHaveLength(1);
+    
+    const pendingPlan = result.pendingSpecChanges![0];
+    
+    // Should have all SpecPlan fields
+    expect(pendingPlan).toHaveProperty('summary');
+    expect(pendingPlan).toHaveProperty('playerCount');
+    expect(pendingPlan).toHaveProperty('changes');
+    
+    // Verify types
+    expect(typeof pendingPlan.summary).toBe('string');
+    expect(typeof pendingPlan.playerCount).toBe('object');
+    expect(typeof pendingPlan.playerCount.min).toBe('number');
+    expect(typeof pendingPlan.playerCount.max).toBe('number');
+    expect(typeof pendingPlan.changes).toBe('string');
+    
+    // Verify playerCount is valid
+    expect(pendingPlan.playerCount.min).toBeGreaterThan(0);
+    expect(pendingPlan.playerCount.max).toBeGreaterThanOrEqual(pendingPlan.playerCount.min);
   }, 30000);
 });
 

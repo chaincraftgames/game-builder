@@ -58,22 +58,30 @@ export function createSpecExecute(model: ModelWithOptions) {
   const systemTemplate = SystemMessagePromptTemplate.fromTemplate(SYSTEM_PROMPT);
   
   return async (state: typeof GameDesignState.State) => {
-    // 1. Get the spec plan from state
-    const { specPlan, currentGameSpec } = state;
+    // 1. Get the pending spec changes from state
+    const pendingPlans = state.pendingSpecChanges || [];
+    const { currentSpec: currentGameSpec } = state;
     
-    if (!specPlan) {
+    if (pendingPlans.length === 0) {
       throw new Error(
-        "[spec-execute] No specPlan in state. This node should only be " +
-        "called after spec-plan has generated a plan."
+        "[spec-execute] No accumulated changes. This node should only be " +
+        "called when there are changes to apply."
       );
     }
     
-    // 2. Extract metadata from specPlan
-    const { summary, playerCount, changes } = specPlan;
+    // 2. Use LATEST plan's metadata
+    const latestPlan = pendingPlans[pendingPlans.length - 1];
+    const { summary, playerCount, changes } = latestPlan;
+    
+    // 3. Combine all change plans
+    const changePlans = pendingPlans.length === 1
+      ? pendingPlans[0].changes
+      : pendingPlans
+          .map((plan, i) => `**Change ${i + 1}:**\n${plan.changes}`)
+          .join('\n\n');
     
     // 3. Prepare template variables
     const currentSpec = formatCurrentSpec(currentGameSpec);
-    const changePlan = formatChangePlan(changes);
     const preservationGuidance = getPreservationGuidance(!currentGameSpec);
     const formattedPlayerCount = formatPlayerCount(playerCount);
     
@@ -82,7 +90,7 @@ export function createSpecExecute(model: ModelWithOptions) {
       summary,
       playerCount: formattedPlayerCount,
       currentSpec,
-      changePlan,
+      changePlan: changePlans,
       preservationGuidance,
     });
     
@@ -111,12 +119,14 @@ export function createSpecExecute(model: ModelWithOptions) {
     
     // 8. Return state updates
     return {
-      spec,
+      currentSpec: spec,
       updatedSpec: spec, // Store in updatedSpec for diff comparison
       specVersion: newVersion, // Update the version counter in state
       lastSpecUpdate: new Date().toISOString(),
       lastSpecMessageCount: state.messages.length,
       specUpdateNeeded: false, // Reset the flag
+      pendingSpecChanges: [], // Clear pending plans after execution
+      forceSpecGeneration: false, // Reset force flag
     };
   };
 }

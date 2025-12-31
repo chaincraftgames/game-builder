@@ -40,11 +40,17 @@ export async function handleContinueDesignConversation(
   }
 
   try {
-    const { conversationId, userMessage, gameDescription } = result.data;
+    const {
+      conversationId,
+      userMessage,
+      gameDescription,
+      forceSpecGeneration,
+    } = result.data;
     const response = await continueDesignConversation(
       conversationId,
       userMessage,
-      gameDescription
+      gameDescription,
+      forceSpecGeneration
     );
 
     return {
@@ -53,6 +59,9 @@ export async function handleContinueDesignConversation(
       systemPromptVersion: response.systemPromptVersion,
       specification: response.specification,
       specDiff: response.specDiff,
+      pendingSpecChanges: response.pendingSpecChanges,
+      consolidationThreshold: response.consolidationThreshold,
+      consolidationCharLimit: response.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in continueDesignConversation:", error);
@@ -181,7 +190,6 @@ export async function handleGetConversationHistory(
     return Promise.reject();
   }
 }
-
 
 export async function handlePublishGame(
   request: FastifyRequest<{ Body: PublishGameRequest }>,

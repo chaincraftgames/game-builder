@@ -10,6 +10,7 @@ import {
 import {
   GameDesignSpecification,
   GameDesignState,
+  SpecPlan,
 } from "#chaincraft/ai/design/game-design-state.js";
 import {
   gameTitleTag,
@@ -79,12 +80,16 @@ export type DesignResponse = {
     version: number;
   };
   specDiff?: string;
+  pendingSpecChanges?: string[];
+  consolidationThreshold?: number;
+  consolidationCharLimit?: number;
 };
 
 export async function continueDesignConversation(
   conversationId: string,
   userMessage: string,
-  gameDescription?: string
+  gameDescription?: string,
+  forceSpecGeneration?: boolean
 ): Promise<DesignResponse> {
   // Save the conversation id
   registerConversationId(graphType, conversationId);
@@ -100,7 +105,7 @@ export async function continueDesignConversation(
   </game_description>`
     : userMessage;
 
-  return _processMessage(graph, message, config);
+  return _processMessage(graph, message, config, forceSpecGeneration);
 }
 
 export async function generateImage(
@@ -260,7 +265,7 @@ export async function getCachedDesignSpecification(
 
   // Extract state from the checkpoint
   const channelValues = latestCheckpoint.checkpoint.channel_values as any;
-  const currentGameSpec = channelValues.currentGameSpec;
+  const currentGameSpec = channelValues.currentSpec;
   const title = channelValues.title;
 
   console.log(
@@ -492,21 +497,31 @@ async function createDesignGraph(
 async function _processMessage(
   graph: any,
   content: string,
-  config: { configurable: { thread_id: string } }
+  config: { configurable: { thread_id: string } },
+  forceSpecGeneration?: boolean
 ): Promise<DesignResponse> {
-  const inputs = { messages: [new HumanMessage(content)] };
+  const inputs = { 
+    messages: [new HumanMessage(content)], 
+    forceSpecGeneration: forceSpecGeneration ?? false
+  };
   let aiResponse = "";
   let lastTitle = "";
   let lastPromptVersion = "";
   let updatedSpec: GameDesignSpecification | undefined = undefined;
   let specDiffSummary: string | undefined = undefined;
+  let responsePendingSpecChanges: SpecPlan[] = [];
+  let responseConsolidationThreshold: number | undefined = undefined;
+  let responseConsolidationCharLimit: number | undefined = undefined;
 
   for await (const {
     messages,
     title,
     systemPromptVersion,
-    currentGameSpec,
+    currentSpec,
     specDiff,
+    pendingSpecChanges,
+    consolidationThreshold,
+    consolidationCharLimit,
   } of await graph.stream(inputs, {
     ...config,
     streamMode: "values",
@@ -520,8 +535,8 @@ async function _processMessage(
     }
 
     // Capture the final spec if it was updated
-    if (currentGameSpec && currentGameSpec.designSpecification) {
-      updatedSpec = currentGameSpec;
+    if (currentSpec && currentSpec.designSpecification) {
+      updatedSpec = currentSpec;
     }
 
     // Capture the spec diff summary if present
@@ -533,8 +548,22 @@ async function _processMessage(
       lastTitle = title;
     }
 
+    if (pendingSpecChanges) {
+      responsePendingSpecChanges = pendingSpecChanges;
+    }
+
+    if (consolidationThreshold !== undefined) {
+      responseConsolidationThreshold = consolidationThreshold;
+    }
+    
+    if (consolidationCharLimit !== undefined) {
+      responseConsolidationCharLimit = consolidationCharLimit;
+    }
+
     lastPromptVersion = systemPromptVersion;
   }
+
+  const hasPendingSpecChanges = responsePendingSpecChanges.length > 0;
 
   return {
     designResponse: aiResponse.length > 0 ? aiResponse : "No response",
@@ -542,6 +571,17 @@ async function _processMessage(
     updatedTitle: lastTitle,
     systemPromptVersion: lastPromptVersion,
     specDiff: specDiffSummary,
+
+    // Extract just the "changes" field from each SpecPlan
+    pendingSpecChanges: hasPendingSpecChanges 
+      ? responsePendingSpecChanges.map(plan => plan.changes)
+      : undefined,
+    consolidationThreshold: hasPendingSpecChanges 
+      ? responseConsolidationThreshold 
+      : undefined,
+    consolidationCharLimit: hasPendingSpecChanges 
+      ? responseConsolidationCharLimit 
+      : undefined,
   };
 }
 

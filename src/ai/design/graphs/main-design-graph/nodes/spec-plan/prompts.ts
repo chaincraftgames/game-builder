@@ -30,6 +30,7 @@ Your task is to analyze the user's conversation and extract key metadata about t
 - Reference specific sections of the current spec if updating (e.g., "in the Setup phase", "in the player turn structure")
 - Be detailed enough that another agent can write the updated specification without ambiguity
 - Focus on game rules, not implementation details (no mentions of "components", "entities", or code)
+- **If the requested feature already exists in the spec**: Keep it VERY brief - just state what was requested and note "(already implemented)" or "(no update required)". Do NOT provide lengthy explanations.
 
 **Example changes section:**
 "Based on the user's request to add a resource management mechanic:
@@ -43,5 +44,8 @@ Your task is to analyze the user's conversation and extract key metadata about t
 4. **Victory Conditions**: Modify the win condition - first player to reach 20 points OR accumulate 50 gold coins wins
 
 5. **Rules Clarification**: Players can carry unlimited gold between turns, but must spend all gold before the game ends or forfeit it"
+
+**Example for already-implemented feature:**
+"Add score tracking to the game (already implemented - current spec includes comprehensive scoring system with point tracking and victory conditions)"
 
 {format_instructions}`;

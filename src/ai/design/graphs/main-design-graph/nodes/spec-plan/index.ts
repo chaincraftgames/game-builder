@@ -9,9 +9,10 @@ import { BaseMessage } from "@langchain/core/messages";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
-import { GameDesignState } from "#chaincraft/ai/design/game-design-state.js";
-import { SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
+import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
+import { GameDesignSpecification, SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
+import { get } from "http";
 
 /**
  * Extracts messages that are relevant for planning spec updates.
@@ -57,7 +58,7 @@ function formatConversationHistory(messages: BaseMessage[]): string {
  * @returns Formatted string for prompt variable replacement
  */
 function formatCurrentSpec(
-  currentSpec: typeof GameDesignState.State.currentGameSpec
+  currentSpec?: GameDesignSpecification
 ): string {
   if (!currentSpec) {
     return "**Current Specification:** None (this is the first specification)";
@@ -121,10 +122,10 @@ export function createSpecPlan(model: ModelWithOptions) {
     const conversationHistory = formatConversationHistory(relevantMessages);
     
     // 3. Prepare template variables
-    const currentSpec = formatCurrentSpec(state.currentGameSpec);
+    const currentSpec = formatCurrentSpec(state.currentSpec);
     const conversationSummary = formatConversationSummary(
       relevantMessages.length,
-      !state.currentGameSpec
+      !state.currentSpec
     );
     const formatInstructions = parser.getFormatInstructions();
     
@@ -158,9 +159,11 @@ export function createSpecPlan(model: ModelWithOptions) {
     // 7. Parse the structured output
     const specPlan = await parser.parse(cleanedResponse);
     
-    // 8. Return state update with the structured plan
     return {
-      specPlan: specPlan,
+      specPlan,
+      pendingSpecChanges: [specPlan],
+      specDiff: undefined, // Clear old diff since we're accumulating, not generating
+      // Keep spec as-is (it's the persistent saved spec)
     };
   };
 }

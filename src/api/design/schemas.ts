@@ -1,3 +1,5 @@
+import { CONSOLIDATION_DEFAULTS } from "#chaincraft/ai/design/game-design-state.js";
+import { SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
 import { z } from "zod";
 
 // Player count schema
@@ -19,6 +21,12 @@ export const ContinueDesignConversationRequestSchema = z.object({
   conversationId: z.string().min(1),
   userMessage: z.string().min(1).max(2000),
   gameDescription: z.string().optional(),
+
+  /**
+   * Spec updates are batched by default.  This forces the spec to be generated
+   * immediately.
+   */
+  forceSpecGeneration: z.boolean().optional().default(false),
 });
 
 export const ContinueDesignConversationResponseSchema = z.object({
@@ -27,6 +35,20 @@ export const ContinueDesignConversationResponseSchema = z.object({
   systemPromptVersion: z.string().optional(),
   specification: GameSpecificationSchema.optional(),
   specDiff: z.string().optional(),
+  pendingSpecChanges: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Queued descriptions for spec changes not yet applied. Present when changes are batched."
+    ),
+  consolidationThreshold: z
+    .number()
+    .optional()
+    .describe("Number of changes before auto-consolidation"),
+  consolidationCharLimit: z
+    .number()
+    .optional()
+    .describe("Character count threshold for auto-consolidation"),
 });
 
 // Generate image schemas

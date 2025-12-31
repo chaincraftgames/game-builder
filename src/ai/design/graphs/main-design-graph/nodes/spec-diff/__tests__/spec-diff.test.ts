@@ -55,7 +55,7 @@ First player to 5 correct guesses wins.`
     expect(result.specDiff).toMatch(/coin.*flip/i);
     
     // Verify it moved spec to currentGameSpec
-    expect(result.currentGameSpec).toEqual(newSpec);
+    expect(result.currentSpec).toEqual(newSpec);
   }, 30000);
 
   test("should generate release notes for specification update", async () => {
@@ -122,6 +122,6 @@ Winner of the round wins the game.`
     expect(result.specDiff).toMatch(/added|changed|modified/i);
     
     // Verify it moved spec to currentGameSpec
-    expect(result.currentGameSpec).toEqual(newSpec);
+    expect(result.currentSpec).toEqual(newSpec);
   }, 30000);
 });

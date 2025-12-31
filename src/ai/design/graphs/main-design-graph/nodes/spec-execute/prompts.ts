@@ -15,7 +15,16 @@ export const SYSTEM_PROMPT = `You are a game specification writer. Your task is 
 
 {currentSpec}
 
+---
+
+**Apply the following changes:**
+
 {changePlan}
+
+**Important:**
+- Apply changes sequentially (later changes override earlier ones if contradictory)
+- Preserve aspects of the current spec not mentioned in the changes
+- Generate a complete, coherent specification incorporating all changes
 
 ---
 

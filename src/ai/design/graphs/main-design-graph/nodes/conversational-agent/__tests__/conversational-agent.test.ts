@@ -38,15 +38,13 @@ function createTestState(overrides: {
     messages: overrides.messages || [],
     title: overrides.title || "",
     systemPromptVersion: "1.0",
-    specRequested: false,
-    currentGameSpec: overrides.currentGameSpec || undefined,
+    currentSpec: overrides.currentGameSpec || undefined,
     specVersion: 0,
     specUpdateNeeded: overrides.specUpdateNeeded ?? false,
     metadataUpdateNeeded: overrides.metadataUpdateNeeded ?? false,
     specPlan: undefined,
     metadataPlan: undefined,
     metadataChangePlan: undefined,
-    spec: overrides.spec || undefined,
     updatedSpec: undefined,
     metadata: overrides.metadata || undefined,
     specDiff: undefined,
@@ -56,6 +54,10 @@ function createTestState(overrides: {
     lastSpecUpdate: undefined,
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: undefined,
+    pendingSpecChanges: [],
+    forceSpecGeneration: false,
+    consolidationThreshold: 5,
+    consolidationCharLimit: 2000,
   };
 }
 
