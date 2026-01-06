@@ -13,10 +13,11 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
-import { setupSpecPlanModel, setupSpecExecuteModel, setupModel } from "#chaincraft/ai/model-config.js";
+import { setupSpecPlanModel, setupSpecExecuteModel, setupModel, setupConversationalAgentModel, setupNarrativeModel } from "#chaincraft/ai/model-config.js";
 import { createSpecPlan } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-plan/index.js";
 import { createSpecExecute } from "./nodes/spec-execute/index.js";
 import { createConversationalAgent } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/conversational-agent/index.js";
+import { createGenerateNarratives } from "./nodes/generate-narratives/index.js";
 import { specDiff } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-diff/index.js";
 
 // Import metadata subgraph (TODO: Implement)
@@ -79,6 +80,28 @@ function routeFromSpecPlan(state: typeof GameDesignState.State):
 }
 
 /**
+ * Routes after spec execution.
+ * If there are narrative markers to generate, route to generate_narratives.
+ * Otherwise, proceed to generate_diff.
+ * 
+ * @param state - Current graph state
+ * @returns Next node to execute
+ */
+function routeFromSpecExecute(
+  state: typeof GameDesignState.State
+): "generate_narratives" | "generate_diff" {
+  const markersToUpdate = state.narrativesNeedingUpdate || [];
+  
+  if (markersToUpdate.length > 0) {
+    console.log(`[router] ${markersToUpdate.length} narrative markers found - generating narratives`);
+    return "generate_narratives";
+  }
+  
+  console.log('[router] No narrative markers - skipping narrative generation');
+  return "generate_diff";
+}
+
+/**
  * Routes after spec diff generation.
  * If metadata also needs update, route there. Otherwise we're done.
  * 
@@ -109,9 +132,10 @@ export async function createMainDesignGraph(
   const workflow = new StateGraph(GameDesignState);
   
   // Setup models
-  const conversationalModel = await setupModel();
+  const conversationalModel = await setupConversationalAgentModel();
   const specPlanModel = await setupSpecPlanModel();
   const specExecuteModel = await setupSpecExecuteModel();
+  const narrativeModel = await setupNarrativeModel();
   
   // Create nodes
   const conversationalAgent = await createConversationalAgent(
@@ -121,11 +145,13 @@ export async function createMainDesignGraph(
   );
   const specPlan = createSpecPlan(specPlanModel);
   const specExecute = createSpecExecute(specExecuteModel);
+  const generateNarratives = createGenerateNarratives(narrativeModel);
   
   // Add all nodes to graph
   workflow.addNode("conversation", conversationalAgent);
   workflow.addNode("plan_spec", specPlan);
   workflow.addNode("execute_spec", specExecute);
+  workflow.addNode("generate_narratives", generateNarratives);
   workflow.addNode("generate_diff", specDiff);
   
   // TODO: Metadata subgraph invocation
@@ -139,12 +165,13 @@ export async function createMainDesignGraph(
   workflow.addEdge(START, "conversation" as any);
   workflow.addConditionalEdges("conversation" as any, routeFromConversation as any);
   workflow.addConditionalEdges("plan_spec" as any, routeFromSpecPlan as any);
-  workflow.addEdge("execute_spec" as any, "generate_diff" as any);
+  workflow.addConditionalEdges("execute_spec" as any, routeFromSpecExecute as any);
+  workflow.addEdge("generate_narratives" as any, "generate_diff" as any);
   workflow.addConditionalEdges("generate_diff" as any, routeAfterSpecDiff as any);
   // workflow.addEdge("update_metadata" as any, END);
   
   console.log("[MainDesignGraph] Graph compiled successfully");
-  console.log(`[MainDesignGraph] Models - conversation: ${conversationalModel.modelName}, spec-plan: ${specPlanModel.modelName}, spec-execute: ${specExecuteModel.modelName}`);
+  console.log(`[MainDesignGraph] Models - conversation: ${conversationalModel.modelName}, spec-plan: ${specPlanModel.modelName}, spec-execute: ${specExecuteModel.modelName}, narrative: ${narrativeModel.modelName}`);
   
   return workflow.compile({ checkpointer });
 }

@@ -69,6 +69,15 @@ export const GameDesignState = Annotation.Root({
   updatedSpec: Annotation<GameDesignSpecification | undefined>({
     reducer: (_, y) => y,
   }),
+  narrativeStyleGuidance: Annotation<string | undefined>({
+    reducer: (_, y) => y,
+  }),
+  specNarratives: Annotation<Record<string, string> | undefined>({
+    reducer: (_, y) => y,
+  }),
+  narrativesNeedingUpdate: Annotation<string[]>({
+    reducer: (_, y) => y ?? [],
+  }),
   metadata: Annotation<GamepieceMetadata | undefined>({
     reducer: (_, y) => y,
   }),

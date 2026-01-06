@@ -718,4 +718,198 @@ describe("Execute Spec - Pending Changes Consolidation", () => {
     console.log("After consolidation:", result.pendingSpecChanges.length);
     console.log("================================\n");
   }, 60000);
+
+  test("should generate narrative game with markers (Survival Horror)", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const specPlan: SpecPlan = {
+      summary: "A survival horror game where players make choices to escape a haunted mansion",
+      playerCount: { min: 1, max: 4 },
+      changes: `Create a narrative-driven survival horror game specification:
+
+1. **Game Structure**: 8 sequential turns representing rooms in a haunted mansion
+2. **Turn Structure**: Each turn presents a scenario with 3-4 choice options
+3. **Consequences**: Choices affect health, sanity, and story progression
+4. **Resource Management**: Players track health (10 max) and sanity (10 max)
+5. **Victory Condition**: Reach the exit (turn 8) with health > 0
+6. **Defeat Conditions**: Health reaches 0, or sanity reaches 0
+
+The game requires extensive narrative generation for:
+- Atmospheric scenario descriptions
+- Choice options with consequences
+- Outcome descriptions
+- Tone and style consistency (gothic horror, 1920s setting)`,
+      narrativeStyleGuidance: "Dark, gothic horror tone set in 1920s. Atmospheric, tense, with psychological dread. Avoid gore/violence descriptions. Focus on suspense and unsettling imagery."
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a survival horror game set in a haunted mansion"),
+      ],
+      title: "Mansion Escape",
+      pendingSpecChanges: [specPlan],
+      currentSpec: undefined,
+      narrativeStyleGuidance: specPlan.narrativeStyleGuidance,
+    });
+
+    const result = await executeSpec(state);
+
+    console.log("\n=== NARRATIVE GAME WITH MARKERS ===");
+    console.log("Summary:", result.currentSpec.summary);
+    console.log("\nDesign Specification:");
+    console.log(result.currentSpec.designSpecification);
+    console.log("====================================\n");
+
+    // Verify skeleton was generated
+    expect(result.currentSpec).toBeDefined();
+    expect(result.currentSpec.designSpecification).toBeDefined();
+    
+    // Should contain narrative markers
+    const spec = result.currentSpec.designSpecification;
+    expect(spec).toMatch(/<!-- NARRATIVE:/);
+    
+    // Should contain structural rules (not markers)
+    expect(spec.toLowerCase()).toMatch(/health|sanity/);
+    expect(spec.toLowerCase()).toMatch(/turn|room/);
+    expect(spec.toLowerCase()).toMatch(/choice|option/);
+    
+    console.log("Marker count:", (spec.match(/<!-- NARRATIVE:/g) || []).length);
+  }, 90000);
+
+  test("should generate abstract game with minimal/no markers (Chess-like)", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const specPlan: SpecPlan = {
+      summary: "An abstract strategy game with pieces on a grid, no theme",
+      playerCount: { min: 2, max: 2 },
+      changes: `Create a pure abstract strategy game specification:
+
+1. **Board**: 8x8 grid, no terrain or thematic elements
+2. **Pieces**: Each player has 8 pieces with specific movement rules
+3. **Turn Structure**: Players alternate turns, move one piece per turn
+4. **Movement**: Pieces move according to type (orthogonal, diagonal, L-shape patterns)
+5. **Capture**: Land on opponent's piece to remove it
+6. **Victory**: Capture opponent's king piece
+7. **Constraints**: Cannot move into check, must protect king
+
+This is a mechanical game with no narrative elements - just pure rules and strategy.`,
+      narrativeStyleGuidance: "Abstract, mechanical. No theme or narrative. Pure rules and strategy."
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create an abstract strategy game like chess, no theme"),
+      ],
+      title: "Grid Strategy",
+      pendingSpecChanges: [specPlan],
+      currentSpec: undefined,
+      narrativeStyleGuidance: specPlan.narrativeStyleGuidance,
+    });
+
+    const result = await executeSpec(state);
+
+    console.log("\n=== ABSTRACT GAME (Minimal Markers) ===");
+    console.log("Summary:", result.currentSpec.summary);
+    console.log("\nDesign Specification:");
+    console.log(result.currentSpec.designSpecification);
+    console.log("========================================\n");
+
+    // Verify skeleton was generated
+    expect(result.currentSpec).toBeDefined();
+    expect(result.currentSpec.designSpecification).toBeDefined();
+    
+    const spec = result.currentSpec.designSpecification;
+    
+    // Should contain mechanical rules
+    expect(spec.toLowerCase()).toMatch(/grid|board/);
+    expect(spec.toLowerCase()).toMatch(/piece|move/);
+    expect(spec.toLowerCase()).toMatch(/capture|win/);
+    
+    // May have minimal markers, or none at all
+    const markerCount = (spec.match(/<!-- NARRATIVE:/g) || []).length;
+    console.log("Marker count:", markerCount);
+    expect(markerCount).toBeLessThanOrEqual(2); // At most 1-2 minimal markers
+  }, 90000);
+
+  test("should update narrative game and preserve markers", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A survival horror game in a haunted mansion",
+      playerCount: { min: 1, max: 4 },
+      designSpecification: `# Mansion Escape
+
+## Game Overview
+A survival horror game where players navigate 8 rooms to escape.
+
+## Resources
+- Health: 10 (starts at 10)
+- Sanity: 10 (starts at 10)
+
+## Turn Structure
+Each turn represents entering a new room with choices.
+
+<!-- NARRATIVE:TONE_STYLE -->
+
+## Victory
+Reach turn 8 with health > 0.`,
+      version: 1,
+    };
+
+    const specPlan: SpecPlan = {
+      summary: "A survival horror game in a haunted mansion with item system",
+      playerCount: { min: 1, max: 4 },
+      changes: `Add an inventory and item system:
+
+1. **Inventory**: Players can carry up to 3 items
+2. **Item Types**: Health kits (+3 health), Lanterns (prevent sanity loss), Keys (unlock doors)
+3. **Finding Items**: Some room choices reveal items
+4. **Using Items**: Players can use items during their turn before making a choice`
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Add an inventory system with items like health kits and keys"),
+      ],
+      title: "Mansion Escape",
+      pendingSpecChanges: [specPlan],
+      currentSpec: existingSpec,
+      narrativeStyleGuidance: "Dark, gothic horror tone set in 1920s.",
+    });
+
+    const result = await executeSpec(state);
+
+    console.log("\n=== UPDATED NARRATIVE GAME ===");
+    console.log("Summary:", result.currentSpec.summary);
+    console.log("\nDesign Specification:");
+    console.log(result.currentSpec.designSpecification);
+    console.log("===============================\n");
+
+    // Verify update
+    expect(result.currentSpec).toBeDefined();
+    expect(result.currentSpec.designSpecification).toBeDefined();
+    
+    const spec = result.currentSpec.designSpecification;
+    
+    // Should add new mechanics
+    expect(spec.toLowerCase()).toMatch(/inventory|item/);
+    expect(spec.toLowerCase()).toMatch(/health kit|lantern|key/);
+    
+    // Should preserve existing markers
+    expect(spec).toMatch(/<!-- NARRATIVE:/);
+    
+    // Should preserve existing rules
+    expect(spec.toLowerCase()).toMatch(/health|sanity/);
+    
+    console.log("Marker count:", (spec.match(/<!-- NARRATIVE:/g) || []).length);
+  }, 90000);
 });

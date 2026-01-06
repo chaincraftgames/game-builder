@@ -472,6 +472,13 @@ describe("Plan Spec - Plan Accumulation", () => {
       changes: "Create a game where players roll dice and highest roll wins",
     };
 
+    const existingSpec: GameDesignSpecification = {
+      summary: "A simple dice game",
+      playerCount: { min: 2, max: 2 },
+      designSpecification: "# Dice Game\n\nPlayers roll dice and highest roll wins.",
+      version: 1,
+    };
+
     const state = createTestState({
       messages: [
         new HumanMessage("Create a dice game"),
@@ -480,6 +487,7 @@ describe("Plan Spec - Plan Accumulation", () => {
         new HumanMessage("Actually, make it best of 3 rounds and add a scoring system"),
       ],
       title: "Dice Game",
+      currentSpec: existingSpec,
       pendingSpecChanges: [existingPlan], // One plan already accumulated
       lastSpecMessageCount: 2,
     });
@@ -517,6 +525,13 @@ describe("Plan Spec - Plan Accumulation", () => {
     // Simulate state after first plan (reducer would combine)
     const pendingAfterFirst = result1.pendingSpecChanges!;
 
+    const existingSpec: GameDesignSpecification = {
+      summary: "A card game",
+      playerCount: { min: 2, max: 4 },
+      designSpecification: "# Card Game\n\nPlayers draw and play cards to achieve victory.",
+      version: 1,
+    };
+
     // Second plan
     const state2 = createTestState({
       messages: [
@@ -524,6 +539,7 @@ describe("Plan Spec - Plan Accumulation", () => {
         new AIMessage("Got it, working on the spec"),
         new HumanMessage("Add a resource mechanic with gold coins"),
       ],
+      currentSpec: existingSpec,
       pendingSpecChanges: pendingAfterFirst,
       lastSpecMessageCount: 2,
     });
@@ -573,3 +589,228 @@ describe("Plan Spec - Plan Accumulation", () => {
   }, 30000);
 });
 
+describe("Plan Spec - Narrative Style Guidance", () => {
+  let model: any;
+  let planSpec: any;
+  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+
+  beforeAll(async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping narrative style tests - no API key configured");
+      return;
+    }
+
+    try {
+      model = await setupDesignModel();
+      planSpec = createSpecPlan(model);
+    } catch (error) {
+      console.log("⚠️  Failed to setup model:", error);
+    }
+  });
+
+  test("should extract narrativeStyleGuidance on initial generation with narrative cues", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("I want to create a dark fantasy survival game where players make morally ambiguous choices with grim consequences"),
+        new AIMessage("Interesting! Tell me more about the mechanics."),
+        new HumanMessage("Players explore a cursed forest, each choice leads to dire outcomes. The tone should be serious and atmospheric, with mature themes."),
+      ],
+      title: "Cursed Forest",
+      currentSpec: undefined,
+      lastSpecMessageCount: undefined,
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - INITIAL (Dark Fantasy) ===");
+    console.log("Summary:", result.specPlan?.summary);
+    console.log("Player Count:", result.specPlan?.playerCount);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance);
+    console.log("Changes:", result.specPlan?.changes);
+    console.log("================================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    expect(result.specPlan!.narrativeStyleGuidance).toBeDefined();
+    expect(typeof result.specPlan!.narrativeStyleGuidance).toBe("string");
+    expect(result.specPlan!.narrativeStyleGuidance!.length).toBeGreaterThan(0);
+    
+    // Should capture dark/serious tone
+    const guidance = result.specPlan!.narrativeStyleGuidance!.toLowerCase();
+    expect(guidance).toMatch(/dark|serious|grim|morally|mature|atmospheric/);
+    
+    // Should update state
+    expect(result.narrativeStyleGuidance).toBe(result.specPlan!.narrativeStyleGuidance);
+  }, 30000);
+
+  test("should extract narrativeStyleGuidance on initial generation without explicit cues", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a simple number guessing game for kids"),
+        new AIMessage("Great! What age range?"),
+        new HumanMessage("Ages 5-8, keep it fun and educational"),
+      ],
+      title: "Number Guesser",
+      currentSpec: undefined,
+      lastSpecMessageCount: undefined,
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - INITIAL (Kids Game) ===");
+    console.log("Summary:", result.specPlan?.summary);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance);
+    console.log("=============================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    expect(result.specPlan!.narrativeStyleGuidance).toBeDefined();
+    
+    // Should capture kid-friendly/educational tone
+    const guidance = result.specPlan!.narrativeStyleGuidance!.toLowerCase();
+    expect(guidance).toMatch(/kid|child|family|fun|educational|simple|lighthearted/);
+  }, 30000);
+
+  test("should NOT output narrativeStyleGuidance on update when only mechanics change", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A dark fantasy survival game",
+      playerCount: { min: 2, max: 4 },
+      designSpecification: `# Cursed Forest
+
+A dark survival game where players navigate a cursed forest making morally ambiguous choices.
+
+## Game Setup
+Players start at the forest edge with basic supplies.
+
+## Turn Structure
+Each turn, players encounter a choice point and must decide how to proceed.
+
+## Victory Conditions
+Reach the forest center or survive 10 turns.`,
+      version: 1,
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a dark fantasy game"),
+        new AIMessage("I'll generate that spec"),
+        // --- Spec generated ---
+        new HumanMessage("Add a resource management system with food and water"),
+      ],
+      title: "Cursed Forest",
+      currentSpec: existingSpec,
+      lastSpecMessageCount: 2,
+      narrativeStyleGuidance: "Dark fantasy with grim consequences and morally ambiguous choices",
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - UPDATE (Mechanics Only) ===");
+    console.log("Changes:", result.specPlan?.changes);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance || "(not provided)");
+    console.log("=================================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    // Should NOT include narrativeStyleGuidance since only mechanics changed
+    expect(result.specPlan!.narrativeStyleGuidance).toBeUndefined();
+    
+    // Should NOT update state narrativeStyleGuidance
+    expect(result.narrativeStyleGuidance).toBeUndefined();
+    
+    // But should reference the resource mechanic
+    const changes = result.specPlan!.changes.toLowerCase();
+    expect(changes).toMatch(/resource|food|water/);
+  }, 30000);
+
+  test("should output narrativeStyleGuidance on update when tone explicitly changes", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A dark fantasy survival game",
+      playerCount: { min: 2, max: 4 },
+      designSpecification: "# Cursed Forest\n\nA dark survival game...",
+      version: 1,
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a dark fantasy game"),
+        new AIMessage("I'll generate that spec"),
+        // --- Spec generated ---
+        new HumanMessage("Actually, let's make it more lighthearted and family-friendly instead of dark"),
+      ],
+      title: "Enchanted Forest",
+      currentSpec: existingSpec,
+      lastSpecMessageCount: 2,
+      narrativeStyleGuidance: "Dark fantasy with grim consequences and morally ambiguous choices",
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - UPDATE (Tone Change) ===");
+    console.log("Old Guidance:", "Dark fantasy with grim consequences and morally ambiguous choices");
+    console.log("New Guidance:", result.specPlan?.narrativeStyleGuidance);
+    console.log("Changes:", result.specPlan?.changes);
+    console.log("==============================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    // SHOULD include narrativeStyleGuidance since tone changed
+    expect(result.specPlan!.narrativeStyleGuidance).toBeDefined();
+    expect(typeof result.specPlan!.narrativeStyleGuidance).toBe("string");
+    
+    // Should reflect the lighter tone
+    const guidance = result.specPlan!.narrativeStyleGuidance!.toLowerCase();
+    expect(guidance).toMatch(/lighthearted|family|friendly|light/);
+    expect(guidance).not.toMatch(/dark|grim/);
+    
+    // Should update state
+    expect(result.narrativeStyleGuidance).toBe(result.specPlan!.narrativeStyleGuidance);
+  }, 30000);
+
+  test("should handle abstract/mechanical game without narrative guidance", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a pure strategy game like chess - no theme, just abstract pieces and rules"),
+        new AIMessage("Got it, focusing on mechanics only."),
+        new HumanMessage("Right, players move pieces on a grid according to specific rules, first to capture opponent's king wins"),
+      ],
+      title: "Abstract Strategy",
+      currentSpec: undefined,
+      lastSpecMessageCount: undefined,
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - ABSTRACT GAME ===");
+    console.log("Summary:", result.specPlan?.summary);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance || "(minimal/none)");
+    console.log("=======================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    // May or may not have guidance, but if it does, should be minimal
+    if (result.specPlan!.narrativeStyleGuidance) {
+      expect(result.specPlan!.narrativeStyleGuidance!.length).toBeLessThan(250);
+    }
+  }, 30000);
+});

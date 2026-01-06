@@ -4,33 +4,55 @@
  * Prompts for executing specification updates.
  */
 
-export const SYSTEM_PROMPT = `You are a game specification writer. Your task is to write a complete, detailed game specification based on a natural language plan.
+/**
+ * Static guidelines for narrative markers (cached section)
+ */
+const MARKER_GUIDELINES = `
+**NARRATIVE MARKERS** - Use for lengthy narrative guidance:
 
-**Game Metadata:**
+For sections requiring extensive narrative guidance, examples, or style direction, use markers:
 
-- Summary: {summary}
-- Player Count: {playerCount}
+\`!___ NARRATIVE:KEY_NAME ___!\`
 
-**Context:**
+Where KEY_NAME is UPPERCASE_SNAKE_CASE.
 
-{currentSpec}
+**When to use markers:**
 
----
+1. **Tone & Style Guidance** (narrative/story games):
+   - "Write scenarios with X atmosphere..."
+   - "Maintain Y language style..."
+   → Use: \`!___ NARRATIVE:TONE_STYLE ___!\`
 
-**Apply the following changes:**
+2. **Content Generation Examples** (AI-generated content):
+   - "Example scenarios that work well..."
+   - "Choice design patterns with examples..."
+   → Use: \`!___ NARRATIVE:SCENARIO_GENERATION_GUIDE ___!\`
 
-{changePlan}
+3. **Flavor Text Guidelines**:
+   - "Card descriptions should evoke..."
+   - "Victory messages should feel..."
+   → Use: \`!___ NARRATIVE:FLAVOR_TEXT_STYLE ___!\`
 
-**Important:**
-- Apply changes sequentially (later changes override earlier ones if contradictory)
-- Preserve aspects of the current spec not mentioned in the changes
-- Generate a complete, coherent specification incorporating all changes
+4. **Turn-by-Turn Narrative Guides** (progressive games):
+   - "Turn 1: Setting X with atmosphere Y..."
+   - "Turn 5: Final approach with tension Z..."
+   → Use: \`!___ NARRATIVE:TURN_X_GUIDE ___!\`
 
----
+**DO NOT use markers for:**
+- Core game rules
+- Exact numbers and mechanics
+- Win/loss conditions
+- Brief explanatory text (1-2 sentences)
+`;
+
+export const SYSTEM_PROMPT = `!___ CACHE:spec-execute-guidelines ___!
+You are a game specification writer. Your task is to write a SKELETON specification based on a natural language plan.
+
+A skeleton spec contains ALL game rules and mechanics, but uses MARKERS for lengthy narrative guidance sections.
 
 **Your Task:**
 
-Generate a complete game specification (in pure markdown) that implements all changes described in the plan above.
+Generate a complete SKELETON game specification (in pure markdown) that implements all changes described in the plan.
 
 **Important:** 
 - Output ONLY the markdown document - no JSON, no code fences, no wrapper
@@ -68,11 +90,34 @@ Use clear markdown formatting: headers (# ##), lists (- 1. 2.), bold (**text**),
 2. **Specificity**: Use exact numbers, quantities, and conditions (not "some" or "a few")
 3. **Clarity**: Rules should be unambiguous - avoid "usually", "generally", "probably"
 4. **Playability**: Someone should be able to play the game using only this specification
-5. **Preservation**: {preservationGuidance}
 
 **Focus on RULES, not implementation** - describe what happens in the game, not how to code it.
+${MARKER_GUIDELINES}
+!___ END-CACHE ___!
 
-Begin writing the markdown specification now:`;
+**Game Metadata:**
+
+- Summary: {summary}
+- Player Count: {playerCount}
+
+**Preservation Guidance:** {preservationGuidance}
+
+**Context:**
+
+{currentSpec}
+
+---
+
+**Apply the following changes:**
+
+{changePlan}
+
+**Important:**
+- Apply changes sequentially (later changes override earlier ones if contradictory)
+- Preserve aspects of the current spec not mentioned in the changes
+- Generate a complete, coherent specification incorporating all changes
+
+Begin writing the markdown skeleton specification now:`;
 
 /**
  * Guidance text for first spec vs update

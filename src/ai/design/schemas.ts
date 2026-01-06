@@ -43,6 +43,15 @@ export const SpecPlanSchema = z.object({
     .describe("A concise 1-2 sentence description of the game concept"),
   playerCount: PlayerCountSchema
     .describe("The valid player count range for the game"),
+  narrativeStyleGuidance: z.string().optional()
+    .describe("Tone, style, and narrative preferences for the game. Required on initial generation, optional on updates (only if style changed)"),
+  narrativeChanges: z.array(z.object({
+    key: z.string()
+      .describe("The narrative marker key (e.g., 'TONE_STYLE', 'TURN_1_GUIDE')"),
+    changes: z.string()
+      .describe("Description of what needs to change in this specific narrative section")
+  })).optional()
+    .describe("Specific narrative section updates. Only include if user explicitly requests changes to narrative sections."),
   changes: z.string()
     .describe("Natural language plan describing what needs to change in the specification"),
 });
