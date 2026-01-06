@@ -8,6 +8,7 @@
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import type { GameDesignState } from "#chaincraft/ai/design/game-design-state.js";
 import { createCachedSystemMessage } from "#chaincraft/ai/prompt-template-processor.js";
+import { HumanMessage } from "@langchain/core/messages";
 import { SYSTEM_PROMPT } from "./prompts.js";
 
 /**
@@ -48,6 +49,12 @@ export function createGenerateNarratives(model: ModelWithOptions) {
     for (const markerKey of markersToUpdate) {
       console.log(`[generate-narratives] Processing marker: ${markerKey}`);
       
+      // Validate skeleton before attempting to create message
+      if (!skeleton || skeleton.trim().length === 0) {
+        console.error(`[generate-narratives] Empty skeleton for marker ${markerKey} - skipping`);
+        continue;
+      }
+      
       // Create system message with caching
       // Static content (guidelines) is cached, dynamic content (skeleton, task) is not
       const systemMessage = createCachedSystemMessage(SYSTEM_PROMPT, {
@@ -58,8 +65,9 @@ export function createGenerateNarratives(model: ModelWithOptions) {
       
       try {
         // Call LLM to generate narrative content
+        // Note: Anthropic API requires at least one user message
         const response = await model.invokeWithMessages(
-          [systemMessage],
+          [systemMessage, new HumanMessage("Begin.")],
           {
             agent: "narrative-generation-agent",
             workflow: "design",

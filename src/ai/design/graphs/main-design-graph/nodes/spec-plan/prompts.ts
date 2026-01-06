@@ -7,11 +7,10 @@
 /**
  * Base guidelines for describing game content/changes
  */
-const BASE_CONTENT_GUIDELINES = `- Write in clear, conversational English
-- Describe WHAT needs to be in/changed in the game rules and WHY
-- Reference specific sections of the current spec if updating (e.g., "in the Setup phase", "in the player turn structure")
-- Be detailed enough that another agent can write the specification without ambiguity
-- Focus on game rules, not implementation details (no mentions of "components", "entities", or code)`;
+const BASE_CONTENT_GUIDELINES = `- Describe the mechanical rules needed to run the game
+- Include: setup, player actions, state transitions, validation rules, win/loss conditions
+- Exclude: strategy tips, player motivation, thematic flavor, "why this is fun"
+- Reference specific sections if updating (e.g., "in the Setup phase", "in the player turn structure")`;
 
 /**
  * Example for initial game specification

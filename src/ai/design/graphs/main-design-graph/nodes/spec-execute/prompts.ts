@@ -43,6 +43,13 @@ Where KEY_NAME is UPPERCASE_SNAKE_CASE.
 - Exact numbers and mechanics
 - Win/loss conditions
 - Brief explanatory text (1-2 sentences)
+
+**CRITICAL - How to use markers:**
+- Place ONLY the marker: \`!___ NARRATIVE:KEY_NAME ___!\`
+- Do NOT write example content after the marker
+- Do NOT write "Example:" or sample narratives after the marker
+- Immediately continue with the next section of the specification
+- The marker will be replaced with full narrative content in a separate step
 `;
 
 export const SYSTEM_PROMPT = `!___ CACHE:spec-execute-guidelines ___!
@@ -61,35 +68,27 @@ Generate a complete SKELETON game specification (in pure markdown) that implemen
 
 **Design Specification Guidelines:**
 
-Write a comprehensive markdown document that clearly describes all game rules. Organize the content in whatever way makes the most sense for THIS specific game type.
+Write the minimum rules needed to: setup the game, validate player actions, resolve outcomes, progress through phases, and determine winners.
 
-**Essential Topics to Cover** (organize as appropriate for the game):
+**Include:**
+- Initial state and setup steps
+- What actions players can take and when
+- How to validate actions are legal
+- How actions change game state
+- Phase progression and end conditions
+- Win/loss determination
+- Edge cases and tie-breaking
 
-- **Game Overview**: What is the game about? What's the core objective?
-- **Initial Setup**: What do players start with? How is the game prepared?
-- **Gameplay Flow**: How does the game progress? (turns, rounds, phases, real-time, etc.)
-- **Player Actions**: What can players do and when? What are the effects?
-- **Game Mechanics**: Special rules, resource management, card effects, movement, combat, etc.
-- **Constraints & Edge Cases**: Important limitations, timing rules, tie-breaking, etc.
-- **Winning & Losing**: How does the game end? How are winners determined?
-
-**Organizational Flexibility:**
-
-Choose section names and structure that fit the game:
-- Card games might need: "Deck Building", "Card Types", "Hand Management"
-- Strategy games might need: "Map Setup", "Resource Collection", "Territory Control"
-- Simultaneous games might have: "Round Structure" instead of "Turn Structure"
-- Trivia games might need: "Question Categories", "Scoring System"
-- Narrative games might need: "Story Progression", "Choice Consequences"
-
-Use clear markdown formatting: headers (# ##), lists (- 1. 2.), bold (**text**), etc.
+**Exclude:**
+- Strategy discussion ("players might want to...", "the optimal approach...")
+- Design motivation ("this creates tension", "players will enjoy...")
+- Thematic flavor beyond what's needed for mechanics
+- Player psychology or social dynamics
 
 **Quality Standards:**
-
-1. **Completeness**: Cover ALL information from the plan - don't leave gaps
-2. **Specificity**: Use exact numbers, quantities, and conditions (not "some" or "a few")
-3. **Clarity**: Rules should be unambiguous - avoid "usually", "generally", "probably"
-4. **Playability**: Someone should be able to play the game using only this specification
+- Exact numbers and conditions (not "some", "usually", "generally")
+- Complete coverage of all states and transitions
+- Unambiguous rules that can be deterministically applied
 
 **Focus on RULES, not implementation** - describe what happens in the game, not how to code it.
 ${MARKER_GUIDELINES}

@@ -769,7 +769,7 @@ The game requires extensive narrative generation for:
     
     // Should contain narrative markers
     const spec = result.currentSpec.designSpecification;
-    expect(spec).toMatch(/<!-- NARRATIVE:/);
+    expect(spec).toMatch(/!___ NARRATIVE:/);
     
     // Should contain structural rules (not markers)
     expect(spec.toLowerCase()).toMatch(/health|sanity/);
@@ -905,7 +905,7 @@ Reach turn 8 with health > 0.`,
     expect(spec.toLowerCase()).toMatch(/health kit|lantern|key/);
     
     // Should preserve existing markers
-    expect(spec).toMatch(/<!-- NARRATIVE:/);
+    expect(spec).toMatch(/!___ NARRATIVE:/);
     
     // Should preserve existing rules
     expect(spec.toLowerCase()).toMatch(/health|sanity/);
