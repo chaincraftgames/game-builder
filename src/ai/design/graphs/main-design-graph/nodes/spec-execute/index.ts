@@ -149,6 +149,11 @@ export function createSpecExecute(model: ModelWithOptions) {
     const spec: GameDesignSpecification = {
       summary,
       playerCount,
+      designSpecification,
+      version: newVersion,
+    };
+    
+    // 9. Return state updates
     console.log('[spec-execute] Node completed successfully - returning state updates');
     return {
       currentSpec: spec,
@@ -173,12 +178,7 @@ export function createSpecExecute(model: ModelWithOptions) {
       });
       console.error('[spec-execute] ====================================');
       throw error; // Re-throw to fail the graph execution
-    }lastSpecMessageCount: state.messages.length,
-      specUpdateNeeded: false, // Reset the flag
-      pendingSpecChanges: [], // Clear pending plans after execution
-      forceSpecGeneration: false, // Reset force flag
-      narrativesNeedingUpdate: markers, // Populate markers for narrative generation
-    };
+    }
   };
 }
 
