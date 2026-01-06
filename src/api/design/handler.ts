@@ -121,6 +121,9 @@ export async function handleGetFullSpecification(
       playerCount: specification.playerCount,
       designSpecification: specification.designSpecification,
       version: specification.version,
+      pendingSpecChanges: specification.pendingSpecChanges,
+      consolidationThreshold: specification.consolidationThreshold,
+      consolidationCharLimit: specification.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in getFullSpecification:", error);
@@ -155,6 +158,9 @@ export async function handleGetCachedSpecification(
       playerCount: specification.playerCount,
       designSpecification: specification.designSpecification,
       version: specification.version,
+      pendingSpecChanges: specification.pendingSpecChanges,
+      consolidationThreshold: specification.consolidationThreshold,
+      consolidationCharLimit: specification.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in getCachedSpecification:", error);
