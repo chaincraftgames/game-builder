@@ -185,7 +185,10 @@ export const RouterContextSchemaJson = zodToJsonSchema(RouterContextSchema, "Rou
  * The `state` parameter is expected to be the canonical game state object produced by the extractor.
  */
 export function buildRouterContext(state: BaseRuntimeState): RouterContext {
-  const players = Array.isArray(state?.players) ? state.players : [];
+  // Players is always an object (record) per base schema, never an array
+  const players = state?.players && typeof state.players === 'object'
+    ? Object.values(state.players)
+    : [];
   const playersCount = players.length;
 
   const playersRequiringActionCount = players.reduce((acc: number, p: RuntimePlayerState) => {
