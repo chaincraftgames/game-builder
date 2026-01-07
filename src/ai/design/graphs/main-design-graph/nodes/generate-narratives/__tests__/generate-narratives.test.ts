@@ -86,8 +86,7 @@ Players have limited resources and must manage fear levels.
 !___ NARRATIVE:VICTORY_MESSAGES ___!
 `;
     
-    const state: typeof GameDesignState.State = {
-      messages: = createTestState({
+    const state = createTestState({
       currentSpec: {
         summary: "A strategic card game",
         playerCount: { min: 2, max: 4 },
@@ -96,7 +95,8 @@ Players have limited resources and must manage fear levels.
       },
       narrativesNeedingUpdate: ["FLAVOR_TEXT_STYLE", "VICTORY_MESSAGES"],
       narrativeStyleGuidance: "Epic fantasy theme with dramatic language",
-    })
+    });
+    
     const result = await generateNarratives(state);
     
     // Check both narratives were generated
@@ -117,8 +117,7 @@ Players have limited resources and must manage fear levels.
   }, 90000);
   
   it("should skip generation when no markers", async () => {
-    const state: typeof GameDesignState.State = {
-      messages: = createTestState({
+    const state = createTestState({
       currentSpec: {
         summary: "A simple game",
         playerCount: { min: 2, max: 2 },
@@ -126,7 +125,8 @@ Players have limited resources and must manage fear levels.
         version: 1,
       },
       narrativesNeedingUpdate: [],
-    })
+    });
+    
     const result = await generateNarratives(state);
     
     // Should return empty object or minimal update
@@ -134,11 +134,11 @@ Players have limited resources and must manage fear levels.
   });
   
   it("should skip generation when no currentSpec", async () => {
-    const state: typeof GameDesignState.State = {
-      messages: [],
-      narrative = createTestState({
+    const state = createTestState({
       narrativesNeedingUpdate: ["SOME_MARKER"],
-    })onst result = await generateNarratives(state);
+    });
+    
+    const result = await generateNarratives(state);
     
     // Should clear the markers list
     expect(result.narrativesNeedingUpdate).toEqual([]);
@@ -165,9 +165,7 @@ describe("Generate Narratives - Caching", () => {
 !___ NARRATIVE:MARKER_2 ___!
 `;
     
-    const baseState: typeof GameDesignState.State = {
-      messages: [],
-      currentSpec:  = createTestState({
+    const baseState = createTestState({
       currentSpec: {
         summary: "Test game for caching",
         playerCount: { min: 1, max: 4 },
@@ -175,7 +173,9 @@ describe("Generate Narratives - Caching", () => {
         version: 1,
       },
       narrativeStyleGuidance: "Test style guidance for caching validation",
-    })/ First call - should create cache
+    });
+    
+    // First call - should create cache
     console.log("\n--- First call (cache creation) ---");
     const state1 = {
       ...baseState,

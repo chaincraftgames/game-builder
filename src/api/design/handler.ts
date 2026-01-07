@@ -27,7 +27,47 @@ import {
   getConversationHistory,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
+import { expandSpecification } from "#chaincraft/ai/design/expand-narratives.js";
+import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
 import { uploadToIpfs } from "#chaincraft/integrations/storage/pinata.js";
+
+/**
+ * Helper to expand narratives in a specification for API responses.
+ * Retrieves narratives from checkpoint state and expands markers.
+ */
+async function expandSpecForAPI(
+  spec: any,
+  conversationId: string
+): Promise<any> {
+  if (!spec) {
+    console.log("[expandSpecForAPI] No spec provided");
+    return spec;
+  }
+  
+  console.log("[expandSpecForAPI] Expanding narratives for conversation:", conversationId);
+  
+  try {
+    const saver = await getSaver(conversationId, "main-design");
+    const config = { configurable: { thread_id: conversationId } };
+    const checkpointIterator = saver.list(config, { limit: 1 });
+    const firstCheckpoint = await checkpointIterator.next();
+    
+    if (!firstCheckpoint.done && firstCheckpoint.value.checkpoint.channel_values) {
+      const channelValues = firstCheckpoint.value.checkpoint.channel_values as any;
+      const narratives = channelValues.specNarratives;
+      console.log("[expandSpecForAPI] Found narratives:", narratives ? Object.keys(narratives).length : 0);
+      const expanded = expandSpecification(spec, narratives);
+      console.log("[expandSpecForAPI] Spec length before:", spec.designSpecification?.length, "after:", expanded.designSpecification?.length);
+      return expanded;
+    } else {
+      console.log("[expandSpecForAPI] No checkpoint channel values found");
+    }
+  } catch (error) {
+    console.error("[expandSpecForAPI] Error expanding narratives:", error);
+  }
+  
+  return spec;
+}
 
 export async function handleContinueDesignConversation(
   request: FastifyRequest<{ Body: ContinueDesignConversationRequest }>,
@@ -56,11 +96,14 @@ export async function handleContinueDesignConversation(
       forceSpecGeneration
     );
 
+    // Expand narratives for API response
+    const expandedSpec = await expandSpecForAPI(response.specification, conversationId);
+
     return {
       designResponse: response.designResponse,
       updatedTitle: response.updatedTitle,
       systemPromptVersion: response.systemPromptVersion,
-      specification: response.specification,
+      specification: expandedSpec,
       specDiff: response.specDiff,
       pendingSpecChanges: response.pendingSpecChanges,
       consolidationThreshold: response.consolidationThreshold,
@@ -155,15 +198,18 @@ export async function handleGetCachedSpecification(
       return Promise.reject();
     }
 
+    // Expand narratives for API response
+    const expandedSpec = await expandSpecForAPI(specification, conversationId);
+
     return {
-      title: specification.title,
-      summary: specification.summary,
-      playerCount: specification.playerCount,
-      designSpecification: specification.designSpecification,
-      version: specification.version,
-      pendingSpecChanges: specification.pendingSpecChanges,
-      consolidationThreshold: specification.consolidationThreshold,
-      consolidationCharLimit: specification.consolidationCharLimit,
+      title: expandedSpec.title,
+      summary: expandedSpec.summary,
+      playerCount: expandedSpec.playerCount,
+      designSpecification: expandedSpec.designSpecification,
+      version: expandedSpec.version,
+      pendingSpecChanges: expandedSpec.pendingSpecChanges,
+      consolidationThreshold: expandedSpec.consolidationThreshold,
+      consolidationCharLimit: expandedSpec.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in getCachedSpecification:", error);
