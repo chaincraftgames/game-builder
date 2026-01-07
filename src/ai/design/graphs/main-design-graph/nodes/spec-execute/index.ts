@@ -166,7 +166,7 @@ export function createSpecExecute(model: ModelWithOptions) {
       forceSpecGeneration: false, // Reset force flag
       narrativesNeedingUpdate: markers, // Populate markers for narrative generation
     };
-    } catch (error) {
+  } catch (error) {
       console.error('[spec-execute] ========== CRITICAL ERROR ==========');
       console.error('[spec-execute] Error:', error);
       console.error('[spec-execute] Error message:', error instanceof Error ? error.message : String(error));

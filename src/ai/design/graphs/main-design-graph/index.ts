@@ -24,6 +24,24 @@ import { specDiff } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/s
 // import { createMetadataSubgraph } from "../gamepiece-metadata-subgraph/index.js";
 
 /**
+ * Routes from START based on forceSpecGeneration flag.
+ * Allows bypassing conversation/planning to go directly to spec execution.
+ * 
+ * @param state - Current graph state
+ * @returns Next node to execute
+ */
+function routeFromStart(
+  state: typeof GameDesignState.State
+): "conversation" | "execute_spec" {
+  if (state.forceSpecGeneration) {
+    console.log("[routeFromStart] forceSpecGeneration detected - routing to execute_spec");
+    return "execute_spec";
+  }
+  console.log("[routeFromStart] Normal flow - routing to conversation");
+  return "conversation";
+}
+
+/**
  * Routes from conversational agent based on flags set by the agent.
  * Spec updates take priority over metadata updates.
  * 
@@ -162,7 +180,7 @@ export async function createMainDesignGraph(
   // });
   
   // Define edges (using 'as any' to work around LangGraph's strict typing)
-  workflow.addEdge(START, "conversation" as any);
+  workflow.addConditionalEdges(START, routeFromStart as any);
   workflow.addConditionalEdges("conversation" as any, routeFromConversation as any);
   workflow.addConditionalEdges("plan_spec" as any, routeFromSpecPlan as any);
   workflow.addConditionalEdges("execute_spec" as any, routeFromSpecExecute as any);

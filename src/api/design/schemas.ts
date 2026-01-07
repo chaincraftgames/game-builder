@@ -51,6 +51,16 @@ export const ContinueDesignConversationResponseSchema = z.object({
     .describe("Character count threshold for auto-consolidation"),
 });
 
+// Generate spec schemas
+export const GenerateSpecRequestSchema = z.object({
+  conversationId: z.string().min(1),
+});
+
+export const GenerateSpecResponseSchema = z.object({
+  message: z.string(),
+  specUpdateInProgress: z.boolean(),
+});
+
 // Generate image schemas
 export const GenerateImageRequestSchema = z.object({
   conversationId: z.string().min(1),
@@ -121,6 +131,8 @@ export type ContinueDesignConversationRequest = z.infer<
 export type ContinueDesignConversationResponse = z.infer<
   typeof ContinueDesignConversationResponseSchema
 >;
+export type GenerateSpecRequest = z.infer<typeof GenerateSpecRequestSchema>;
+export type GenerateSpecResponse = z.infer<typeof GenerateSpecResponseSchema>;
 export type GenerateImageRequest = z.infer<typeof GenerateImageRequestSchema>;
 export type GenerateImageResponse = z.infer<typeof GenerateImageResponseSchema>;
 export type GetFullSpecificationRequest = z.infer<

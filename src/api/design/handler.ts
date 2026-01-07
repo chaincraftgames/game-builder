@@ -3,6 +3,9 @@ import {
   ContinueDesignConversationRequest,
   ContinueDesignConversationRequestSchema,
   ContinueDesignConversationResponse,
+  GenerateSpecRequest,
+  GenerateSpecRequestSchema,
+  GenerateSpecResponse,
   GenerateImageRequest,
   GenerateImageRequestSchema,
   GenerateImageResponse,
@@ -235,6 +238,54 @@ export async function handlePublishGame(
     };
   } catch (error) {
     console.error("Error in publishGame:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+/**
+ * Trigger specification generation for a conversation
+ * This bypasses the conversation node and forces spec generation
+ */
+export async function handleGenerateSpec(
+  request: FastifyRequest<{ Body: GenerateSpecRequest }>,
+  reply: FastifyReply
+): Promise<GenerateSpecResponse> {
+  const result = GenerateSpecRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId } = result.data;
+
+    // Check if conversation exists and has pending changes
+    const isActive = await isActiveConversation(conversationId);
+    if (!isActive) {
+      reply.code(404).send({ error: "Conversation not found" });
+      return Promise.reject();
+    }
+
+    // Trigger spec generation by calling continueDesignConversation
+    // with forceSpecGeneration flag and empty message
+    // Fire-and-forget - runs in background, app can poll for completion
+    continueDesignConversation(
+      conversationId,
+      "", // Empty message - we're just forcing spec gen
+      undefined, // No game description needed
+      true // forceSpecGeneration
+    ).catch((err) => {
+      console.error(`[force-spec] Background generation error for conversation ${conversationId}:`, err);
+    });
+
+    return {
+      message: "Specification generation started",
+      specUpdateInProgress: true,
+    };
+  } catch (error) {
+    console.error("Error in generateSpec:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }

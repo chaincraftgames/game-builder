@@ -284,4 +284,112 @@ describe('Design API - Auto-Consolidation Flow', () => {
     
     console.log('\n=== History Test Complete ===');
   }, 120000);
+
+  it('should force spec generation via API endpoint', async () => {
+    conversationId = `test-force-spec-${Date.now()}`;
+    
+    console.log(`\n=== Test: Force Spec Generation ===`);
+    console.log(`Conversation ID: ${conversationId}\n`);
+
+    // Step 1: Create conversation - this will auto-generate initial spec
+    console.log('Step 1: Creating initial conversation (will auto-generate spec)...');
+    const turn1 = await server.inject({
+      method: 'POST',
+      url: '/api/design/conversation/continue',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-chaincraft-api-key': apiKey!
+      },
+      payload: {
+        conversationId,
+        userMessage: 'Create a coin flip game for 2 players',
+        gameDescription: 'Force Spec Test'
+      }
+    });
+
+    expect(turn1.statusCode).toBe(200);
+    const turn1Data = JSON.parse(turn1.payload);
+    console.log(`✓ Turn 1 complete`);
+    console.log(`✓ Has initial spec: ${!!turn1Data.designSpecification}`);
+
+    // Step 2: Make a small change that creates pending changes
+    console.log('Step 2: Making change (should create pending changes)...');
+    const turn2 = await server.inject({
+      method: 'POST',
+      url: '/api/design/conversation/continue',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-chaincraft-api-key': apiKey!
+      },
+      payload: {
+        conversationId,
+        userMessage: 'Add a tie-breaker round if needed'
+      }
+    });
+
+    expect(turn2.statusCode).toBe(200);
+    const turn2Data = JSON.parse(turn2.payload);
+    console.log(`✓ Turn 2 complete - Pending changes: ${turn2Data.pendingSpecChanges?.length || 0}`);
+    
+    // This should have pending changes OR already have an updated spec
+    // (depending on whether router decided to consolidate)
+    const hasPendingChanges = turn2Data.pendingSpecChanges && turn2Data.pendingSpecChanges.length > 0;
+    console.log(`✓ Has pending changes: ${hasPendingChanges}`);
+
+    // Step 3: Force spec generation (should work whether or not there are pending changes)
+    console.log('Step 3: Forcing spec generation via API...');
+    const forceSpecStart = Date.now();
+    const forceSpecResponse = await server.inject({
+      method: 'POST',
+      url: '/api/design/conversation/generate-spec',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-chaincraft-api-key': apiKey!
+      },
+      payload: {
+        conversationId
+      }
+    });
+    const forceSpecElapsed = ((Date.now() - forceSpecStart) / 1000).toFixed(2);
+
+    expect(forceSpecResponse.statusCode).toBe(200);
+    const forceSpecData = JSON.parse(forceSpecResponse.payload);
+    console.log(`✓ Force spec initiated in ${forceSpecElapsed}s`);
+    console.log(`✓ Response: ${forceSpecData.message}`);
+    console.log(`✓ Spec update in progress: ${forceSpecData.specUpdateInProgress}`);
+
+    expect(forceSpecData.specUpdateInProgress).toBe(true);
+
+    // Step 4: Wait and check for spec (spec generation takes ~30-40s)
+    console.log('Step 4: Waiting 45s for background spec generation...');
+    await new Promise(resolve => setTimeout(resolve, 45000));
+
+    const cachedSpec = await server.inject({
+      method: 'POST',
+      url: '/api/design/conversation/specification/cached',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-chaincraft-api-key': apiKey!
+      },
+      payload: {
+        conversationId
+      }
+    });
+
+    expect(cachedSpec.statusCode).toBe(200);
+    const cachedSpecData = JSON.parse(cachedSpec.payload);
+    console.log(`✓ Spec generated: ${!!cachedSpecData.designSpecification}`);
+    if (cachedSpecData.designSpecification) {
+      console.log(`✓ Spec length: ${cachedSpecData.designSpecification.length} chars`);
+      console.log(`✓ Spec version after force: ${cachedSpecData.version}`);
+      console.log(`✓ Initial spec version was: ${turn1Data.version || 'unknown'}`);
+      expect(cachedSpecData.designSpecification.length).toBeGreaterThan(0);
+      // Spec version should have incremented (or stayed same if no changes)
+      expect(cachedSpecData.version).toBeGreaterThanOrEqual(turn1Data.version || 1);
+    } else {
+      throw new Error('Force spec generation failed - no spec generated after 45s wait');
+    }
+
+    console.log('\n=== Force Spec Test Complete ===');
+  }, 180000); // 3 minutes to allow for background spec generation
 });
