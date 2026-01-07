@@ -82,6 +82,9 @@ export const GetFullSpecificationResponseSchema = z.object({
   playerCount: PlayerCountSchema,
   designSpecification: z.string(),
   version: z.number(),
+  pendingSpecChanges: z.array(z.string()).optional(),
+  consolidationThreshold: z.number().optional(),
+  consolidationCharLimit: z.number().optional(),
 });
 
 // Get conversation history schemas

@@ -211,7 +211,12 @@ export async function generateImage(
 
 export async function getFullDesignSpecification(
   conversationId: string
-): Promise<(GameDesignSpecification & { title: string }) | undefined> {
+): Promise<(GameDesignSpecification & { 
+  title: string;
+  pendingSpecChanges?: string[];
+  consolidationThreshold?: number;
+  consolidationCharLimit?: number;
+}) | undefined> {
   const designResponse = await continueDesignConversation(
     conversationId,
     produceFullGameDesignPrompt
@@ -224,13 +229,21 @@ export async function getFullDesignSpecification(
   return {
     ...designResponse.specification,
     title: designResponse.updatedTitle ?? "",
+    pendingSpecChanges: designResponse.pendingSpecChanges,
+    consolidationThreshold: designResponse.consolidationThreshold,
+    consolidationCharLimit: designResponse.consolidationCharLimit,
   };
 }
 
 // Read-only version that gets cached specification without creating checkpoints
 export async function getCachedDesignSpecification(
   conversationId: string
-): Promise<(GameDesignSpecification & { title: string }) | undefined> {
+): Promise<(GameDesignSpecification & { 
+  title: string;
+  pendingSpecChanges?: string[];
+  consolidationThreshold?: number;
+  consolidationCharLimit?: number;
+}) | undefined> {
   // Check if conversation exists
   if (!(await isActiveConversation(conversationId))) {
     throw new Error(`Conversation ${conversationId} not found`);
@@ -267,19 +280,30 @@ export async function getCachedDesignSpecification(
   const channelValues = latestCheckpoint.checkpoint.channel_values as any;
   const currentGameSpec = channelValues.currentSpec;
   const title = channelValues.title;
+  const pendingSpecChanges = channelValues.pendingSpecChanges as SpecPlan[] | undefined;
+  const consolidationThreshold = channelValues.consolidationThreshold as number | undefined;
+  const consolidationCharLimit = channelValues.consolidationCharLimit as number | undefined;
 
   console.log(
     "[getCachedDesignSpecification] Found cached spec:",
     currentGameSpec ? "yes" : "no",
     "title:",
-    title || "no title"
+    title || "no title",
+    "pending changes:",
+    pendingSpecChanges?.length || 0
   );
 
-  // If we have a cached spec, return it
+  // If we have a cached spec, return it with pending changes
   if (currentGameSpec && currentGameSpec.designSpecification) {
     return {
       ...currentGameSpec,
       title: title || "Untitled Game",
+      // Convert SpecPlan[] to string[] (extract changes field)
+      pendingSpecChanges: pendingSpecChanges && pendingSpecChanges.length > 0
+        ? pendingSpecChanges.map(plan => plan.changes)
+        : undefined,
+      consolidationThreshold,
+      consolidationCharLimit,
     };
   }
 
