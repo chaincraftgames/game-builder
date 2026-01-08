@@ -209,17 +209,22 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
 /**
  * Creates a simulation by processing game specification and storing artifacts.
  * 
- * @param sessionId - The session ID where artifacts will be stored (e.g., "sim-xxx")
- * @param gameSpecificationVersion - Optional: The version number of the specification to use. If omitted, uses latest version.
- * @param gameSpecification - Optional override: if provided, uses this spec directly instead of retrieving from design workflow
- * @param gameId - Optional: The game ID (conversationId) to fetch spec from design workflow. If not provided, uses sessionId (backward compatibility)
+ * @param sessionId - The ID of the game session.  The same id should be used for 
+ * subsequent calls to initialize and process actions.  This id must be unique across
+ * all simulation sessions.
+ * @param gameId - Optional: The game ID (conversationId) to fetch spec from design 
+ * workflow. If not provided, the specification must be provided directly.
+ * @param gameSpecificationVersion - Optional: The version number of the specification 
+ * to use. If omitted, uses latest version.
+ * @param gameSpecification - Optional override: if provided, uses this spec directly 
+ * instead of retrieving from design workflow
  * @returns The extracted game rules
  */
 export async function createSimulation(
   sessionId: string,
+  gameId?: string,
   gameSpecificationVersion?: number,
   gameSpecification?: string,
-  gameId?: string
 ): Promise<{
   gameRules: string;
 }> {
@@ -230,9 +235,6 @@ export async function createSimulation(
     let specToUse = gameSpecification;
     let versionToUse = gameSpecificationVersion;
     
-    // Determine which ID to use for fetching spec from design workflow
-    // gameId is the game/conversation ID (UUID), sessionId is the session ID (e.g., "sim-xxx")
-    let specSourceId: string;
     if (!specToUse) {
       // We need to fetch spec from design workflow - gameId is required
       if (!gameId) {
@@ -240,23 +242,17 @@ export async function createSimulation(
           `gameId is required when gameSpecification is not provided. sessionId (${sessionId}) cannot be used to fetch spec from design workflow.`
         );
       }
-      // Use gameId to fetch spec (this is the game/conversation UUID)
-      specSourceId = gameId;
-    } else {
-      // Spec is provided directly, so we don't need to fetch it
-      // Use gameId if provided (for consistent caching), otherwise sessionId
-      specSourceId = gameId || sessionId;
-    }
+    } 
     
     if (!specToUse) {
       // If no version specified, get the latest
       if (!versionToUse) {
-        console.log("[simulate] No version specified, retrieving latest spec from design workflow:", specSourceId);
-        const latestSpec = await getCachedDesignSpecification(specSourceId);
+        console.log("[simulate] No version specified, retrieving latest spec from design workflow:", gameId);
+        const latestSpec = await getCachedDesignSpecification(gameId!);
         
         if (!latestSpec) {
           throw new Error(
-            `Design specification not found for game ${specSourceId} (latest version)`
+            `Design specification not found for game ${gameId} (latest version)`
           );
         }
         
@@ -265,12 +261,12 @@ export async function createSimulation(
         console.log("[simulate] Retrieved latest spec from design workflow, version:", versionToUse, "title:", latestSpec.title);
       } else {
         // Specific version requested
-        console.log("[simulate] Retrieving spec from design workflow:", specSourceId, "version:", versionToUse);
-        const designSpec = await getDesignSpecificationByVersion(specSourceId, versionToUse);
+        console.log("[simulate] Retrieving spec from design workflow:", gameId, "version:", versionToUse);
+        const designSpec = await getDesignSpecificationByVersion(gameId!, versionToUse);
         
         if (!designSpec) {
           throw new Error(
-            `Design specification not found for game ${specSourceId} version ${versionToUse}`
+            `Design specification not found for game ${gameId} version ${versionToUse}`
           );
         }
         
@@ -287,7 +283,7 @@ export async function createSimulation(
     }
     
     // Create spec key from conversation ID and version (for caching spec artifacts)
-    const specKey = `${specSourceId}-v${versionToUse}`;
+    const specKey = `${gameId}-v${versionToUse}`;
     
     // Step 1: Check for cached spec artifacts or generate new ones
     let artifacts = await getCachedSpecArtifacts(specKey);
@@ -392,7 +388,7 @@ export async function initializeSimulation(
     
     return { 
       publicMessage: simResponse.publicMessage, 
-      playerStates: simResponse.playerStates 
+      playerStates: simResponse.playerStates
     };
   } catch (error) {
     handleError("Failed to initialize simulation", error);
