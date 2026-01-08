@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import jsonLogic from "json-logic-js";
-import { BaseRuntimeState } from "#chaincraft/ai/simulate/schema.js";
-import { RuntimePlayerState } from "#chaincraft/api/simulate/schemas.js";
+import { BaseRuntimeState, RuntimePlayerState } from "#chaincraft/ai/simulate/schema.js";
 
 // JsonLogic primitive and recursive node schema (permissive)
 const JsonLogicPrimitive = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -185,7 +184,10 @@ export const RouterContextSchemaJson = zodToJsonSchema(RouterContextSchema, "Rou
  * The `state` parameter is expected to be the canonical game state object produced by the extractor.
  */
 export function buildRouterContext(state: BaseRuntimeState): RouterContext {
-  const players = Array.isArray(state?.players) ? state.players : [];
+  // Players is always an object (record) per base schema, never an array
+  const players: RuntimePlayerState[] = state?.players && typeof state.players === 'object'
+    ? Object.values(state.players)
+    : [];
   const playersCount = players.length;
 
   const playersRequiringActionCount = players.reduce((acc: number, p: RuntimePlayerState) => {
