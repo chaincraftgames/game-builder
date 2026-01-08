@@ -90,6 +90,7 @@ export async function initializeSimulation(
   // We don't pass gameSpec.designSpecification - it will be retrieved from design workflow
   const { gameRules } = await createSimulation(
     simThread.id,
+    simThread.id,
     specVersion
     // gameSpec.designSpecification omitted - retrieved from design graph automatically
   );
