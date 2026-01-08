@@ -36,7 +36,8 @@ export async function handleCreateSimulation(
   }
 
   try {
-    const { sessionId, gameSpecificationVersion, gameSpecification, gameId } = result.data;
+    const { sessionId, gameSpecificationVersion, gameSpecification, gameId } =
+      result.data;
     const response = await createSimulation(
       sessionId,
       gameId,
