@@ -163,7 +163,8 @@ export function router() {
           `Player ID not found in game state: ${state.playerAction!.playerId}`,
           { 
             playerId: state.playerAction!.playerId,
-            availablePlayers: Object.keys(gameState.players || {})
+            availablePlayers: Object.keys(gameState.players || {}),
+            playerMapping: state.playerMapping
           }
         );
       }

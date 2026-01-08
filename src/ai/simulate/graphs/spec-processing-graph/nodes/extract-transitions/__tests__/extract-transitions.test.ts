@@ -81,7 +81,7 @@ FINISHED:
       transitionInstructions: {},
       exampleState: JSON.stringify({
         game: { phase: "playing", currentRound: 1, gameEnded: false },
-        players: [ { id: "p1", submittedMove: false }, { id: "p2", submittedMove: false } ]
+        players: [ { id: "player1", submittedMove: false }, { id: "player2", submittedMove: false } ]
       }),
     });
 
@@ -250,7 +250,7 @@ TRANSITIONS:
       exampleState: JSON.stringify({
         game: { phase: "explore", round: 1 },
         monster: { attacking: false },
-        players: [ { id: "p1" }, { id: "p2" } ]
+        players: [ { id: "player1" }, { id: "player2" } ]
       }),
     });
 

@@ -182,6 +182,14 @@ export function extractInstructions(model: ModelWithOptions) {
     validateInstructionsArtifact(instructions, schema);
 
     // ========================================================================
+    // POST-PROCESS: Resolve positional player templates
+    // ========================================================================
+    
+    // Replace templates like {{p1id}}, {{player1id}} with concrete aliases player1, player2, etc.
+    // This makes initialization deterministic and ensures consistency with player mapping
+    instructions = resolvePositionalPlayerTemplates(instructions);
+
+    // ========================================================================
     // RETURN RESULTS
     // ========================================================================
     
@@ -487,4 +495,70 @@ function validateInstructionsArtifact(artifact: InstructionsArtifact, schema?: a
     );
     throw new Error(`Instructions artifact validation failed: ${errors.join("; ")}`);
   }
+}
+
+/**
+ * Resolve positional player templates to concrete aliases.
+ * 
+ * Replaces two patterns with concrete player aliases (player1, player2, etc.):
+ * 1. Template variables: {{p1id}}, {{player1id}}, {{p2Id}}, etc.
+ * 2. Direct path references: players.p1.field, players.p2.field, etc.
+ * 
+ * This makes initialization deterministic and ensures the game state uses
+ * the same player keys (player1, player2) as the player mapping.
+ * 
+ * Patterns matched (case-insensitive):
+ * - {{p1id}}, {{p2id}}, {{p3id}}, ... → player1, player2, player3, ...
+ * - {{player1id}}, {{player2id}}, ... → player1, player2, player3, ...
+ * - players.p1.field → players.player1.field
+ * - players.p2.field → players.player2.field
+ * 
+ * @param artifact - Instructions artifact to process
+ * @returns Artifact with resolved player templates
+ */
+function resolvePositionalPlayerTemplates(
+  artifact: InstructionsArtifact
+): InstructionsArtifact {
+  // Regex to match {{p<N>id}} or {{player<N>id}} (case-insensitive)
+  // Captures the number in group 1
+  const templatePattern = /\{\{(?:p|player)(\d+)id\}\}/gi;
+  
+  // Regex to match players.p<N>. in paths
+  // Captures the number in group 1
+  const pathPattern = /\bplayers\.p(\d+)\./g;
+  
+  const resolver = (str: string): string => {
+    // First resolve template variables: {{p1id}} → player1
+    let result = str.replace(templatePattern, (match, numberStr) => {
+      const number = parseInt(numberStr, 10);
+      return `player${number}`;
+    });
+    
+    // Then resolve direct path references: players.p1. → players.player1.
+    result = result.replace(pathPattern, (match, numberStr) => {
+      const number = parseInt(numberStr, 10);
+      return `players.player${number}.`;
+    });
+    
+    return result;
+  };
+  
+  const resolveInObject = (obj: any): any => {
+    if (typeof obj === 'string') {
+      return resolver(obj);
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(resolveInObject);
+    }
+    if (obj && typeof obj === 'object') {
+      const result: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        result[key] = resolveInObject(value);
+      }
+      return result;
+    }
+    return obj;
+  };
+  
+  return resolveInObject(artifact);
 }

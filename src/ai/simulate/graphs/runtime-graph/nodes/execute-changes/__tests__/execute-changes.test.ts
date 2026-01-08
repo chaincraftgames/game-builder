@@ -57,7 +57,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(initialState),
         selectedInstructions: JSON.stringify(initInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: "submit", // Target phase after this transition
       };
@@ -118,7 +118,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -165,7 +165,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -217,7 +217,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -265,7 +265,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };

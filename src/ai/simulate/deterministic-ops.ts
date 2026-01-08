@@ -88,18 +88,19 @@ export function isDeterministicOperation(op: StateDeltaOp): boolean {
 }
 
 /**
- * Transform a path from aliased format (p1, p2) to canonical format (UUID).
+ * Transform a path from aliased format (player1, player2) to canonical format (UUID).
  * 
  * Examples:
- * - "players.p1.score" → "players.uuid-abc.score"
+ * - "players.player1.score" → "players.uuid-abc.score"
+ * - "players.player2.score" → "players.uuid-def.score"
  * - "game.roundNumber" → "game.roundNumber" (unchanged)
  */
 function transformPath(path: string, mapping: PlayerMapping): string {
-  // Check for alias pattern: players.p1.field or players.p2.field
-  const aliasMatch = path.match(/^players\.p(\d+)\.(.+)$/);
-  if (aliasMatch) {
-    const alias = `p${aliasMatch[1]}`;
-    const field = aliasMatch[2];
+  // Check for player1/player2 alias pattern
+  const playerMatch = path.match(/^players\.player(\d+)\.(.+)$/);
+  if (playerMatch) {
+    const alias = `player${playerMatch[1]}`;
+    const field = playerMatch[2];
     const uuid = mapping[alias];
     
     if (uuid) {
@@ -110,7 +111,7 @@ function transformPath(path: string, mapping: PlayerMapping): string {
     return path; // Fallback to original path
   }
   
-  // No alias found, return path unchanged
+  // No player alias found, return path unchanged
   return path;
 }
 
@@ -119,7 +120,7 @@ function transformPath(path: string, mapping: PlayerMapping): string {
  * 
  * Handles:
  * 1. Wildcard expansion: players.[*].field → one op per player
- * 2. Alias transformation: players.p1.field → players.uuid.field
+ * 2. Alias transformation: players.player1.field → players.uuid.field
  * 3. Game-level paths: unchanged
  * 
  * Returns array of operations with canonical paths (UUIDs).
