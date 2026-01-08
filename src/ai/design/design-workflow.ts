@@ -79,6 +79,7 @@ export type DesignResponse = {
     designSpecification: string;
     version: number;
   };
+  specNarratives?: Record<string, string>;
   specDiff?: string;
   pendingSpecChanges?: string[];
   consolidationThreshold?: number;
@@ -240,6 +241,7 @@ export async function getCachedDesignSpecification(
   conversationId: string
 ): Promise<(GameDesignSpecification & { 
   title: string;
+  specNarratives?: Record<string, string>;
   pendingSpecChanges?: string[];
   consolidationThreshold?: number;
   consolidationCharLimit?: number;
@@ -280,6 +282,7 @@ export async function getCachedDesignSpecification(
   const channelValues = latestCheckpoint.checkpoint.channel_values as any;
   const currentGameSpec = channelValues.currentSpec;
   const title = channelValues.title;
+  const specNarratives = channelValues.specNarratives as Record<string, string> | undefined;
   const pendingSpecChanges = channelValues.pendingSpecChanges as SpecPlan[] | undefined;
   const consolidationThreshold = channelValues.consolidationThreshold as number | undefined;
   const consolidationCharLimit = channelValues.consolidationCharLimit as number | undefined;
@@ -298,6 +301,7 @@ export async function getCachedDesignSpecification(
     return {
       ...currentGameSpec,
       title: title || "Untitled Game",
+      specNarratives,
       // Convert SpecPlan[] to string[] (extract changes field)
       pendingSpecChanges: pendingSpecChanges && pendingSpecChanges.length > 0
         ? pendingSpecChanges.map(plan => plan.changes)
@@ -599,6 +603,7 @@ async function _processMessage(
   let responsePendingSpecChanges: SpecPlan[] = [];
   let responseConsolidationThreshold: number | undefined = undefined;
   let responseConsolidationCharLimit: number | undefined = undefined;
+  let responseNarratives: Record<string, string> | undefined = undefined;
 
   for await (const {
     messages,
@@ -609,6 +614,7 @@ async function _processMessage(
     pendingSpecChanges,
     consolidationThreshold,
     consolidationCharLimit,
+    specNarratives,
   } of await graph.stream(inputs, {
     ...config,
     streamMode: "values",
@@ -647,6 +653,10 @@ async function _processMessage(
       responseConsolidationCharLimit = consolidationCharLimit;
     }
 
+    if (specNarratives) {
+      responseNarratives = specNarratives;
+    }
+
     lastPromptVersion = systemPromptVersion;
   }
 
@@ -655,6 +665,7 @@ async function _processMessage(
   return {
     designResponse: aiResponse.length > 0 ? aiResponse : "No response",
     specification: updatedSpec,
+    specNarratives: responseNarratives,
     updatedTitle: lastTitle,
     systemPromptVersion: lastPromptVersion,
     specDiff: specDiffSummary,

@@ -122,15 +122,6 @@ export function createCachedSystemMessage(
     return new SystemMessage(processed.content[0].text);
   }
   
-  // Debug: Log cache sections
-  console.log('\n🔧 [Cache Debug] Creating cached system message');
-  console.log('   Cache sections:', processed.content.filter(b => b.cache_control).length);
-  processed.content.forEach((block, i) => {
-    if (block.cache_control) {
-      console.log(`   Section ${i}: ${block.text.substring(0, 50)}... [CACHED]`);
-    }
-  });
-  
   // Use content blocks for cache-enabled messages
   return new SystemMessage({
     content: processed.content,

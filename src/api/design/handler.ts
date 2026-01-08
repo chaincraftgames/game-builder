@@ -28,45 +28,21 @@ import {
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
 import { expandSpecification } from "#chaincraft/ai/design/expand-narratives.js";
-import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
 import { uploadToIpfs } from "#chaincraft/integrations/storage/pinata.js";
 
 /**
  * Helper to expand narratives in a specification for API responses.
- * Retrieves narratives from checkpoint state and expands markers.
+ * Uses narratives returned from workflow functions.
  */
-async function expandSpecForAPI(
+function expandSpecForAPI(
   spec: any,
-  conversationId: string
-): Promise<any> {
-  if (!spec) {
-    console.log("[expandSpecForAPI] No spec provided");
+  narratives: Record<string, string> | undefined
+): any {
+  if (!spec || !narratives || Object.keys(narratives).length === 0) {
     return spec;
   }
   
-  console.log("[expandSpecForAPI] Expanding narratives for conversation:", conversationId);
-  
-  try {
-    const saver = await getSaver(conversationId, "main-design");
-    const config = { configurable: { thread_id: conversationId } };
-    const checkpointIterator = saver.list(config, { limit: 1 });
-    const firstCheckpoint = await checkpointIterator.next();
-    
-    if (!firstCheckpoint.done && firstCheckpoint.value.checkpoint.channel_values) {
-      const channelValues = firstCheckpoint.value.checkpoint.channel_values as any;
-      const narratives = channelValues.specNarratives;
-      console.log("[expandSpecForAPI] Found narratives:", narratives ? Object.keys(narratives).length : 0);
-      const expanded = expandSpecification(spec, narratives);
-      console.log("[expandSpecForAPI] Spec length before:", spec.designSpecification?.length, "after:", expanded.designSpecification?.length);
-      return expanded;
-    } else {
-      console.log("[expandSpecForAPI] No checkpoint channel values found");
-    }
-  } catch (error) {
-    console.error("[expandSpecForAPI] Error expanding narratives:", error);
-  }
-  
-  return spec;
+  return expandSpecification(spec, narratives);
 }
 
 export async function handleContinueDesignConversation(
@@ -97,7 +73,7 @@ export async function handleContinueDesignConversation(
     );
 
     // Expand narratives for API response
-    const expandedSpec = await expandSpecForAPI(response.specification, conversationId);
+    const expandedSpec = expandSpecForAPI(response.specification, response.specNarratives);
 
     return {
       designResponse: response.designResponse,
@@ -199,7 +175,7 @@ export async function handleGetCachedSpecification(
     }
 
     // Expand narratives for API response
-    const expandedSpec = await expandSpecForAPI(specification, conversationId);
+    const expandedSpec = expandSpecForAPI(specification, specification.specNarratives);
 
     return {
       title: expandedSpec.title,
