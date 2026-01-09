@@ -171,17 +171,36 @@ All preconditions must be deterministic using only supported JsonLogic operation
 **Forbidden patterns:**
 - ❌ Indexed access: \`players[0].field\`, \`players.0.field\`
 - ❌ Dynamic player IDs: \`players[playerId].field\`
+- ❌ Explicit player IDs: \`players.player1.field\`, \`players.p1.field\`, \`players.alice.field\`
+- ❌ ANY direct access to specific players: \`players.<any-identifier>.field\`
 - ❌ Iteration/loops in preconditions
 
+**CRITICAL: ALL player field checks MUST use allPlayers/anyPlayer operators**
+
 **Solution for player checks:**
-Use custom anyPlayer/allPlayers operators instead of indexed access:
+Use custom anyPlayer/allPlayers operators - this is the ONLY valid way to check player fields:
 \`\`\`json
-// Wrong
+// ❌ Wrong - indexed access
 {{"!=": [{{"var": "players.0.selectedChoice"}}, null]}}
 
-// Right  
+// ❌ Wrong - explicit player ID
+{{"==": [{{"var": "players.player1.score"}}, {{"var": "players.player2.score"}}]}}
+
+// ❌ Wrong - using aliases
+{{"==": [{{"var": "players.p1.choice"}}, {{"var": "players.p2.choice"}}]}}
+
+// ✅ Right - anyPlayer operation
 {{"anyPlayer": ["selectedChoice", "!=", null]}}
+
+// ✅ Right - allPlayers operation  
+{{"allPlayers": ["score", "<", 10]}}
+
+// ✅ Right - comparing if any two players match (when needed)
+// Note: For tie detection, denormalize into game state instead
 \`\`\`
+
+**Why this matters:**
+Player IDs at runtime are UUIDs, not \`player1\` or \`p1\`. Direct references like \`players.player1\` will always evaluate to \`undefined\`, causing logic errors. The allPlayers/anyPlayer operations work with ANY player ID structure.
 
 ### 5. JsonLogic Operators
 
