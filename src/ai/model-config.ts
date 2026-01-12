@@ -271,15 +271,8 @@ export const setupModel = async (
 
     const response = (await model.invoke(messages, opts)) as ModelResponse;
     
-    // Log usage metadata if available (includes cache statistics)
-    if (response.response_metadata?.usage) {
-      const usage = response.response_metadata.usage;
-      console.log('\n📊 [Model Usage]', metadata?.agent || 'unknown');
-      console.log('   Input tokens:', usage.input_tokens || 0);
-      console.log('   Cache creation tokens:', usage.cache_creation_input_tokens || 0);
-      console.log('   Cache read tokens:', usage.cache_read_input_tokens || 0);
-      console.log('   Output tokens:', usage.output_tokens || 0);
-    }
+    // Log usage statistics
+    logUsageStats(response?.response_metadata?.usage, metadata?.agent);
     
     return response;
   };
@@ -314,7 +307,12 @@ export const setupModel = async (
       return await invokeWithSchema(model, messages, opts, schema);
     }
 
-    return (await model.invoke(messages, opts)) as ModelResponse;
+    const result = (await model.invoke(messages, opts)) as ModelResponse;
+    
+    // Log usage statistics
+    logUsageStats(result?.response_metadata?.usage, metadata?.agent);
+    
+    return result;
   };
 
   const createInvocation = (
@@ -482,6 +480,24 @@ const createInvokeOptions = (
 });
 
 /**
+ * Helper: Log usage statistics including cache metrics
+ */
+const logUsageStats = (usage: any, agent?: string) => {
+  if (!usage || !agent) return;
+  
+  const inputTokens = usage.input_tokens || 0;
+  const cacheCreation = usage.cache_creation_input_tokens || 0;
+  const cacheRead = usage.cache_read_input_tokens || 0;
+  const outputTokens = usage.output_tokens || 0;
+  
+  console.log(`📊 [Model Usage] ${agent}`);
+  console.log(`   Input tokens: ${inputTokens}`);
+  console.log(`   Cache creation tokens: ${cacheCreation}`);
+  console.log(`   Cache read tokens: ${cacheRead}`);
+  console.log(`   Output tokens: ${outputTokens}`);
+};
+
+/**
  * Helper: Invoke model with structured output
  */
 const invokeWithSchema = async (
@@ -492,8 +508,16 @@ const invokeWithSchema = async (
 ) => {
   const structuredModel = (model as any).withStructuredOutput(schema, {
     maxTokens: 8192,
+    includeRaw: true, // Get raw response with metadata
   });
-  return await structuredModel.invoke(messages, invokeOptions);
+  const result = await structuredModel.invoke(messages, invokeOptions);
+  
+  // withStructuredOutput with includeRaw returns {parsed, raw}
+  // Log usage statistics
+  logUsageStats(result?.raw?.response_metadata?.usage, invokeOptions?.metadata?.agent);
+  
+  // Return just the parsed result (maintain backward compatibility)
+  return result?.parsed || result;
 };
 
 /**

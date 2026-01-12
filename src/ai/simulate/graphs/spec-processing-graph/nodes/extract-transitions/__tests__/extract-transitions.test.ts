@@ -204,7 +204,7 @@ FINISHED:
     console.log("\n=== Extract Transitions Test Complete ===");
   }, 60000); // 60s timeout for LLM calls
 
-  it("should mark random monster-attack-based transition as non-deterministic", async () => {
+  it("should use two-step pattern for random monster attacks", async () => {
     const gameRules = `
 A simple adventuring game with a roaming monster.
 
@@ -224,7 +224,8 @@ TRANSITIONS:
         "description": "Core game state",
         "properties": {
           "phase": { "name": "phase", "type": "string" },
-          "round": { "name": "round", "type": "number" }
+          "round": { "name": "round", "type": "number" },
+          "monsterAttackRoll": { "name": "monsterAttackRoll", "type": "number", "description": "Result of dice roll to determine if monster attacks (1-100)" }
         }
       },
       {
@@ -273,33 +274,54 @@ TRANSITIONS:
 
     expect(Array.isArray(parsed.transitions)).toBe(true);
 
-    // Find transitions that move to a battle phase
-    const battleTransitions = parsed.transitions.filter((t: any) =>
-      t.toPhase && typeof t.toPhase === 'string' && t.toPhase.toLowerCase().includes('battle')
-    );
+    console.log("\n=== Checking for Two-Step RNG Pattern ===");
+    console.log(`Total transitions: ${parsed.transitions.length}`);
+    
+    // Look for a transition that references the monsterAttackRoll field
+    const rollTransitions = parsed.transitions.filter((t: any) => {
+      const checkedFields = Array.isArray(t.checkedFields) ? t.checkedFields : [];
+      const summary = t.humanSummary || '';
+      
+      // Check if this transition uses the roll field in preconditions
+      const usesRollField = checkedFields.some((f: string) => 
+        f.includes('monsterAttackRoll') || f.includes('Roll')
+      );
+      
+      // Or mentions roll in logic
+      const preconditions = Array.isArray(t.preconditions) ? t.preconditions : [];
+      const hasRollLogic = preconditions.some((p: any) => {
+        const logicStr = JSON.stringify(p.logic || {});
+        return logicStr.includes('monsterAttackRoll') || logicStr.includes('Roll');
+      });
+      
+      return usesRollField || hasRollLogic || summary.toLowerCase().includes('roll');
+    });
 
-    if (battleTransitions.length === 0) {
-      console.warn('[WARN] No battle transitions found. Skipping non-deterministic checks.');
-      console.warn(JSON.stringify(parsed, null, 2));
-      return;
-    }
-
-    // At least one of the battle transitions should contain a non-deterministic precondition hint
-    let foundNonDet = false;
-    for (const t of battleTransitions) {
-      const hints = Array.isArray(t.preconditions) ? t.preconditions : [];
-      for (const h of hints) {
-        if (h.deterministic === false || h.logic === null) {
-          expect(typeof h.explain).toBe('string');
-          foundNonDet = true;
-          break;
+    console.log(`Transitions referencing roll field: ${rollTransitions.length}`);
+    
+    if (rollTransitions.length > 0) {
+      console.log("\nTransitions using roll:");
+      rollTransitions.forEach((t: any) => {
+        console.log(`  - ${t.id}: ${t.humanSummary}`);
+        console.log(`    Checked fields: ${JSON.stringify(t.checkedFields)}`);
+        if (t.preconditions && t.preconditions.length > 0) {
+          console.log(`    Preconditions: ${t.preconditions.map((p: any) => p.explain).join(', ')}`);
         }
-      }
-      if (foundNonDet) break;
+      });
     }
 
-    expect(foundNonDet).toBe(true);
-    console.log('✓ Found non-deterministic battle transition (monster random attack)');
+    // Verify: Should have at least 2 transitions - one to generate roll, others to check it
+    expect(rollTransitions.length).toBeGreaterThanOrEqual(2);
+    
+    // Verify: All transitions should have deterministic logic (no null logic)
+    const allDeterministic = rollTransitions.every((t: any) => {
+      const preconditions = Array.isArray(t.preconditions) ? t.preconditions : [];
+      return preconditions.every((p: any) => p.deterministic !== false && p.logic !== null);
+    });
+    
+    expect(allDeterministic).toBe(true);
+    console.log('✓ AI used two-step pattern: separate transitions for generating and checking roll');
+    console.log('✓ All preconditions are deterministic (no null logic)');
   }, 60000);
 
   it("should use custom player operations in preconditions", async () => {

@@ -36,8 +36,9 @@ export async function executeGameTest(
     // Generate a unique session ID for each test run to avoid using cached data
     const sessionId = `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     
-    // Use provided gameId for artifact caching (optional)
-    const testGameId = gameId;
+    // Generate unique gameId if not provided (for artifact cache isolation)
+    // If gameId IS provided, reuse existing artifacts from that gameId
+    const testGameId = gameId || `test-game-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     
     // Step 1: Generate artifacts from spec (or reuse if gameId was provided)
     console.log(`[${test.name}] ${gameId ? 'Using existing' : 'Generating'} artifacts...`);

@@ -60,6 +60,16 @@ export function extractInstructions(model: ModelWithOptions) {
     console.debug(`[extract_instructions] Extracted ${phaseNames.length} phase names: ${phaseNames.join(', ')}`);
     console.debug(`[extract_instructions] Extracted ${transitionIds.length} transition IDs`);
     
+    // Format narrative markers section
+    const narrativeMarkers = Object.keys(state.specNarratives || {});
+    const narrativeMarkersSection = narrativeMarkers.length > 0
+      ? `The following narrative markers are available for reference in instruction guidance:
+
+${narrativeMarkers.map(m => `- !___ NARRATIVE:${m} ___!`).join('\n')}
+
+These markers will be expanded at runtime to provide full narrative guidance to the LLM.`
+      : "No narrative markers available for this game (purely mechanical game).";
+    
     const plannerPrompt = SystemMessagePromptTemplate.fromTemplate(
       planInstructionsTemplate
     );
@@ -73,6 +83,8 @@ export function extractInstructions(model: ModelWithOptions) {
       ).join('\n'),
       stateSchema: String(state.stateSchema ?? ""),
       planningSchemaJson: JSON.stringify(InstructionsPlanningResponseSchemaJson, null, 2),
+      narrativeMarkersSection,
+      validationFeedback: "", // Empty on first run, would contain errors on retry
     });
 
     const plannerResponse = await model.invokeWithSystemPrompt(
@@ -143,6 +155,9 @@ export function extractInstructions(model: ModelWithOptions) {
       stateSchema: String(state.stateSchema ?? ""),
       plannerHints: JSON.stringify(plannerHints, null, 2),
       executorSchemaJson: JSON.stringify(InstructionsArtifactSchemaJson, null, 2),
+      narrativeMarkersSection,
+      gameSpecificationSummary: `Game: ${(state.gameSpecification as any)?.summary || 'Untitled Game'}\nPlayer Count: ${(state.gameSpecification as any)?.playerCount?.min || '?'}-${(state.gameSpecification as any)?.playerCount?.max || '?'}`,
+      validationFeedback: "", // Empty on first run, would contain errors on retry
     });
 
     const executorResponse = await model.invokeWithSystemPrompt(
@@ -179,7 +194,7 @@ export function extractInstructions(model: ModelWithOptions) {
     const schema = typeof state.stateSchema === 'string'
       ? JSON.parse(state.stateSchema)
       : state.stateSchema;
-    validateInstructionsArtifact(instructions, schema);
+    validateInstructionsArtifact(instructions, schema, state.specNarratives);
 
     // ========================================================================
     // POST-PROCESS: Resolve positional player templates
@@ -270,6 +285,38 @@ function validatePlannerOutput(hints: InstructionsPlanningResponse): void {
     );
     throw new Error(`Planner validation failed: ${errors.join("; ")}`);
   }
+}
+
+/**
+ * Validate that narrative markers referenced in instructions exist in specNarratives
+ */
+function validateNarrativeMarkers(
+  artifact: InstructionsArtifact,
+  specNarratives: Record<string, string> | undefined
+): string[] {
+  const errors: string[] = [];
+  const narrativeMarkerPattern = /!___ NARRATIVE:(\w+) ___!/g;
+  const availableMarkers = new Set(Object.keys(specNarratives || {}));
+  const referencedMarkers = new Set<string>();
+
+  // Extract all narrative markers from the artifact
+  const artifactStr = JSON.stringify(artifact);
+  let match;
+  while ((match = narrativeMarkerPattern.exec(artifactStr)) !== null) {
+    referencedMarkers.add(match[1]);
+  }
+
+  // Check each referenced marker exists in specNarratives
+  for (const marker of referencedMarkers) {
+    if (!availableMarkers.has(marker)) {
+      errors.push(
+        `Narrative marker '${marker}' referenced but not found in specNarratives. ` +
+        `Available markers: ${Array.from(availableMarkers).join(', ') || 'none'}`
+      );
+    }
+  }
+
+  return errors;
 }
 
 /**
@@ -372,7 +419,11 @@ function validateStateDelta(
 /**
  * Validate instructions artifact for correctness and completeness
  */
-function validateInstructionsArtifact(artifact: InstructionsArtifact, schema?: any): void {
+function validateInstructionsArtifact(
+  artifact: InstructionsArtifact,
+  schema?: any,
+  specNarratives?: Record<string, string>
+): void {
   const errors: string[] = [];
   const warnings: string[] = [];
   
@@ -477,6 +528,12 @@ function validateInstructionsArtifact(artifact: InstructionsArtifact, schema?: a
       `Metadata totalTransitions (${artifact.metadata.totalTransitions}) ` +
       `doesn't match actual count (${totalTransitions})`
     );
+  }
+
+  // Validate narrative markers
+  const narrativeErrors = validateNarrativeMarkers(artifact, specNarratives);
+  if (narrativeErrors.length > 0) {
+    errors.push(...narrativeErrors);
   }
 
   // Log warnings

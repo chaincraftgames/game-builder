@@ -24,6 +24,7 @@
     "test:sim:instructions-narrative": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/__tests__/extract-instructions-narrative.test.ts",
     "fixtures:generate": "npm run build && node ./dist/scripts/generate-test-fixtures.js",
     "test:sim:router": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/graphs/runtime-graph/nodes/router/__tests__/router.test.ts",
+    "test:sim:execute-changes": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/graphs/runtime-graph/nodes/execute-changes/__tests__/execute-changes.test.ts",
     "test:generate": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/gen/generators/__tests__/state-machine-generator.test.ts",
     "test:action-queues": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js src/ai/simulate/__tests__/action-queues.test.ts",
     "test:harness": "npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js tests/harness/run-tests.test.ts",

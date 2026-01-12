@@ -5,46 +5,16 @@
  */
 
 export const planInstructionsTemplate = `
-# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
-
-{phaseNamesList}
-
-# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
-
-{transitionIdsList}
-
-# CRITICAL INSTRUCTIONS
-
-Your output MUST use ONLY the phase names and transition IDs listed above.
-- Copy them CHARACTER-FOR-CHARACTER (including capitalization, underscores, hyphens)
-- DO NOT create variations like "choice" instead of "choicePhase"
-- DO NOT create variations like "both-submitted" instead of "both_players_submitted"
-- Your phaseInstructions[].phase field must EXACTLY match a phase name from the list above
-- Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above
-
----
-
-You are analyzing a game specification and transitions to identify what instructions are needed for each phase.
-
-Game Specification:
-<specification>
-{gameSpecification}
-</specification>
-
-Transitions Artifact (for reference - IDs already extracted above):
-<transitions>
-{transitionsArtifact}
-</transitions>
-
-State Schema:
-<schema>
-{stateSchema}
-</schema>
-
-Planner Output Schema:
+!___ CACHE:universal-instructions ___!
+# Planner Output Schema
 <planningSchema>
 {planningSchemaJson}
 </planningSchema>
+
+# Your Task
+
+You are analyzing a game specification and transitions to identify what instructions 
+are needed for each phase.
 
 Your task: Identify player actions and automatic transitions that need instructions 
 for runtime execution.
@@ -229,14 +199,72 @@ Include:
 - phases: EXACT list from transitions.phases array
 - phaseInstructions: array with hints for each phase (using EXACT phase names)
 - globalNotes: any cross-cutting patterns (optional)
+!___ END-CACHE ___!
+
+!___ CACHE:design-spec ___!
+# Game Specification
+<specification>
+{gameSpecification}
+</specification>
+
+# Narrative Markers Available
+{narrativeMarkersSection}
+
+**Using Narrative Markers:**
+If narrative markers are available, you can reference them in instruction guidance 
+using the format: !___ NARRATIVE:MARKER_NAME ___!
+
+When you include a marker reference in mechanicsDescription or other guidance fields,
+the marker will be expanded at runtime to provide the full narrative guidance to the LLM.
+
+Use narrative markers when:
+- The game has atmospheric or thematic descriptions that should influence narrative generation
+- Instructions need to guide the LLM on tone, style, or narrative continuity
+- The game spec includes extensive world-building or narrative context
+
+Example: "Generate reveal description following !___ NARRATIVE:REVEAL_ATMOSPHERE ___!"
+
+Do NOT reference narrative markers if the game has no narrative content or is purely mechanical.
+!___ END-CACHE ___!
+
+!___ CACHE:artifacts ___!
+# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
+
+{phaseNamesList}
+
+# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
+
+{transitionIdsList}
+
+# CRITICAL ID MATCHING REQUIREMENTS
+
+Your output MUST use ONLY the phase names and transition IDs listed above.
+- Copy them CHARACTER-FOR-CHARACTER (including capitalization, underscores, hyphens)
+- DO NOT create variations like "choice" instead of "choicePhase"
+- DO NOT create variations like "both-submitted" instead of "both_players_submitted"
+- Your phaseInstructions[].phase field must EXACTLY match a phase name from the list above
+- Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above
+
+# Transitions Artifact
+<transitions>
+{transitionsArtifact}
+</transitions>
+
+# State Schema
+<schema>
+{stateSchema}
+</schema>
+!___ END-CACHE ___!
+
+{validationFeedback}
 
 ---
 
 # ⚠️ FINAL REMINDER - EXACT ID MATCHING ⚠️
 
 Before outputting, verify:
-✓ Every phase name in your output is FROM THE PHASE LIST AT THE TOP
-✓ Every transition ID in your output is FROM THE TRANSITION ID LIST AT THE TOP  
+✓ Every phase name in your output is FROM THE PHASE LIST ABOVE
+✓ Every transition ID in your output is FROM THE TRANSITION ID LIST ABOVE
 ✓ You copied them EXACTLY (same capitalization, underscores, hyphens)
 
 If the phase list has "choicePhase", you MUST use "choicePhase" NOT "choice" or "choice_phase".
@@ -249,40 +277,16 @@ Begin output now.
  * Executor prompt: Generates concrete templated instructions from planner hints
  */
 export const executeInstructionsTemplate = `
-# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
+!___ CACHE:universal-executor ___!
+# Executor Output Schema
+{executorSchemaJson}
 
-{phaseNamesList}
-
-# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
-
-{transitionIdsList}
-
-# CRITICAL INSTRUCTIONS
-
-Your instructions[].phase field must EXACTLY match a phase name from the list above.
-Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above.
-
-DO NOT create variations. COPY THE EXACT STRINGS INCLUDING CAPITALIZATION.
-
----
+# Your Task
 
 You are generating executable game instructions from high-level hints.
 
 Your task: Convert the planner's instruction hints into concrete, 
 templated instructions that the game runtime can execute.
-
-# Input Context
-
-## State Schema
-{stateSchema}
-
-## Planner Hints
-{plannerHints}
-
-# Output Requirements
-
-Generate a JSON object with complete instructions for all phases:
-{executorSchemaJson}
 
 # Key Principles
 
@@ -570,14 +574,73 @@ Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all
     "public": {{ "template": "Game initialized with starting position {{{{game.startingPosition}}}} under {{{{game.weatherCondition}}}} conditions." }}
   }}
 }}
+!___ END-CACHE ___!
 
----
+!___ CACHE:design-executor ___!
+# Game Specification Context
+{gameSpecificationSummary}
+
+# Narrative Markers Available
+{narrativeMarkersSection}
+
+**Preserving Narrative Markers:**
+If planner hints include narrative marker references (format: !___ NARRATIVE:MARKER_NAME ___!), 
+preserve them in the mechanicsGuidance.rules array or similar guidance fields.
+
+Example:
+{{
+  "mechanicsGuidance": {{
+    "rules": [
+      "Generate reveal description following !___ NARRATIVE:REVEAL_ATMOSPHERE ___!",
+      "Rock beats scissors",
+      "Scissors beats paper"
+    ],
+    "computation": "Compare choices, determine winner, generate dramatic reveal"
+  }}
+}}
+
+The runtime will expand !___ NARRATIVE:MARKER_NAME ___! to the full narrative content before invoking the LLM.
+
+**When to include narrative guidance:**
+- Instructions that generate messages with narrative content
+- Instructions that set state fields to generated descriptions  
+- Transitions involving reveals, events, or story moments
+
+**When NOT to include:**
+- Purely mechanical operations (increment score, set flags)
+- Simple confirmations without narrative flavor
+!___ END-CACHE ___!
+
+!___ CACHE:artifacts-executor ___!
+# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
+
+{phaseNamesList}
+
+# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
+
+{transitionIdsList}
+
+# CRITICAL ID MATCHING REQUIREMENTS
+
+Your instructions[].phase field must EXACTLY match a phase name from the list above.
+Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above.
+
+DO NOT create variations. COPY THE EXACT STRINGS INCLUDING CAPITALIZATION.
+
+# State Schema
+{stateSchema}
+
+# Planner Hints
+{plannerHints}
+!___ END-CACHE ___!
+
+{validationFeedback}
 
 # ⚠️ FINAL REMINDER - EXACT ID MATCHING ⚠️
 
 Before outputting, verify:
-✓ Every phase name in your output is FROM THE PHASE LIST AT THE TOP
-✓ Every transition ID in your output is FROM THE TRANSITION ID LIST AT THE TOP
+✓ Every phase name in your output is FROM THE PHASE LIST ABOVE
+✓ Every transition ID in your output is FROM THE TRANSITION ID LIST ABOVE
 ✓ You copied them EXACTLY (same capitalization, underscores, hyphens)
 
 If the phase list has "choicePhase", use "choicePhase" NOT "choice_phase".

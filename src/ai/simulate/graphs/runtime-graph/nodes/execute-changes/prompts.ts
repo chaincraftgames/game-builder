@@ -6,27 +6,8 @@
  */
 
 export const executeChangesTemplate = `
+!___ CACHE:universal-execute ___!
 You are resolving template variables and computing game mechanics to produce state delta operations.
-
-Player IDs:
-<players>
-{players}
-</players>
-
-Player Action (if present):
-<playerAction>
-{playerAction}
-</playerAction>
-
-Current State:
-<state>
-{gameState}
-</state>
-
-Instructions:
-<instructions>
-{selectedInstructions}
-</instructions>
 
 # Your Task
 
@@ -93,6 +74,38 @@ Return JSON object with these fields:
 }}
 
 **CRITICAL**: ALL template variables {{{{...}}}} must be resolved to literal values. The runtime cannot process templates - it only applies the resolved operations.
+!___ END-CACHE ___!
 
-Begin.
+!___ CACHE:phase-instructions ___!
+Instructions:
+<instructions>
+{selectedInstructions}
+</instructions>
+!___ END-CACHE ___!
+
+Player IDs:
+<players>
+{players}
+</players>
+
+Player Action (if present):
+<playerAction>
+{playerAction}
+</playerAction>
+
+Current State:
+<state>
+{gameState}
+</state>
+
+# Your Task Now
+
+Based on the instructions, current state, and player action above:
+
+1. **Resolve ALL template variables** ({{{{playerId}}}}, {{{{input.*}}}}, {{{{winnerId}}}}, etc.) to concrete literal values
+2. **Apply mechanicsGuidance rules** if present to determine outcomes, winners, scores, etc.
+3. **Return resolved stateDelta operations** with all templates replaced by literal values
+4. **Generate messages** using narrative guidance if provided (markers are already expanded)
+
+Output valid JSON with: rationale, stateDelta array, publicMessage (if specified), and privateMessages (if specified).
 `;

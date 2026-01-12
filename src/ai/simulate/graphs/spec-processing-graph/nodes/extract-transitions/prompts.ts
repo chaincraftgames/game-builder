@@ -5,6 +5,7 @@
  */
 
 export const planTransitionsTemplate = `
+!___ CACHE:universal-planner ___!
 You are creating a phase transition specification for a game.
 
 ## Core Task
@@ -71,21 +72,6 @@ For player-specific checks, write clearly so executor knows which operator to us
 - "any player has score >= 10" → executor will use anyPlayer operator
 - "all players have actionRequired == false" → executor will use allPlayers operator
 
-### 6. Field References (STRICT)
-ONLY reference fields from this explicit list:
-<availableFields>
-{availableFields}
-</availableFields>
-
-{computedContextFields}
-
-⛔ If a field is not in the list above, you CANNOT reference it.
-
-## Game Specification
-<specification>
-{gameSpecification}
-</specification>
-
 ## Output Schema
 <planningSchema>
 {planningSchemaJson}
@@ -120,15 +106,33 @@ Return exactly two parts:
   ]
 }}
 \`\`\`
+!___ END-CACHE ___!
+
+!___ CACHE:design-planner ___!
+## Game Specification
+<specification>
+{gameSpecification}
+</specification>
+!___ END-CACHE ___!
+
+!___ CACHE:artifacts-planner ___!
+### Field References (STRICT)
+ONLY reference fields from this explicit list:
+<availableFields>
+{availableFields}
+</availableFields>
+
+{computedContextFields}
+
+⛔ If a field is not in the list above, you CANNOT reference it.
+!___ END-CACHE ___!
+
+Now analyze the game specification and produce your transitions plan following the format specified above.
 `;
 
 export const executeTransitionsTemplate = `
+!___ CACHE:universal-executor ___!
 You are creating the final JsonLogic-based transitions specification.
-
-## Transitions Plan
-<transitionsPlan>
-{transitionsPlan}
-</transitionsPlan>
 
 ## Critical Rules
 
@@ -140,17 +144,7 @@ You are creating the final JsonLogic-based transitions specification.
 - ⚠️ CRITICAL: Each transition must have EXACTLY the preconditions listed in planner's preconditionHints
 - Your job is faithful implementation, NOT improvement or addition
 
-### 2. Field References (STRICT)
-ONLY reference fields from this list in JsonLogic \`var\` expressions:
-<availableFields>
-{availableFields}
-</availableFields>
-
-{computedContextFields}
-
-⛔ If a field is not in the list, you CANNOT use it.
-
-### 3. Preconditions = Inputs Only
+### 2. Preconditions = Inputs Only
 Preconditions check state that ALREADY EXISTS before transition fires.
 - ✅ Check: Fields from \`checkedFields\` (what transition reads)
 - ❌ Never check: Fields transition will write (outputs)
@@ -159,8 +153,45 @@ Example (round_scored transition):
 - ✅ Correct: currentPhase == "scoring" AND currentRound == 1
 - ❌ Wrong: Check if scores updated (transition WRITES scores!)
 
-### 4. Deterministic Preconditions (CRITICAL)
+### 3. Deterministic Preconditions (CRITICAL)
 All preconditions must be deterministic using only supported JsonLogic operations.
+
+**Handling Randomness (Two-Step Pattern):**
+If game rules require random events (e.g. dice rolls, random chance of an event occurring, 
+randomly selected scenario), use TWO transitions:
+1. First transition: Generate random value and STORE in state field (e.g., game.lastDiceRoll)
+2. Second transition: Check stored value with deterministic logic (e.g., game.lastDiceRoll >= 4)
+
+Example - Monster attack requires dice roll:
+\`\`\`json
+// Transition 1: Roll dice and store result
+{{
+  "id": "roll_monster_attack",
+  "fromPhase": "monster_turn",
+  "toPhase": "monster_turn",
+  "preconditions": [{{"logic": {{"==": [{{"var": "game.currentPhase"}}, "monster_turn"]}}}}],
+  "humanSummary": "Roll dice for monster attack (stores result in game.monsterAttackRoll)"
+}}
+
+// Transition 2: Check stored roll deterministically
+{{
+  "id": "monster_hits",
+  "fromPhase": "monster_turn",
+  "toPhase": "apply_damage",
+  "preconditions": [{{"logic": {{">=": [{{"var": "game.monsterAttackRoll"}}, 15]}}}}],
+  "humanSummary": "Monster attack hits (roll >= 15)"
+}}
+
+{{
+  "id": "monster_misses",
+  "fromPhase": "monster_turn",
+  "toPhase": "player_turn",
+  "preconditions": [{{"logic": {{"<": [{{"var": "game.monsterAttackRoll"}}, 15]}}}}],
+  "humanSummary": "Monster attack misses (roll < 15)"
+}}
+\`\`\`
+
+⛔ NEVER use null logic in preconditions - the router cannot evaluate non-deterministic logic.
 
 **Allowed patterns:**
 - Game-level fields: \`{{"var": "game.currentPhase"}}\`
@@ -202,7 +233,7 @@ Use custom anyPlayer/allPlayers operators - this is the ONLY valid way to check 
 **Why this matters:**
 Player IDs at runtime are UUIDs, not \`player1\` or \`p1\`. Direct references like \`players.player1\` will always evaluate to \`undefined\`, causing logic errors. The allPlayers/anyPlayer operations work with ANY player ID structure.
 
-### 5. JsonLogic Operators
+### 4. JsonLogic Operators
 
 **Standard operators:**
 \`==\`, \`!=\`, \`>\`, \`>=\`, \`<\`, \`<=\`, \`and\`, \`or\`, \`if\`, \`!\`, \`var\`, \`in\`
@@ -264,5 +295,26 @@ Return EXACTLY one JSON object matching TransitionsArtifactSchema:
   ]
 }}
 \`\`\`
-`;
+!___ END-CACHE ___!
 
+!___ CACHE:design-executor ___!
+### Field References (STRICT)
+ONLY reference fields from this list in JsonLogic \`var\` expressions:
+<availableFields>
+{availableFields}
+</availableFields>
+
+{computedContextFields}
+
+⛔ If a field is not in the list, you CANNOT use it.
+!___ END-CACHE ___!
+
+!___ CACHE:artifacts-executor ___!
+## Transitions Plan
+<transitionsPlan>
+{transitionsPlan}
+</transitionsPlan>
+!___ END-CACHE ___!
+
+Now generate the complete transitions artifact based on the planner's specification, following all rules above.
+`;
