@@ -380,6 +380,9 @@ function handleError(
     timestamp: new Date().toISOString(),
   };
   
+  // Fatal errors end the game
+  gameState.game.gameEnded = true;
+  
   // Set public message to inform players
   gameState.game.publicMessage = `Game Error: ${errorMessage}`;
   

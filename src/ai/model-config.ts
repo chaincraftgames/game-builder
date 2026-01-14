@@ -516,8 +516,38 @@ const invokeWithSchema = async (
   // Log usage statistics
   logUsageStats(result?.raw?.response_metadata?.usage, invokeOptions?.metadata?.agent);
   
+  // Check if validation failed (parsed is null when Zod validation fails)
+  if (result?.parsed === null || result?.parsed === undefined) {
+    // Extract raw content for debugging
+    const rawContent = result?.raw?.content;
+    let contentText = "Unable to extract raw content";
+    
+    if (Array.isArray(rawContent) && rawContent.length > 0) {
+      // Anthropic format: content is array of blocks
+      const toolUse = rawContent.find((block: any) => block.type === "tool_use");
+      if (toolUse?.input) {
+        contentText = JSON.stringify(toolUse.input, null, 2);
+      }
+    } else if (typeof rawContent === "string") {
+      contentText = rawContent;
+    }
+    
+    const agent = invokeOptions?.metadata?.agent || "unknown";
+    
+    throw new Error(
+      `Structured output validation failed for agent '${agent}'.\n` +
+      `The LLM response did not match the required schema.\n\n` +
+      `Raw LLM output:\n${contentText}\n\n` +
+      `This typically means:\n` +
+      `- A field has the wrong type (e.g., string instead of array, or vice versa)\n` +
+      `- A required field is missing\n` +
+      `- A field contains invalid values\n\n` +
+      `Check LangSmith trace for detailed Zod validation errors.`
+    );
+  }
+  
   // Return just the parsed result (maintain backward compatibility)
-  return result?.parsed || result;
+  return result.parsed;
 };
 
 /**

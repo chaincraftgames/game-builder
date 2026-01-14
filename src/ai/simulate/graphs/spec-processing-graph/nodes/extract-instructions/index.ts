@@ -194,7 +194,7 @@ These markers will be expanded at runtime to provide full narrative guidance to 
     const schema = typeof state.stateSchema === 'string'
       ? JSON.parse(state.stateSchema)
       : state.stateSchema;
-    validateInstructionsArtifact(instructions, schema, state.specNarratives);
+    validateInstructionsArtifact(instructions, state, schema, state.specNarratives);
 
     // ========================================================================
     // POST-PROCESS: Resolve positional player templates
@@ -397,14 +397,55 @@ function validateStateDelta(
         break;
     }
     
+    // Validate that array values don't contain template variables (they won't be expanded)
+    if ((op.op === 'set' || op.op === 'append') && op.value !== undefined) {
+      if (Array.isArray(op.value)) {
+        const hasTemplates = JSON.stringify(op.value).includes('{{');
+        if (hasTemplates) {
+          errors.push(
+            `${context}: stateDelta[${i}] op '${op.op}' has array value containing template variables. ` +
+            `Template variables in arrays are not expanded. ` +
+            `Use bracket notation to set array elements individually: ` +
+            `Instead of {"op": "set", "path": "array", "value": ["{{var1}}", "{{var2}}"]}, ` +
+            `use {"op": "set", "path": "array[0]", "value": "{{var1}}"} and {"op": "set", "path": "array[1]", "value": "{{var2}}"}`
+          );
+        }
+      } else if (typeof op.value === 'object' && op.value !== null) {
+        // Also check nested arrays in objects
+        const checkForTemplatesInArrays = (obj: any, path: string = ''): void => {
+          for (const [key, val] of Object.entries(obj)) {
+            const fullPath = path ? `${path}.${key}` : key;
+            if (Array.isArray(val) && JSON.stringify(val).includes('{{')) {
+              errors.push(
+                `${context}: stateDelta[${i}] op '${op.op}' has nested array at '${fullPath}' containing template variables. ` +
+                `Template variables in arrays are not expanded.`
+              );
+            } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+              checkForTemplatesInArrays(val, fullPath);
+            }
+          }
+        };
+        checkForTemplatesInArrays(op.value);
+      }
+    }
+    
     // Validate field references if schema provided
     if (schemaFields) {
       const pathField = op.path || op.fromPath || op.toPath;
       if (pathField && typeof pathField === 'string') {
         // Extract field path without template variables
-        const cleanPath = pathField.replace(/\{\{[^}]+\}\}/g, '*');
+        // Handle both dot and bracket notation:
+        //   players.{{playerId}}.score → players[*].score
+        //   players[{{playerId}}].score → players[*].score
+        let cleanPath = pathField
+          .replace(/\[\{\{[^}]+\}\}\]/g, '[*]')      // Handle bracket notation first: [{{x}}] → [*]
+          .replace(/\.?\{\{[^}]+\}\}\.?/g, '[*].')   // Then handle dot notation: .{{x}}. → [*].
+          .replace(/\.\[/g, '[')                      // Fix players.[*] → players[*]
+          .replace(/\.\./g, '.')                      // Fix double dots
+          .replace(/\.\s*$/, '');                     // Remove trailing dot
+        
         // Skip validation if path is fully templated or contains complex expressions
-        if (!cleanPath.includes('{{') && cleanPath !== '*') {
+        if (!cleanPath.includes('{{') && cleanPath !== '[*]') {
           if (!isValidFieldReference(cleanPath, schemaFields)) {
             warnings.push(
               `${context}: stateDelta[${i}] references unknown field: ${pathField}`
@@ -417,10 +458,379 @@ function validateStateDelta(
 }
 
 /**
+ * Validate that the init transition initializes all fields required by transition preconditions.
+ * 
+ * Every field referenced in any transition precondition MUST be initialized by the init transition,
+ * EXCEPT for router context fields which are computed at runtime.
+ * This ensures preconditions can be evaluated without undefined values and prevents runtime deadlocks.
+ */
+function validateInitializationCompleteness(
+  artifact: InstructionsArtifact,
+  state: SpecProcessingStateType
+): string[] {
+  const errors: string[] = [];
+
+  // Fields computed by the router at runtime, not stored in game state
+  const ROUTER_CONTEXT_FIELDS = new Set([
+    'allPlayersCompletedActions',
+    'playersCount',
+    'playerCount',
+    'allPlayersReady',
+    'anyPlayerReady',
+  ]);
+
+  // Parse transitions to get preconditions
+  let transitions: any;
+  try {
+    transitions = typeof state.stateTransitions === 'string'
+      ? JSON.parse(state.stateTransitions)
+      : state.stateTransitions;
+  } catch (e) {
+    // If transitions can't be parsed, skip this validation
+    return [];
+  }
+
+  const transitionList = transitions.transitions || [];
+
+  // 1. Collect all fields referenced in preconditions
+  const preconditionFields = new Set<string>();
+  transitionList.forEach((t: any) => {
+    if (!t.preconditions || !Array.isArray(t.preconditions)) return;
+
+    t.preconditions.forEach((p: any) => {
+      if (!p.logic) return;
+      const fields = extractFieldReferences(p.logic);
+      fields.forEach((f: string) => {
+        // Strip .length suffix since it's automatic on arrays - only validate the base array exists
+        const baseField = f.endsWith('.length') ? f.slice(0, -7) : f;
+        preconditionFields.add(baseField);
+      });
+    });
+  });
+
+  // If no fields are used in preconditions, nothing to validate
+  if (preconditionFields.size === 0) return [];
+
+  // 2. Find the init transition
+  const initTransition = transitionList.find((t: any) => t.fromPhase === 'init');
+  if (!initTransition) {
+    return []; // Should be caught by other validations
+  }
+
+  // 3. Get the init transition's instructions from artifact
+  const initInstructions = artifact.transitions[initTransition.id];
+  if (!initInstructions) {
+    return [`Init transition "${initTransition.id}" has no instructions in artifact`];
+  }
+
+  // 4. Extract fields set by init's stateDelta
+  const initializedFields = new Set<string>();
+  if (initInstructions.stateDelta && Array.isArray(initInstructions.stateDelta)) {
+    initInstructions.stateDelta.forEach((op: any) => {
+      if (op.path && typeof op.path === 'string') {
+        // Normalize to bracket-wildcard format to match precondition field extraction
+        // players.{{playerId}}.score -> players[*].score
+        // players.{{player1Id}}.score -> players[*].score
+        // players.player1.score -> players[*].score
+        let normalizedPath = op.path
+          .replace(/\.\{\{[^}]+\}\}\./g, '[*].')     // .{{playerId}}. -> [*].
+          .replace(/\.player\d+\./g, '[*].')         // .player1. -> [*].
+          .replace(/players\.\*/g, 'players[*]');    // players.* -> players[*]
+
+        initializedFields.add(op.path);  // Add original path
+        initializedFields.add(normalizedPath);  // Add normalized path
+
+        // Also add base array path if this is an array index initialization
+        // e.g., game.deadlyChoiceIndexPerTurn[0] -> game.deadlyChoiceIndexPerTurn
+        const baseArrayPath = op.path.replace(/\[\d+\]$/, '');
+        if (baseArrayPath !== op.path) {
+          initializedFields.add(baseArrayPath);
+          // Normalize the base array path too
+          const normalizedBaseArrayPath = baseArrayPath
+            .replace(/\.\{\{[^}]+\}\}\./g, '[*].')
+            .replace(/\.player\d+\./g, '[*].')
+            .replace(/players\.\*/g, 'players[*]');
+          initializedFields.add(normalizedBaseArrayPath);
+        }
+      }
+    });
+  }
+
+  // 5. Check that all precondition fields are initialized (excluding router context fields)
+  const uninitializedFields: string[] = [];
+  preconditionFields.forEach((field: string) => {
+    // Skip router context fields - they're computed at runtime
+    if (ROUTER_CONTEXT_FIELDS.has(field)) return;
+    
+    if (initializedFields.has(field)) return;
+
+    // Check if a wildcard version is initialized (e.g., players.* covers players[0])
+    const normalizedField = field.replace(/\[\d+\]/g, '.*').replace(/\.\d+\./g, '.*.');
+    if (initializedFields.has(normalizedField)) return;
+
+    uninitializedFields.push(field);
+  });
+
+  // Report uninitialized fields as errors
+  uninitializedFields.forEach((field: string) => {
+    errors.push(
+      `Field "${field}" is used in transition preconditions but is never initialized by the init transition "${initTransition.id}". ` +
+      `This will cause transitions to fail at runtime when comparing undefined values. ` +
+      `Add a stateDelta operation in the init transition to set ${field} to an appropriate initial value.`
+    );
+  });
+
+  return errors;
+}
+
+/**
+ * Validate that the initial state satisfies preconditions for transitions from the starting phase.
+ * This catches deadlocks where init sets values that prevent any transition from firing.
+ * 
+ * @param artifact - Instructions artifact with transitions
+ * @param state - Processing state with stateTransitions
+ * @returns Array of error messages (empty if valid)
+ */
+function validateInitialStatePreconditions(
+  artifact: InstructionsArtifact,
+  state: SpecProcessingStateType
+): string[] {
+  console.debug('[extract_instructions][validation] Validating initial state preconditions');
+  const errors: string[] = [];
+
+  // 1. Parse transitions
+  let transitions: any;
+  try {
+    transitions = typeof state.stateTransitions === 'string'
+      ? JSON.parse(state.stateTransitions)
+      : state.stateTransitions;
+  } catch (e) {
+    return ['Cannot parse stateTransitions to validate initial state preconditions'];
+  }
+
+  if (!transitions.transitions || !Array.isArray(transitions.transitions)) {
+    return []; // Should be caught by other validations
+  }
+
+  // 2. Find init transition and its target phase
+  const initTransition = transitions.transitions.find((t: any) => t.fromPhase === 'init');
+  if (!initTransition) {
+    return []; // Should be caught by other validations
+  }
+
+  const startingPhase = initTransition.toPhase;
+  if (!startingPhase) {
+    return ['Init transition has no toPhase'];
+  }
+
+  // 3. Get init instructions
+  const initInstructions = artifact.transitions[initTransition.id];
+  if (!initInstructions) {
+    return []; // Should be caught by other validations
+  }
+
+  // 4. Build mock initial state by applying init's stateDelta
+  const mockState: any = {
+    game: {},
+    players: {}
+  };
+
+  if (initInstructions.stateDelta && Array.isArray(initInstructions.stateDelta)) {
+    initInstructions.stateDelta.forEach((op: any) => {
+      if (!op.path || typeof op.path !== 'string') return;
+
+      // Skip RNG operations - we don't know the exact value but we know it will be set
+      if (op.op === 'rng') {
+        // Set a placeholder value of the appropriate type based on choices
+        const path = op.path;
+        const parts = path.split('.');
+        let current = mockState;
+        
+        for (let i = 0; i < parts.length - 1; i++) {
+          const part = parts[i];
+          if (!current[part]) {
+            current[part] = {};
+          }
+          current = current[part];
+        }
+        
+        const lastPart = parts[parts.length - 1];
+        // Set to first choice value (or 0 for numbers, 'string' for strings, true for boolean)
+        if (op.choices && Array.isArray(op.choices) && op.choices.length > 0) {
+          current[lastPart] = op.choices[0];
+        } else {
+          current[lastPart] = null; // Unknown type
+        }
+        return;
+      }
+
+      // Handle set operations
+      if (op.op === 'set') {
+        const path = op.path;
+        const value = op.value;
+        
+        // Parse path and set value
+        const parts = path.split('.');
+        let current = mockState;
+        
+        for (let i = 0; i < parts.length - 1; i++) {
+          const part = parts[i];
+          // Handle both object keys and array indices
+          const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
+          if (arrayMatch) {
+            const arrayName = arrayMatch[1];
+            const index = parseInt(arrayMatch[2], 10);
+            if (!current[arrayName]) {
+              current[arrayName] = [];
+            }
+            if (!current[arrayName][index]) {
+              current[arrayName][index] = {};
+            }
+            current = current[arrayName][index];
+          } else {
+            if (!current[part]) {
+              current[part] = {};
+            }
+            current = current[part];
+          }
+        }
+        
+        const lastPart = parts[parts.length - 1];
+        const arrayMatch = lastPart.match(/^(.+)\[(\d+)\]$/);
+        if (arrayMatch) {
+          const arrayName = arrayMatch[1];
+          const index = parseInt(arrayMatch[2], 10);
+          if (!current[arrayName]) {
+            current[arrayName] = [];
+          }
+          current[arrayName][index] = value;
+        } else {
+          current[lastPart] = value;
+        }
+      }
+    });
+  }
+
+  // 5. Find all transitions from the starting phase
+  const startingTransitions = transitions.transitions.filter(
+    (t: any) => t.fromPhase === startingPhase
+  );
+
+  if (startingTransitions.length === 0) {
+    errors.push(
+      `Init transition moves to phase "${startingPhase}" but there are no transitions from that phase. ` +
+      `This creates an immediate deadlock.`
+    );
+    return errors;
+  }
+
+  // 6. Check if any transition's preconditions can be satisfied
+  // For simplicity, we'll check for deterministic boolean fields that have explicit false values
+  // preventing transitions from firing
+  const canFireTransitions = startingTransitions.filter((t: any) => {
+    if (!t.preconditions || !Array.isArray(t.preconditions)) {
+      return true; // No preconditions means it can fire
+    }
+
+    // Check for simple blocking conditions: boolean fields set to wrong value
+    const blockingConditions = t.preconditions.filter((p: any) => {
+      if (!p.logic) return false;
+
+      // Check for allPlayers/anyPlayer patterns on boolean fields
+      // Pattern: {"allPlayers": ["fieldName", "==", true]}
+      if (p.logic.allPlayers && Array.isArray(p.logic.allPlayers) && p.logic.allPlayers.length === 3) {
+        const [field, op, expectedValue] = p.logic.allPlayers;
+        
+        if (typeof expectedValue === 'boolean' && (op === '==' || op === '===')) {
+          // Check if any player has this field set to the opposite value
+          const players = Object.values(mockState.players || {});
+          if (players.length > 0) {
+            const allMatch = players.every((player: any) => player[field] === expectedValue);
+            if (!allMatch) {
+              return true; // Blocking condition found
+            }
+          }
+        }
+      }
+
+      if (p.logic.anyPlayer && Array.isArray(p.logic.anyPlayer) && p.logic.anyPlayer.length === 3) {
+        const [field, op, expectedValue] = p.logic.anyPlayer;
+        
+        if (typeof expectedValue === 'boolean' && (op === '==' || op === '===')) {
+          // Check if no player has this field set to the expected value
+          const players = Object.values(mockState.players || {});
+          if (players.length > 0) {
+            const anyMatch = players.some((player: any) => player[field] === expectedValue);
+            if (!anyMatch) {
+              return true; // Blocking condition found
+            }
+          }
+        }
+      }
+
+      return false;
+    });
+
+    // If any blocking condition found, this transition cannot fire
+    return blockingConditions.length === 0;
+  });
+
+  if (canFireTransitions.length === 0) {
+    // Build helpful error message
+    const phaseMetadata = transitions.phaseMetadata?.find((pm: any) => pm.phase === startingPhase);
+    const requiresPlayerInput = phaseMetadata?.requiresPlayerInput ?? false;
+
+    console.error('[extract_instructions][validation] Deadlock detected in initial state!');
+    console.error(`[extract_instructions][validation] Starting phase: ${startingPhase}, requiresPlayerInput: ${requiresPlayerInput}`);
+    console.error(`[extract_instructions][validation] Mock state:`, JSON.stringify(mockState, null, 2));
+
+    errors.push(
+      `Init transition creates immediate deadlock. After initialization, game moves to phase "${startingPhase}" ` +
+      `but none of the ${startingTransitions.length} transition(s) from that phase can fire. ` +
+      `Phase requires player input: ${requiresPlayerInput}. ` +
+      `Common issue: init sets boolean fields (like actionRequired) to values that block all transitions. ` +
+      `Review init transition stateDelta and starting transitions' preconditions to ensure compatibility.`
+    );
+
+    // Add details about each transition's blocking conditions
+    startingTransitions.forEach((t: any) => {
+      if (!t.preconditions || t.preconditions.length === 0) return;
+      
+      const issues: string[] = [];
+      t.preconditions.forEach((p: any) => {
+        if (p.logic?.allPlayers && Array.isArray(p.logic.allPlayers) && p.logic.allPlayers.length === 3) {
+          const [field, op, expectedValue] = p.logic.allPlayers;
+          if (typeof expectedValue === 'boolean') {
+            const players = Object.values(mockState.players || {});
+            if (players.length > 0) {
+              const actualValues = players.map((player: any) => player[field]);
+              const allMatch = players.every((player: any) => player[field] === expectedValue);
+              if (!allMatch) {
+                issues.push(
+                  `Precondition "${p.id}" requires all players have ${field}=${expectedValue}, ` +
+                  `but init sets it to ${JSON.stringify(actualValues)}`
+                );
+              }
+            }
+          }
+        }
+      });
+
+      if (issues.length > 0) {
+        errors.push(`  Transition "${t.id}" (${t.fromPhase} → ${t.toPhase}): ${issues.join('; ')}`);
+      }
+    });
+  }
+
+  return errors;
+}
+
+/**
  * Validate instructions artifact for correctness and completeness
  */
 function validateInstructionsArtifact(
   artifact: InstructionsArtifact,
+  state: SpecProcessingStateType,
   schema?: any,
   specNarratives?: Record<string, string>
 ): void {
@@ -534,6 +944,18 @@ function validateInstructionsArtifact(
   const narrativeErrors = validateNarrativeMarkers(artifact, specNarratives);
   if (narrativeErrors.length > 0) {
     errors.push(...narrativeErrors);
+  }
+
+  // Validate initialization completeness
+  const initializationErrors = validateInitializationCompleteness(artifact, state);
+  if (initializationErrors.length > 0) {
+    errors.push(...initializationErrors);
+  }
+
+  // Validate initial state satisfies starting phase preconditions
+  const initialStatePreconditionErrors = validateInitialStatePreconditions(artifact, state);
+  if (initialStatePreconditionErrors.length > 0) {
+    errors.push(...initialStatePreconditionErrors);
   }
 
   // Log warnings

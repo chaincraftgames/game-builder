@@ -23,11 +23,11 @@ function extractPlannerFields(plannerOutput: string): Array<{name: string, path:
   const fields: Array<{name: string, path: string}> = [];
   
   try {
-    // Look for Fields: [...] JSON array in planner output
-    const fieldsMatch = plannerOutput.match(/Fields:\s*\[(.*?)\]/s);
+    // Look for Fields: ```json [...] ``` markdown code block in planner output
+    const fieldsMatch = plannerOutput.match(/Fields:\s*```json\s*([\s\S]*?)```/i);
     if (!fieldsMatch) return fields;
     
-    const fieldsJson = '[' + fieldsMatch[1] + ']';
+    const fieldsJson = fieldsMatch[1].trim();
     const parsed = JSON.parse(fieldsJson);
     
     if (Array.isArray(parsed)) {

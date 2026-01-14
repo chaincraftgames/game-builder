@@ -14,6 +14,33 @@ import {
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
 import { queueAction } from "./action-queues.js";
+import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
+
+/**
+ * Replace player aliases (player1, player2, etc.) with real UUIDs in message text.
+ * Case-insensitive but requires exact pattern match (e.g., "Player 1" won't match).
+ * 
+ * @param message - Message text containing player aliases
+ * @param playerMapping - Mapping from aliases (player1, player2) to UUIDs
+ * @returns Message with aliases replaced by UUIDs
+ */
+function replacePlayerAliasesWithUUIDs(message: string, playerMapping: Record<string, string>): string {
+  // Match player1, player2, etc. (case-insensitive, word boundaries)
+  return message.replace(/\bplayer(\d+)\b/gi, (match) => {
+    // Normalize to lowercase to look up in mapping
+    const alias = match.toLowerCase();
+    const uuid = playerMapping[alias];
+    
+    if (uuid) {
+      console.debug(`[simulate_workflow] Replaced ${match} with ${uuid} in message`);
+      return uuid;
+    }
+    
+    // If no mapping found, return original (shouldn't happen but safe fallback)
+    console.warn(`[simulate_workflow] No UUID found for player alias: ${match}`);
+    return match;
+  });
+}
 
 // Cache for runtime graphs to avoid recompilation
 const runtimeGraphCache = new GraphCache(
@@ -175,19 +202,31 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   // Extract game and players from parsed state
   const { game, players } = gameState;
   
-  const publicMessage = game?.publicMessage;
+  // Get player mapping for alias replacement in messages
+  const playerMapping = deserializePlayerMapping(state.playerMapping || "{}");
+  
+  // Replace player aliases with UUIDs in public message
+  const publicMessage = game?.publicMessage 
+    ? replacePlayerAliasesWithUUIDs(game.publicMessage, playerMapping)
+    : undefined;
+  
   const gameEnded = game?.gameEnded ?? false;
   const gameError = game?.gameError || undefined;
   const playerStates: PlayerStates = new Map();
   
   for (const playerId in players) {
-    const privateMessage = players[playerId].privateMessage;
+    const rawPrivateMessage = players[playerId].privateMessage;
     const actionRequired = players[playerId].actionRequired ?? false;
     const actionsAllowed = players[playerId].actionsAllowed;
     
+    // Replace player aliases with UUIDs in private message
+    const privateMessage = rawPrivateMessage
+      ? replacePlayerAliasesWithUUIDs(rawPrivateMessage, playerMapping)
+      : undefined;
+    
     // Build player state with actionsAllowed defaulted to actionRequired
     const playerState: RuntimePlayerState = {
-      privateMessage: privateMessage || undefined,
+      privateMessage,
       actionRequired,
       illegalActionCount: players[playerId].illegalActionCount ?? 0,
       actionsAllowed: actionsAllowed !== undefined && actionsAllowed !== null 

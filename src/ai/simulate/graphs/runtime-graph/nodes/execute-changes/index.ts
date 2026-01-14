@@ -53,11 +53,11 @@ export function executeChanges(model: ModelWithOptions) {
       console.debug("[execute_changes] Instructions value:", instructions.substring(0, 200));
     }
     
-    // Transform state to use aliases (p1, p2, ...) for LLM
+    // Transform state to use aliases (player1, player2, ...) for LLM
     const aliasedState = transformStateToAliases(canonicalState, playerMapping);
     
     // Transform player IDs array to aliases for prompt
-    const aliasedPlayerIds = Object.keys(playerMapping).sort(); // ["p1", "p2", ...]
+    const aliasedPlayerIds = Object.keys(playerMapping).sort(); // ["player1", "player2", ...]
     
     // Transform playerAction to use alias instead of UUID
     const reverseMap = reversePlayerMapping(playerMapping);

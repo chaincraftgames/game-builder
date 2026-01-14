@@ -56,7 +56,9 @@ Natural summary:
 "<one to three short sentences>"
 
 Fields:
+\`\`\`json
 <JSON array as described above>
+\`\`\`
 
 Example (exact formatting expected):
 Natural summary:
@@ -64,12 +66,14 @@ Natural summary:
 moves are in. Scores updated per head-to-head matches."
 
 Fields:
+\`\`\`json
 [
   {{"name":"currentPhase","type":"string","purpose":"Track current game phase",
     "path": "game","source":"system"}}, 
   {{"name":"Choice","type":"enum","purpose":"player selection",
     "path":"player","source":"player","constraints":"enum:[rock,paper,scissors]"}}
 ]
+\`\`\`
 !___ END-CACHE ___!
 
 !___ CACHE:design-planner ___!
