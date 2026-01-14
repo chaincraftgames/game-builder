@@ -9,9 +9,9 @@ import { BaseMessage } from "@langchain/core/messages";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
-import { GameDesignState } from "#chaincraft/ai/design/game-design-state.js";
-import { SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
-import { SYSTEM_PROMPT } from "./prompts.js";
+import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
+import { GameDesignSpecification, SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
+import { getSpecPlanPrompt } from "./prompts.js";
 
 /**
  * Extracts messages that are relevant for planning spec updates.
@@ -57,7 +57,7 @@ function formatConversationHistory(messages: BaseMessage[]): string {
  * @returns Formatted string for prompt variable replacement
  */
 function formatCurrentSpec(
-  currentSpec: typeof GameDesignState.State.currentGameSpec
+  currentSpec?: GameDesignSpecification
 ): string {
   if (!currentSpec) {
     return "**Current Specification:** None (this is the first specification)";
@@ -103,9 +103,6 @@ export function createSpecPlan(model: ModelWithOptions) {
   // Create structured output parser using central schema
   const parser = StructuredOutputParser.fromZodSchema(SpecPlanSchema);
   
-  // Create system prompt template
-  const systemTemplate = SystemMessagePromptTemplate.fromTemplate(SYSTEM_PROMPT);
-  
   return async (state: typeof GameDesignState.State) => {
     // 1. Extract relevant messages (conversation since last spec update)
     const relevantMessages = extractRelevantMessages(state);
@@ -117,18 +114,25 @@ export function createSpecPlan(model: ModelWithOptions) {
       );
     }
     
-    // 2. Format the conversation as text
+    // 2. Determine if this is initial generation
+    const isInitialGeneration = !state.currentSpec;
+    
+    // 3. Get appropriate prompt for initial vs iterative generation
+    const systemPromptTemplate = getSpecPlanPrompt(isInitialGeneration);
+    const systemTemplate = SystemMessagePromptTemplate.fromTemplate(systemPromptTemplate);
+    
+    // 4. Format the conversation as text
     const conversationHistory = formatConversationHistory(relevantMessages);
     
-    // 3. Prepare template variables
-    const currentSpec = formatCurrentSpec(state.currentGameSpec);
+    // 5. Prepare template variables
+    const currentSpec = formatCurrentSpec(state.currentSpec);
     const conversationSummary = formatConversationSummary(
       relevantMessages.length,
-      !state.currentGameSpec
+      isInitialGeneration
     );
     const formatInstructions = parser.getFormatInstructions();
     
-    // 4. Format system prompt using template
+    // 6. Format system prompt using template
     const systemMessage = await systemTemplate.format({
       currentSpec,
       conversationSummary,
@@ -158,10 +162,24 @@ export function createSpecPlan(model: ModelWithOptions) {
     // 7. Parse the structured output
     const specPlan = await parser.parse(cleanedResponse);
     
-    // 8. Return state update with the structured plan
-    return {
-      specPlan: specPlan,
+    // 8. Prepare state updates
+    const updates: any = {
+      specPlan,
+      pendingSpecChanges: [specPlan],
+      specDiff: undefined, // Clear old diff since we're accumulating, not generating
     };
+    
+    // Only update narrativeStyleGuidance if it was provided in the plan
+    if (specPlan.narrativeStyleGuidance) {
+      updates.narrativeStyleGuidance = specPlan.narrativeStyleGuidance;
+    }
+    
+    // If narrativeChanges are specified, add those keys to narrativesNeedingUpdate
+    if (specPlan.narrativeChanges && specPlan.narrativeChanges.length > 0) {
+      updates.narrativesNeedingUpdate = specPlan.narrativeChanges.map(nc => nc.key);
+    }
+    
+    return updates;
   };
 }
 

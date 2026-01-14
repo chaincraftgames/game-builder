@@ -515,11 +515,13 @@ FINISHED:
         }
         
         // Check messages
-        if (action.messages?.private?.template) {
-          validateTemplateString(
-            action.messages.private.template, 
-            `Action ${action.id} private message`
-          );
+        if (action.messages?.private) {
+          for (const privateMsg of action.messages.private) {
+            validateTemplateString(
+              privateMsg.template, 
+              `Action ${action.id} private message`
+            );
+          }
         }
         if (action.messages?.public?.template) {
           validateTemplateString(
@@ -545,11 +547,13 @@ FINISHED:
         }
       }
       
-      if (transition.messages?.private?.template) {
-        validateTemplateString(
-          transition.messages.private.template, 
-          `Transition ${transition.id} private message`
-        );
+      if (transition.messages?.private) {
+        for (const privateMsg of transition.messages.private) {
+          validateTemplateString(
+            privateMsg.template, 
+            `Transition ${transition.id} private message`
+          );
+        }
       }
       if (transition.messages?.public?.template) {
         validateTemplateString(

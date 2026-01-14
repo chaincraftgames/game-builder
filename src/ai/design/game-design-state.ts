@@ -19,11 +19,16 @@ export type {
   ValidationError,
 };
 
+export const CONSOLIDATION_DEFAULTS = {
+  planThreshold: 5,
+  charThreshold: 2000,
+} as const;
+
 export const GameDesignState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
     // combine the messages because we are using a checkpointer that saves the state,
     // so we want to updated the saved state with the new messages.
-    reducer: (x, y) => [ ...x, ...y ], 
+    reducer: (x, y) => [...x, ...y],
   }),
   title: Annotation<string>({
     reducer: (_, y) => y, // Always take the newest title
@@ -31,20 +36,12 @@ export const GameDesignState = Annotation.Root({
   systemPromptVersion: Annotation<string>({
     reducer: (_, y) => y, // Always take the newest version
   }),
-  specRequested: Annotation<boolean>({
-    reducer: (_, y) => y,
-  }),
-  currentGameSpec: Annotation<GameDesignSpecification | undefined>({
-    reducer: (_, y) => y,
-  }),
-  
-  // === New fields for design workflow graph ===
-  
+
   // Version tracking
   specVersion: Annotation<number>({
     reducer: (_, y) => y ?? 0, // Start at 0, incremented when specs are generated
   }),
-  
+
   // Routing flags
   specUpdateNeeded: Annotation<boolean>({
     reducer: (_, y) => y ?? false,
@@ -52,7 +49,7 @@ export const GameDesignState = Annotation.Root({
   metadataUpdateNeeded: Annotation<boolean>({
     reducer: (_, y) => y ?? false,
   }),
-  
+
   // Natural language change plans
   specPlan: Annotation<SpecPlan | undefined>({
     reducer: (_, y) => y,
@@ -64,18 +61,48 @@ export const GameDesignState = Annotation.Root({
   metadataChangePlan: Annotation<string | undefined>({
     reducer: (_, y) => y,
   }),
-  
+
   // Generated content
-  spec: Annotation<GameDesignSpecification | undefined>({
+  currentSpec: Annotation<GameDesignSpecification | undefined>({
     reducer: (_, y) => y,
   }),
   updatedSpec: Annotation<GameDesignSpecification | undefined>({
     reducer: (_, y) => y,
   }),
+  narrativeStyleGuidance: Annotation<string | undefined>({
+    reducer: (_, y) => y,
+  }),
+  specNarratives: Annotation<Record<string, string> | undefined>({
+    reducer: (_, y) => y,
+  }),
+  narrativesNeedingUpdate: Annotation<string[]>({
+    reducer: (_, y) => y ?? [],
+  }),
   metadata: Annotation<GamepieceMetadata | undefined>({
     reducer: (_, y) => y,
   }),
-  
+
+  // Spec Gen Batching
+  pendingSpecChanges: Annotation<SpecPlan[]>({
+    reducer: (x, y) => {
+      // If y is an empty array and x exists, this is a clear operation - replace
+      if (y.length === 0 && x && x.length > 0) {
+        return [];
+      }
+      // Otherwise append (normal accumulation)
+      return [...(x || []), ...y];
+    },
+  }),
+  forceSpecGeneration: Annotation<boolean>({
+    reducer: (_, y) => y ?? false,
+  }),
+  consolidationThreshold: Annotation<number>({
+    reducer: (_, y) => y ?? CONSOLIDATION_DEFAULTS.planThreshold,
+  }),
+  consolidationCharLimit: Annotation<number>({
+    reducer: (_, y) => y ?? CONSOLIDATION_DEFAULTS.charThreshold,
+  }),
+
   // Diffs for user review
   specDiff: Annotation<string | undefined>({
     reducer: (_, y) => y,
@@ -83,7 +110,7 @@ export const GameDesignState = Annotation.Root({
   metadataDiff: Annotation<string | undefined>({
     reducer: (_, y) => y,
   }),
-  
+
   // Validation
   validationErrors: Annotation<ValidationError[]>({
     reducer: (_, y) => y ?? [],
@@ -91,7 +118,7 @@ export const GameDesignState = Annotation.Root({
   retryCount: Annotation<number>({
     reducer: (_, y) => y ?? 0,
   }),
-  
+
   // Timestamps for tracking
   lastSpecUpdate: Annotation<string | undefined>({
     reducer: (_, y) => y,
@@ -99,10 +126,20 @@ export const GameDesignState = Annotation.Root({
   lastMetadataUpdate: Annotation<string | undefined>({
     reducer: (_, y) => y,
   }),
-  
+
   // Message count tracking (for filtering messages since last spec update)
   lastSpecMessageCount: Annotation<number | undefined>({
     reducer: (_, y) => y,
   }),
 });
 
+/** 
+ * The default values in the reducer only apply when the value is set.  This function
+ * returns the effective consolidation thresholds taking into account the defaults.
+ */
+export function getConsolidationThresholds(state: typeof GameDesignState.State) {
+  return {
+    planThreshold: state.consolidationThreshold ?? CONSOLIDATION_DEFAULTS.planThreshold,
+    charThreshold: state.consolidationCharLimit ?? CONSOLIDATION_DEFAULTS.charThreshold,
+  };
+}

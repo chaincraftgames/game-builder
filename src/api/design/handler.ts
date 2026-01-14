@@ -3,6 +3,9 @@ import {
   ContinueDesignConversationRequest,
   ContinueDesignConversationRequestSchema,
   ContinueDesignConversationResponse,
+  GenerateSpecRequest,
+  GenerateSpecRequestSchema,
+  GenerateSpecResponse,
   GenerateImageRequest,
   GenerateImageRequestSchema,
   GenerateImageResponse,
@@ -24,7 +27,23 @@ import {
   getConversationHistory,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
+import { expandSpecification } from "#chaincraft/ai/design/expand-narratives.js";
 import { uploadToIpfs } from "#chaincraft/integrations/storage/pinata.js";
+
+/**
+ * Helper to expand narratives in a specification for API responses.
+ * Uses narratives returned from workflow functions.
+ */
+function expandSpecForAPI(
+  spec: any,
+  narratives: Record<string, string> | undefined
+): any {
+  if (!spec || !narratives || Object.keys(narratives).length === 0) {
+    return spec;
+  }
+  
+  return expandSpecification(spec, narratives);
+}
 
 export async function handleContinueDesignConversation(
   request: FastifyRequest<{ Body: ContinueDesignConversationRequest }>,
@@ -40,19 +59,31 @@ export async function handleContinueDesignConversation(
   }
 
   try {
-    const { conversationId, userMessage, gameDescription } = result.data;
+    const {
+      conversationId,
+      userMessage,
+      gameDescription,
+      forceSpecGeneration,
+    } = result.data;
     const response = await continueDesignConversation(
       conversationId,
       userMessage,
-      gameDescription
+      gameDescription,
+      forceSpecGeneration
     );
+
+    // Expand narratives for API response
+    const expandedSpec = expandSpecForAPI(response.specification, response.specNarratives);
 
     return {
       designResponse: response.designResponse,
       updatedTitle: response.updatedTitle,
       systemPromptVersion: response.systemPromptVersion,
-      specification: response.specification,
+      specification: expandedSpec,
       specDiff: response.specDiff,
+      pendingSpecChanges: response.pendingSpecChanges,
+      consolidationThreshold: response.consolidationThreshold,
+      consolidationCharLimit: response.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in continueDesignConversation:", error);
@@ -112,6 +143,9 @@ export async function handleGetFullSpecification(
       playerCount: specification.playerCount,
       designSpecification: specification.designSpecification,
       version: specification.version,
+      pendingSpecChanges: specification.pendingSpecChanges,
+      consolidationThreshold: specification.consolidationThreshold,
+      consolidationCharLimit: specification.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in getFullSpecification:", error);
@@ -140,12 +174,18 @@ export async function handleGetCachedSpecification(
       return Promise.reject();
     }
 
+    // Expand narratives for API response
+    const expandedSpec = expandSpecForAPI(specification, specification.specNarratives);
+
     return {
-      title: specification.title,
-      summary: specification.summary,
-      playerCount: specification.playerCount,
-      designSpecification: specification.designSpecification,
-      version: specification.version,
+      title: expandedSpec.title,
+      summary: expandedSpec.summary,
+      playerCount: expandedSpec.playerCount,
+      designSpecification: expandedSpec.designSpecification,
+      version: expandedSpec.version,
+      pendingSpecChanges: expandedSpec.pendingSpecChanges,
+      consolidationThreshold: expandedSpec.consolidationThreshold,
+      consolidationCharLimit: expandedSpec.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in getCachedSpecification:", error);
@@ -181,7 +221,6 @@ export async function handleGetConversationHistory(
     return Promise.reject();
   }
 }
-
 
 export async function handlePublishGame(
   request: FastifyRequest<{ Body: PublishGameRequest }>,
@@ -227,6 +266,54 @@ export async function handlePublishGame(
     };
   } catch (error) {
     console.error("Error in publishGame:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+/**
+ * Trigger specification generation for a conversation
+ * This bypasses the conversation node and forces spec generation
+ */
+export async function handleGenerateSpec(
+  request: FastifyRequest<{ Body: GenerateSpecRequest }>,
+  reply: FastifyReply
+): Promise<GenerateSpecResponse> {
+  const result = GenerateSpecRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId } = result.data;
+
+    // Check if conversation exists and has pending changes
+    const isActive = await isActiveConversation(conversationId);
+    if (!isActive) {
+      reply.code(404).send({ error: "Conversation not found" });
+      return Promise.reject();
+    }
+
+    // Trigger spec generation by calling continueDesignConversation
+    // with forceSpecGeneration flag and empty message
+    // Fire-and-forget - runs in background, app can poll for completion
+    continueDesignConversation(
+      conversationId,
+      "", // Empty message - we're just forcing spec gen
+      undefined, // No game description needed
+      true // forceSpecGeneration
+    ).catch((err) => {
+      console.error(`[force-spec] Background generation error for conversation ${conversationId}:`, err);
+    });
+
+    return {
+      message: "Specification generation started",
+      specUpdateInProgress: true,
+    };
+  } catch (error) {
+    console.error("Error in generateSpec:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }

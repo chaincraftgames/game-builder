@@ -86,10 +86,14 @@ export async function initializeSimulation(
   specVersion: number,
   isPlayTest = false
 ): Promise<void> {
+  // Note: gameId is the same as the design conversationId (simThread.id)
+  // We don't pass gameSpec.designSpecification - it will be retrieved from design workflow
+  //TODO session d needs to be unique otherwise multiple sessions iof the same game will update each others state.
   const { gameRules } = await createSimulation(
     simThread.id,
-    gameSpec.designSpecification,
+    simThread.id, // gameId (same as sessionId for this integration)
     specVersion
+    // gameSpec.designSpecification omitted - retrieved from design graph automatically
   );
 
   // Tag the user who started the simulation

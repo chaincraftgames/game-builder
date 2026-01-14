@@ -47,6 +47,11 @@ export const RuntimeState = Annotation.Root({
     reducer: (_, y) => y,
     default: () => ({}),
   }),
+  
+  specNarratives: Annotation<Record<string, string>>({
+    reducer: (_, y) => y,
+    default: () => ({}),
+  }),
 
   // Runtime state
   gameState: Annotation<string>({

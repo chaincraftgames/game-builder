@@ -6,10 +6,41 @@ import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
+import { 
+  getDesignSpecificationByVersion,
+  getCachedDesignSpecification 
+} from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "../memory/sqlite-memory.js";
 import { queueAction } from "./action-queues.js";
+import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
+
+/**
+ * Replace player aliases (player1, player2, etc.) with real UUIDs in message text.
+ * Case-insensitive but requires exact pattern match (e.g., "Player 1" won't match).
+ * 
+ * @param message - Message text containing player aliases
+ * @param playerMapping - Mapping from aliases (player1, player2) to UUIDs
+ * @returns Message with aliases replaced by UUIDs
+ */
+function replacePlayerAliasesWithUUIDs(message: string, playerMapping: Record<string, string>): string {
+  // Match player1, player2, etc. (case-insensitive, word boundaries)
+  return message.replace(/\bplayer(\d+)\b/gi, (match) => {
+    // Normalize to lowercase to look up in mapping
+    const alias = match.toLowerCase();
+    const uuid = playerMapping[alias];
+    
+    if (uuid) {
+      console.debug(`[simulate_workflow] Replaced ${match} with ${uuid} in message`);
+      return uuid;
+    }
+    
+    // If no mapping found, return original (shouldn't happen but safe fallback)
+    console.warn(`[simulate_workflow] No UUID found for player alias: ${match}`);
+    return match;
+  });
+}
 
 // Cache for runtime graphs to avoid recompilation
 const runtimeGraphCache = new GraphCache(
@@ -171,19 +202,31 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   // Extract game and players from parsed state
   const { game, players } = gameState;
   
-  const publicMessage = game?.publicMessage;
+  // Get player mapping for alias replacement in messages
+  const playerMapping = deserializePlayerMapping(state.playerMapping || "{}");
+  
+  // Replace player aliases with UUIDs in public message
+  const publicMessage = game?.publicMessage 
+    ? replacePlayerAliasesWithUUIDs(game.publicMessage, playerMapping)
+    : undefined;
+  
   const gameEnded = game?.gameEnded ?? false;
   const gameError = game?.gameError || undefined;
   const playerStates: PlayerStates = new Map();
   
   for (const playerId in players) {
-    const privateMessage = players[playerId].privateMessage;
+    const rawPrivateMessage = players[playerId].privateMessage;
     const actionRequired = players[playerId].actionRequired ?? false;
     const actionsAllowed = players[playerId].actionsAllowed;
     
+    // Replace player aliases with UUIDs in private message
+    const privateMessage = rawPrivateMessage
+      ? replacePlayerAliasesWithUUIDs(rawPrivateMessage, playerMapping)
+      : undefined;
+    
     // Build player state with actionsAllowed defaulted to actionRequired
     const playerState: RuntimePlayerState = {
-      privateMessage: privateMessage || undefined,
+      privateMessage,
       actionRequired,
       illegalActionCount: players[playerId].illegalActionCount ?? 0,
       actionsAllowed: actionsAllowed !== undefined && actionsAllowed !== null 
@@ -202,19 +245,84 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   };
 }
 
-/** Creates a simulation.  Returns the player count. */
+/**
+ * Creates a simulation by processing game specification and storing artifacts.
+ * 
+ * @param sessionId - The ID of the game session.  The same id should be used for 
+ * subsequent calls to initialize and process actions.  This id must be unique across
+ * all simulation sessions.
+ * @param gameId - Optional: The game ID (conversationId) to fetch spec from design 
+ * workflow. If not provided, the specification must be provided directly.
+ * @param gameSpecificationVersion - Optional: The version number of the specification 
+ * to use. If omitted, uses latest version.
+ * @param gameSpecification - Optional override: if provided, uses this spec directly 
+ * instead of retrieving from design workflow
+ * @returns The extracted game rules
+ */
 export async function createSimulation(
-  gameId: string,
-  gameSpecification: string,
-  gameSpecificationVersion: number
+  sessionId: string,
+  gameId?: string,
+  gameSpecificationVersion?: number,
+  gameSpecification?: string,
 ): Promise<{
   gameRules: string;
 }> {
   try {
-    console.log("[simulate] Creating simulation for game %s", gameId);
+    console.log("[simulate] Creating simulation for session %s", sessionId);
     
-    // Create spec key from game ID and version
-    const specKey = `${gameId}-v${gameSpecificationVersion}`;
+    // If gameSpecification not provided, retrieve it from design workflow
+    let specToUse = gameSpecification;
+    let versionToUse = gameSpecificationVersion;
+    
+    if (!specToUse) {
+      // We need to fetch spec from design workflow - gameId is required
+      if (!gameId) {
+        throw new Error(
+          `gameId is required when gameSpecification is not provided. sessionId (${sessionId}) cannot be used to fetch spec from design workflow.`
+        );
+      }
+    } 
+    
+    if (!specToUse) {
+      // If no version specified, get the latest
+      if (!versionToUse) {
+        console.log("[simulate] No version specified, retrieving latest spec from design workflow:", gameId);
+        const latestSpec = await getCachedDesignSpecification(gameId!);
+        
+        if (!latestSpec) {
+          throw new Error(
+            `Design specification not found for game ${gameId} (latest version)`
+          );
+        }
+        
+        specToUse = latestSpec.designSpecification;
+        versionToUse = latestSpec.version;
+        console.log("[simulate] Retrieved latest spec from design workflow, version:", versionToUse, "title:", latestSpec.title);
+      } else {
+        // Specific version requested
+        console.log("[simulate] Retrieving spec from design workflow:", gameId, "version:", versionToUse);
+        const designSpec = await getDesignSpecificationByVersion(gameId!, versionToUse);
+        
+        if (!designSpec) {
+          throw new Error(
+            `Design specification not found for game ${gameId} version ${versionToUse}`
+          );
+        }
+        
+        specToUse = designSpec.designSpecification;
+        console.log("[simulate] Retrieved spec from design workflow, title:", designSpec.title);
+      }
+    } else {
+      console.log("[simulate] Using provided game specification (override mode)");
+      // If version not provided with override, default to 1 for testing
+      if (!versionToUse) {
+        versionToUse = 1;
+        console.log("[simulate] No version provided with override, defaulting to version 1");
+      }
+    }
+    
+    // Create spec key from conversation ID and version (for caching spec artifacts)
+    const specKey = `${gameId}-v${versionToUse}`;
     
     // Step 1: Check for cached spec artifacts or generate new ones
     let artifacts = await getCachedSpecArtifacts(specKey);
@@ -228,7 +336,7 @@ export async function createSimulation(
       
       // Invoke spec graph - results saved to checkpoint automatically
       const specResult = await specGraph.invoke({
-        gameSpecification,
+        gameSpecification: specToUse,
       }, config);
       
       artifacts = {
@@ -245,9 +353,9 @@ export async function createSimulation(
     }
     
     // Step 2: Store artifacts in runtime graph checkpoint
-    // Get cached runtime graph for this game
-    const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
-    const config = { configurable: { thread_id: gameId } };
+    // Get cached runtime graph for this session
+    const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
+    const config = { configurable: { thread_id: sessionId } };
     
     console.log("[simulate] Invoking runtime graph to store artifacts (should route to END)");
     
@@ -262,7 +370,7 @@ export async function createSimulation(
       hasStateSchema: !!storeResult.stateSchema,
     });
     
-    console.log("[simulate] Runtime graph initialized with artifacts for game %s", gameId);
+    console.log("[simulate] Runtime graph initialized with artifacts for session %s", sessionId);
     
     return {
       gameRules: artifacts.gameRules,
@@ -319,7 +427,7 @@ export async function initializeSimulation(
     
     return { 
       publicMessage: simResponse.publicMessage, 
-      playerStates: simResponse.playerStates 
+      playerStates: simResponse.playerStates
     };
   } catch (error) {
     handleError("Failed to initialize simulation", error);
@@ -445,7 +553,6 @@ export async function getGameState(gameId: string): Promise<{ game: any; players
     return Promise.reject(error);
   }
 }
-
 
 /**
  * Updates a simulation with an updated game description.  This will attempt to update the

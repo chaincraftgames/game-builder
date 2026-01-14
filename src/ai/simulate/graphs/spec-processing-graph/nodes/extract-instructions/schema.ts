@@ -163,7 +163,7 @@ export const PhaseInstructionsHintSchema = z.object({
  * - transitions: Instructions for automatic transitions
  */
 export const InstructionsPlanningResponseSchema = z.object({
-  naturalLanguageSummary: z.string().max(500).describe(
+  naturalLanguageSummary: z.string().describe(
     "1-3 sentence summary of the instruction structure and game flow"
   ),
   

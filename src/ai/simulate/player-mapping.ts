@@ -2,11 +2,11 @@
  * Player ID Mapping Utilities
  * 
  * Manages transformation between canonical player IDs (UUIDs) and 
- * aliased player IDs (p1, p2, p3, ...) for LLM interaction.
+ * aliased player IDs (player1, player2, player3, ...) for LLM interaction.
  * 
  * Benefits of aliasing:
- * - Lower cognitive load for LLM (p1 vs uuid-abc-123-def-456)
- * - Positional semantics (p1 = first player)
+ * - Lower cognitive load for LLM (player1 vs uuid-abc-123-def-456)
+ * - Positional semantics (player1 = first player)
  * - Fewer tokens in prompts/responses
  * - Matches training data patterns
  * - Human-readable for debugging
@@ -16,22 +16,22 @@ import { BaseRuntimeState } from "#chaincraft/ai/simulate/schema.js";
 
 /**
  * Player mapping: alias -> canonical UUID
- * Example: {"p1": "player-uuid-abc-123", "p2": "player-uuid-def-456"}
+ * Example: {"player1": "player-uuid-abc-123", "player2": "player-uuid-def-456"}
  */
 export type PlayerMapping = Record<string, string>;
 
 /**
  * Create a player mapping from an array of player IDs.
- * Maps players to p1, p2, p3, ... in the order they appear.
+ * Maps players to player1, player2, player3, ... in the order they appear.
  * 
  * @param playerIds - Array of canonical player IDs (UUIDs)
- * @returns Mapping from aliases (p1, p2, ...) to UUIDs
+ * @returns Mapping from aliases (player1, player2, ...) to UUIDs
  */
 export function createPlayerMapping(playerIds: string[]): PlayerMapping {
   const mapping: PlayerMapping = {};
   
   playerIds.forEach((playerId, index) => {
-    const alias = `p${index + 1}`;
+    const alias = `player${index + 1}`;
     mapping[alias] = playerId;
   });
   
@@ -51,12 +51,12 @@ export function reversePlayerMapping(mapping: PlayerMapping): Record<string, str
 }
 
 /**
- * Transform game state from canonical (UUID keys) to aliased (p1, p2, ... keys).
+ * Transform game state from canonical (UUID keys) to aliased (player1, player2, ... keys).
  * Used before passing state to LLM.
  * 
  * @param state - Canonical game state with UUID player keys
  * @param mapping - Player mapping (alias -> UUID)
- * @returns Aliased game state with p1, p2, ... player keys
+ * @returns Aliased game state with player1, player2, ... player keys
  */
 export function transformStateToAliases(
   state: BaseRuntimeState,
@@ -80,10 +80,10 @@ export function transformStateToAliases(
 }
 
 /**
- * Transform game state from aliased (p1, p2, ... keys) to canonical (UUID keys).
+ * Transform game state from aliased (player1, player2, ... keys) to canonical (UUID keys).
  * Used after receiving state from LLM.
  * 
- * @param state - Aliased game state with p1, p2, ... player keys
+ * @param state - Aliased game state with player1, player2, ... player keys
  * @param mapping - Player mapping (alias -> UUID)
  * @returns Canonical game state with UUID player keys
  */

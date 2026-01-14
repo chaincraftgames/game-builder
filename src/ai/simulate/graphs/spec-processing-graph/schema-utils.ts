@@ -81,12 +81,20 @@ export function isValidFieldReference(fieldRef: string, schemaFields: Set<string
     return true;
   }
   
+  // Check if this is a .length access on an array field
+  // e.g., game.choices.length -> validate game.choices exists and is an array
+  let baseFieldRef = fieldRef;
+  const isLengthAccess = fieldRef.endsWith('.length');
+  if (isLengthAccess) {
+    baseFieldRef = fieldRef.slice(0, -7); // Remove '.length'
+  }
+  
   // Normalize the reference by removing array notation
   // This converts:
   //   players[*].score -> players.score
   //   players[0].score -> players.score
   //   players[player-123].score -> players.score
-  const normalizedRef = fieldRef
+  const normalizedRef = baseFieldRef
     .replace(/\[\*\]/g, '')           // Remove wildcards
     .replace(/\[\d+\]/g, '')          // Remove numeric indices
     .replace(/\[[\w-]+\]/g, '');      // Remove player IDs

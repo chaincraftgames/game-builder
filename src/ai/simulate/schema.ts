@@ -79,9 +79,42 @@ export const baseGameStateSchema = z.object({
     .describe(`Map of player IDs to player state objects`),
 });
 
-export const baseGameStateSchemaJson = JSON.stringify(
-  zodToJsonSchema(baseGameStateSchema, "gameState")
-);
+// Generate base JSON Schema and constrain player keys to player1, player2, etc. pattern
+const baseSchemaJson = zodToJsonSchema(baseGameStateSchema, "gameState");
+
+// Post-process to use patternProperties for player keys
+// This ensures the AI generates player keys like "player1", "player2", etc.
+// rather than arbitrary keys, which helps with consistent mapping
+if (baseSchemaJson && typeof baseSchemaJson === 'object' && 
+    'properties' in baseSchemaJson && 
+    baseSchemaJson.properties && 
+    typeof baseSchemaJson.properties === 'object' &&
+    'players' in baseSchemaJson.properties) {
+  const playersSchema = (baseSchemaJson.properties as any).players;
+  if (playersSchema && typeof playersSchema === 'object') {
+    // Convert from additionalProperties to patternProperties with player[1-9][0-9]* pattern
+    // This enforces player1, player2, ... (starting at 1, not 0)
+    if ('additionalProperties' in playersSchema) {
+      const playerStateSchema = playersSchema.additionalProperties;
+      // Preserve the AI's ability to add custom fields to player state
+      // by ensuring additionalProperties is allowed on the player object itself
+      if (typeof playerStateSchema === 'object' && playerStateSchema !== null) {
+        // Make sure the player state schema allows additional properties
+        // so the AI can extend it with game-specific fields
+        if (!('additionalProperties' in playerStateSchema)) {
+          (playerStateSchema as any).additionalProperties = true;
+        }
+      }
+      delete playersSchema.additionalProperties;
+      playersSchema.patternProperties = {
+        '^player[1-9][0-9]*$': playerStateSchema  // player1, player2, ..., player10, etc. (NOT player0)
+      };
+      playersSchema.additionalProperties = false; // Reject keys that don't match pattern
+    }
+  }
+}
+
+export const baseGameStateSchemaJson = JSON.stringify(baseSchemaJson);
 
 export type RuntimePlayerState = z.infer<typeof runtimePlayerStateSchema>;
 export type BaseRuntimeState = z.infer<typeof baseGameStateSchema>;

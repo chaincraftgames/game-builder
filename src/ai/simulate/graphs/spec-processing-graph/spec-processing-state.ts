@@ -17,6 +17,12 @@ export const SpecProcessingState = Annotation.Root({
     reducer: (_, y) => y,
   }),
 
+  // Optional: Narrative content referenced by markers in spec
+  specNarratives: Annotation<Record<string, string>>({
+    reducer: (_, y) => y,
+    default: () => ({}),
+  }),
+
   // Outputs from nodes
   gameRules: Annotation<string>({
     reducer: (_, y) => y,

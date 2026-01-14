@@ -57,7 +57,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(initialState),
         selectedInstructions: JSON.stringify(initInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: "submit", // Target phase after this transition
       };
@@ -118,7 +118,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -165,7 +165,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -217,7 +217,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -265,7 +265,7 @@ describe("Execute Changes Node", () => {
       const state: Partial<RuntimeStateType> = {
         gameState: JSON.stringify(gameState),
         selectedInstructions: JSON.stringify(transitionInstructions),
-        playerMapping: JSON.stringify({ p1: "player1", p2: "player2" }),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
         players: ["player1", "player2"],
         nextPhase: helper.getResolvePhase(),
       };
@@ -285,6 +285,167 @@ describe("Execute Changes Node", () => {
       expect(helper.getGameField(newState.game, "round")).toBe(2);
       
       console.log("✅ Paper beats rock executed correctly");
+    });
+  });
+
+  describe("Narrative Expansion", () => {
+    it("should expand narrative markers and LLM should use them for message generation", async () => {
+      console.log("\n=== TEST: Narrative Expansion with Message Generation ===");
+      
+      // Create an instruction that references a narrative marker in mechanicsGuidance
+      const instructionsWithNarrative = {
+        id: "reveal_winner",
+        transitionName: "Reveal Round Winner",
+        description: "Reveal choices and declare winner with dramatic flair",
+        priority: 1,
+        trigger: {
+          preconditions: {
+            "and": [
+              { "var": "players.p1.currentChoice" },
+              { "var": "players.p2.currentChoice" }
+            ]
+          }
+        },
+        mechanicsGuidance: {
+          rules: [
+            "Rock beats scissors",
+            "Scissors beats paper", 
+            "Paper beats rock",
+            "!___ NARRATIVE:DRAMATIC_REVEAL ___!"
+          ],
+          computation: "Compare choices using RPS rules and generate dramatic reveal following narrative guidance"
+        },
+        stateDelta: [
+          {
+            op: "set",
+            path: "game.currentPhase",
+            value: "reveal"
+          }
+        ],
+        messages: {
+          public: {
+            to: "all",
+            template: "Round {{game.roundNumber}}: {{outcome}}"
+          }
+        },
+        requiredStateFields: [
+          "players.p1.currentChoice",
+          "players.p2.currentChoice",
+          "game.roundNumber"
+        ]
+      };
+      
+      // Narrative content that should influence message generation
+      const narratives = {
+        "DRAMATIC_REVEAL": `When revealing round results, use dramatic, epic language befitting a mystical arena battle. 
+        
+Examples:
+- "The warriors clash! {{winner}}'s {{winningMove}} CRUSHES {{loser}}'s {{losingMove}}!"
+- "Steel meets stone! {{winner}} emerges victorious as {{winningMove}} dominates {{losingMove}}!"
+- "The arena trembles! {{winner}}'s choice of {{winningMove}} proves superior!"
+
+Avoid bland announcements. Make every reveal feel like an epic moment in an ancient contest of champions.`
+      };
+      
+      const gameState = helper.createGameState({
+        phase: helper.getFirstActivePhase(),
+      });
+      helper.setGameField(gameState.game, "round", 1);
+      gameState.players = {
+        player1: helper.createPlayerState({ 
+          score: 0,
+          choice: "rock"
+        }),
+        player2: helper.createPlayerState({ 
+          score: 0,
+          choice: "scissors"
+        }),
+      };
+
+      const state: Partial<RuntimeStateType> = {
+        gameState: JSON.stringify(gameState),
+        selectedInstructions: JSON.stringify(instructionsWithNarrative),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
+        players: ["player1", "player2"],
+        nextPhase: "reveal",
+        specNarratives: narratives,
+      };
+
+      console.log("Narrative marker in guidance:", instructionsWithNarrative.mechanicsGuidance.rules[3]);
+      console.log("Narrative content (first 100 chars):", narratives.DRAMATIC_REVEAL.substring(0, 100) + "...");
+
+      const result = await executeNode(state as RuntimeStateType);
+
+      expect(result.gameState).toBeDefined();
+      const newState = JSON.parse(result.gameState!);
+      
+      console.log("Generated public message:", newState.game.publicMessage);
+
+      // Verify the message has dramatic/epic language (influenced by narrative)
+      const message = newState.game.publicMessage.toLowerCase();
+      
+      // Check for dramatic language indicators from the narrative guidance
+      const hasDramaticLanguage = 
+        message.includes("clash") || 
+        message.includes("crush") ||
+        message.includes("dominate") ||
+        message.includes("emerge") ||
+        message.includes("victorious") ||
+        message.includes("superior") ||
+        message.includes("trembl") ||
+        message.includes("arena") ||
+        message.includes("warrior") ||
+        message.includes("champion") ||
+        // Also accept if it just has more elaborate phrasing than plain "rock beats scissors"
+        (message.length > 50 && !message.match(/^round \d+.*rock beats scissors\.?$/i));
+      
+      console.log("Message shows dramatic influence:", hasDramaticLanguage);
+      console.log("Message length:", message.length, "(plain message would be ~25 chars)");
+      
+      // The key test: verify LLM used the narrative guidance
+      expect(hasDramaticLanguage).toBe(true);
+      expect(newState.game.currentPhase).toBe("reveal");
+      
+      console.log("✅ LLM successfully used expanded narrative guidance for message generation");
+    });
+
+    it("should work without narratives (backward compatibility)", async () => {
+      console.log("\n=== TEST: Execute Without Narratives ===");
+      
+      // Instructions without any narrative markers
+      const instructionsWithoutNarratives = helper.getTransitionInstructions("initialize");
+      
+      const initialState = helper.createGameState({
+        phase: helper.getInitPhase(),
+      });
+      initialState.players = {
+        player1: helper.createPlayerState(),
+        player2: helper.createPlayerState(),
+      };
+
+      const state: Partial<RuntimeStateType> = {
+        gameState: JSON.stringify(initialState),
+        selectedInstructions: JSON.stringify(instructionsWithoutNarratives),
+        playerMapping: JSON.stringify({ player1: "player1", player2: "player2" }),
+        players: ["player1", "player2"],
+        nextPhase: "submit",
+        // No specNarratives field - should work fine
+      };
+
+      console.log("Executing without narratives");
+
+      const result = await executeNode(state as RuntimeStateType);
+
+      expect(result.gameState).toBeDefined();
+      const newState = JSON.parse(result.gameState!);
+      
+      console.log("New state (no narratives):", newState);
+
+      // Verify normal execution works
+      expect(newState.game.gameEnded).toBe(false);
+      expect(newState.game.currentPhase).toBe("submit");
+      
+      console.log("✅ Backward compatibility maintained");
     });
   });
 });

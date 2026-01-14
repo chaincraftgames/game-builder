@@ -137,7 +137,7 @@ async function generateDiffSummary(
  * @returns State updates with diff summary
  */
 export async function specDiff(state: typeof GameDesignState.State) {
-  const { updatedSpec, currentGameSpec } = state;
+  const { updatedSpec, currentSpec } = state;
   
   if (!updatedSpec) {
     throw new Error(
@@ -146,19 +146,19 @@ export async function specDiff(state: typeof GameDesignState.State) {
     );
   }
   
-  // Generate LLM-powered diff summary comparing updatedSpec against currentGameSpec
+  // Generate LLM-powered diff summary comparing updatedSpec against currentSpec
   const diffSummary = await generateDiffSummary(
-    currentGameSpec?.designSpecification,
-    currentGameSpec?.version,
+    currentSpec?.designSpecification,
+    currentSpec?.version,
     updatedSpec.designSpecification,
     updatedSpec.version,
     updatedSpec.summary,
     updatedSpec.playerCount
   );
   
-  // Move updatedSpec to currentGameSpec now that diff is generated
+  // Move updatedSpec to currentSpec now that diff is generated
   return {
     specDiff: diffSummary,
-    currentGameSpec: updatedSpec,
+    currentSpec: updatedSpec,
   };
 }

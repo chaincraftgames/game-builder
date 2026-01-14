@@ -1,3 +1,5 @@
+import { CONSOLIDATION_DEFAULTS } from "#chaincraft/ai/design/game-design-state.js";
+import { SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
 import { z } from "zod";
 
 // Player count schema
@@ -19,6 +21,12 @@ export const ContinueDesignConversationRequestSchema = z.object({
   conversationId: z.string().min(1),
   userMessage: z.string().min(1).max(2000),
   gameDescription: z.string().optional(),
+
+  /**
+   * Spec updates are batched by default.  This forces the spec to be generated
+   * immediately.
+   */
+  forceSpecGeneration: z.boolean().optional().default(false),
 });
 
 export const ContinueDesignConversationResponseSchema = z.object({
@@ -27,6 +35,30 @@ export const ContinueDesignConversationResponseSchema = z.object({
   systemPromptVersion: z.string().optional(),
   specification: GameSpecificationSchema.optional(),
   specDiff: z.string().optional(),
+  pendingSpecChanges: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Queued descriptions for spec changes not yet applied. Present when changes are batched."
+    ),
+  consolidationThreshold: z
+    .number()
+    .optional()
+    .describe("Number of changes before auto-consolidation"),
+  consolidationCharLimit: z
+    .number()
+    .optional()
+    .describe("Character count threshold for auto-consolidation"),
+});
+
+// Generate spec schemas
+export const GenerateSpecRequestSchema = z.object({
+  conversationId: z.string().min(1),
+});
+
+export const GenerateSpecResponseSchema = z.object({
+  message: z.string(),
+  specUpdateInProgress: z.boolean(),
 });
 
 // Generate image schemas
@@ -50,6 +82,9 @@ export const GetFullSpecificationResponseSchema = z.object({
   playerCount: PlayerCountSchema,
   designSpecification: z.string(),
   version: z.number(),
+  pendingSpecChanges: z.array(z.string()).optional(),
+  consolidationThreshold: z.number().optional(),
+  consolidationCharLimit: z.number().optional(),
 });
 
 // Get conversation history schemas
@@ -99,6 +134,8 @@ export type ContinueDesignConversationRequest = z.infer<
 export type ContinueDesignConversationResponse = z.infer<
   typeof ContinueDesignConversationResponseSchema
 >;
+export type GenerateSpecRequest = z.infer<typeof GenerateSpecRequestSchema>;
+export type GenerateSpecResponse = z.infer<typeof GenerateSpecResponseSchema>;
 export type GenerateImageRequest = z.infer<typeof GenerateImageRequestSchema>;
 export type GenerateImageResponse = z.infer<typeof GenerateImageResponseSchema>;
 export type GetFullSpecificationRequest = z.infer<

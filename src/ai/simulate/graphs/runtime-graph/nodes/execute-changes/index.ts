@@ -18,11 +18,20 @@ import { executeChangesResponseSchema } from "#chaincraft/ai/simulate/graphs/run
 import { applyStateDeltas, type StateDeltaOp } from "#chaincraft/ai/simulate/logic/statedelta.js";
 import { deserializePlayerMapping, reversePlayerMapping, transformStateToAliases } from "#chaincraft/ai/simulate/player-mapping.js";
 import { expandAndTransformOperation, isDeterministicOperation, applyDeterministicOperations, mergeDeterministicOverrides } from "#chaincraft/ai/simulate/deterministic-ops.js";
+import { expandNarratives } from "#chaincraft/ai/design/expand-narratives.js";
 
 export function executeChanges(model: ModelWithOptions) {
   return async (state: RuntimeStateType): Promise<Partial<RuntimeStateType>> => {
     console.debug("[execute_changes] Resolving templates and applying state deltas");
-    console.debug("[execute_changes] Instructions:", state.selectedInstructions?.substring(0, 300));
+    
+    // Expand narrative markers in instructions if narratives are present
+    let instructions = state.selectedInstructions || "{}";
+    if (state.specNarratives && Object.keys(state.specNarratives).length > 0) {
+      instructions = expandNarratives(instructions, state.specNarratives);
+      console.debug("[execute_changes] Expanded narrative markers in instructions");
+    }
+    
+    console.debug("[execute_changes] Instructions:", instructions.substring(0, 300));
     
     // Parse canonical state and player mapping
     let canonicalState = state.gameState ? JSON.parse(state.gameState) : { game: {}, players: {} };
@@ -33,22 +42,22 @@ export function executeChanges(model: ModelWithOptions) {
     // Extract deterministic operations from original instructions for post-LLM override
     let deterministicOps: StateDeltaOp[] = [];
     try {
-      const instructions = JSON.parse(state.selectedInstructions || "{}");
-      const originalOps: StateDeltaOp[] = instructions.stateDelta || [];
+      const parsedInstructions = JSON.parse(instructions);
+      const originalOps: StateDeltaOp[] = parsedInstructions.stateDelta || [];
       deterministicOps = originalOps.filter(isDeterministicOperation);
       
       console.log(`[execute_changes] Found ${deterministicOps.length} deterministic ops (of ${originalOps.length} total)`);
     } catch (error) {
-      // selectedInstructions might not be valid JSON if it's still a raw instruction object
+      // instructions might not be valid JSON if it's still a raw instruction object
       console.warn(`[execute_changes] Could not parse instructions for deterministic ops:`, error);
-      console.debug("[execute_changes] Instructions value:", state.selectedInstructions?.substring(0, 200));
+      console.debug("[execute_changes] Instructions value:", instructions.substring(0, 200));
     }
     
-    // Transform state to use aliases (p1, p2, ...) for LLM
+    // Transform state to use aliases (player1, player2, ...) for LLM
     const aliasedState = transformStateToAliases(canonicalState, playerMapping);
     
     // Transform player IDs array to aliases for prompt
-    const aliasedPlayerIds = Object.keys(playerMapping).sort(); // ["p1", "p2", ...]
+    const aliasedPlayerIds = Object.keys(playerMapping).sort(); // ["player1", "player2", ...]
     
     // Transform playerAction to use alias instead of UUID
     const reverseMap = reversePlayerMapping(playerMapping);
@@ -61,7 +70,7 @@ export function executeChanges(model: ModelWithOptions) {
     
     // Format the prompt with aliased state (LLM sees p1, p2, not UUIDs)
     const promptMessage = await prompt.format({
-      selectedInstructions: state.selectedInstructions || "{}",
+      selectedInstructions: instructions,
       gameState: JSON.stringify(aliasedState), // Pass aliased state to LLM
       players: JSON.stringify(aliasedPlayerIds), // Pass aliased player IDs to LLM
       playerAction: aliasedPlayerAction ? JSON.stringify(aliasedPlayerAction) : "null",

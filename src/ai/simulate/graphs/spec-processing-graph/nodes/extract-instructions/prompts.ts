@@ -5,46 +5,16 @@
  */
 
 export const planInstructionsTemplate = `
-# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
-
-{phaseNamesList}
-
-# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
-
-{transitionIdsList}
-
-# CRITICAL INSTRUCTIONS
-
-Your output MUST use ONLY the phase names and transition IDs listed above.
-- Copy them CHARACTER-FOR-CHARACTER (including capitalization, underscores, hyphens)
-- DO NOT create variations like "choice" instead of "choicePhase"
-- DO NOT create variations like "both-submitted" instead of "both_players_submitted"
-- Your phaseInstructions[].phase field must EXACTLY match a phase name from the list above
-- Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above
-
----
-
-You are analyzing a game specification and transitions to identify what instructions are needed for each phase.
-
-Game Specification:
-<specification>
-{gameSpecification}
-</specification>
-
-Transitions Artifact (for reference - IDs already extracted above):
-<transitions>
-{transitionsArtifact}
-</transitions>
-
-State Schema:
-<schema>
-{stateSchema}
-</schema>
-
-Planner Output Schema:
+!___ CACHE:universal-instructions ___!
+# Planner Output Schema
 <planningSchema>
 {planningSchemaJson}
 </planningSchema>
+
+# Your Task
+
+You are analyzing a game specification and transitions to identify what instructions 
+are needed for each phase.
 
 Your task: Identify player actions and automatic transitions that need instructions 
 for runtime execution.
@@ -127,6 +97,14 @@ Rules & Guidance:
    - Identify what each transition DOES (not just when it triggers)
    - If multiple game actions happen during a transition (e.g., score + advance), combine into one instruction
    - DO NOT create additional transitions - use only the IDs from the artifact
+   - **CRITICAL for the transition from "init" phase** (the first transition, typically "initialize_game"):
+     * This transition MUST initialize EVERY field used in ANY transition precondition
+     * Review ALL transition preconditions in the entire artifact
+     * List EVERY field referenced in ANY precondition (including later transitions)
+     * Your stateChanges MUST include initialization of ALL those fields
+     * Example: If any transition checks \`game.roundNumber < game.maxRounds\`, the init transition's
+       stateChanges must include both "set game.roundNumber to 1" and "set game.maxRounds to 2"
+     * Missing initializations will cause runtime deadlocks when those transitions try to evaluate!
    - Trigger: reference the transition's preconditions from artifact
    - Computation: What must be calculated?
      * Deterministic: simple counters, flags, phase changes (no LLM)
@@ -229,14 +207,72 @@ Include:
 - phases: EXACT list from transitions.phases array
 - phaseInstructions: array with hints for each phase (using EXACT phase names)
 - globalNotes: any cross-cutting patterns (optional)
+!___ END-CACHE ___!
+
+!___ CACHE:design-spec ___!
+# Game Specification
+<specification>
+{gameSpecification}
+</specification>
+
+# Narrative Markers Available
+{narrativeMarkersSection}
+
+**Using Narrative Markers:**
+If narrative markers are available, you can reference them in instruction guidance 
+using the format: !___ NARRATIVE:MARKER_NAME ___!
+
+When you include a marker reference in mechanicsDescription or other guidance fields,
+the marker will be expanded at runtime to provide the full narrative guidance to the LLM.
+
+Use narrative markers when:
+- The game has atmospheric or thematic descriptions that should influence narrative generation
+- Instructions need to guide the LLM on tone, style, or narrative continuity
+- The game spec includes extensive world-building or narrative context
+
+Example: "Generate reveal description following !___ NARRATIVE:REVEAL_ATMOSPHERE ___!"
+
+Do NOT reference narrative markers if the game has no narrative content or is purely mechanical.
+!___ END-CACHE ___!
+
+!___ CACHE:artifacts ___!
+# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
+
+{phaseNamesList}
+
+# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
+
+{transitionIdsList}
+
+# CRITICAL ID MATCHING REQUIREMENTS
+
+Your output MUST use ONLY the phase names and transition IDs listed above.
+- Copy them CHARACTER-FOR-CHARACTER (including capitalization, underscores, hyphens)
+- DO NOT create variations like "choice" instead of "choicePhase"
+- DO NOT create variations like "both-submitted" instead of "both_players_submitted"
+- Your phaseInstructions[].phase field must EXACTLY match a phase name from the list above
+- Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above
+
+# Transitions Artifact
+<transitions>
+{transitionsArtifact}
+</transitions>
+
+# State Schema
+<schema>
+{stateSchema}
+</schema>
+!___ END-CACHE ___!
+
+{validationFeedback}
 
 ---
 
 # ⚠️ FINAL REMINDER - EXACT ID MATCHING ⚠️
 
 Before outputting, verify:
-✓ Every phase name in your output is FROM THE PHASE LIST AT THE TOP
-✓ Every transition ID in your output is FROM THE TRANSITION ID LIST AT THE TOP  
+✓ Every phase name in your output is FROM THE PHASE LIST ABOVE
+✓ Every transition ID in your output is FROM THE TRANSITION ID LIST ABOVE
 ✓ You copied them EXACTLY (same capitalization, underscores, hyphens)
 
 If the phase list has "choicePhase", you MUST use "choicePhase" NOT "choice" or "choice_phase".
@@ -249,40 +285,16 @@ Begin output now.
  * Executor prompt: Generates concrete templated instructions from planner hints
  */
 export const executeInstructionsTemplate = `
-# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
+!___ CACHE:universal-executor ___!
+# Executor Output Schema
+{executorSchemaJson}
 
-{phaseNamesList}
-
-# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
-
-{transitionIdsList}
-
-# CRITICAL INSTRUCTIONS
-
-Your instructions[].phase field must EXACTLY match a phase name from the list above.
-Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above.
-
-DO NOT create variations. COPY THE EXACT STRINGS INCLUDING CAPITALIZATION.
-
----
+# Your Task
 
 You are generating executable game instructions from high-level hints.
 
 Your task: Convert the planner's instruction hints into concrete, 
 templated instructions that the game runtime can execute.
-
-# Input Context
-
-## State Schema
-{stateSchema}
-
-## Planner Hints
-{plannerHints}
-
-# Output Requirements
-
-Generate a JSON object with complete instructions for all phases:
-{executorSchemaJson}
 
 # Key Principles
 
@@ -293,6 +305,12 @@ ALL state changes must be expressed as atomic StateDelta operations:
 **set**: Set a value at a path (REQUIRED: must include 'value' field)
 {{ "op": "set", "path": "game.phase", "value": "reveal" }}
 {{ "op": "set", "path": "game.publicMessage", "value": "Game starting!" }}
+
+**ARRAY ELEMENTS**: Use bracket notation to set array elements directly:
+{{ "op": "set", "path": "game.colors[0]", "value": "red" }}
+{{ "op": "set", "path": "game.colors[1]", "value": "blue" }}
+{{ "op": "set", "path": "players[0].name", "value": "Alice" }}
+This is simpler and more reliable than using intermediate fields with template expansion.
 
 **increment**: Add to a numeric value (REQUIRED: must include 'value' field)
 {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
@@ -311,11 +329,16 @@ ALL state changes must be expressed as atomic StateDelta operations:
 
 **rng**: Random selection from choices with probabilities (NOTE: probabilities must sum to 1.0)
 **CRITICAL**: Each RNG operation generates ONE value only. To generate multiple values, use multiple separate RNG operations.
+**RECOMMENDED**: For populating array elements, use bracket notation directly in the path:
+{{ "op": "rng", "path": "game.options[0]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
+{{ "op": "rng", "path": "game.options[1]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
+{{ "op": "rng", "path": "game.options[2]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
+
+Other RNG examples:
 {{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
 {{ "op": "rng", "path": "game.value", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
-For multiple random values, use separate operations:
-{{ "op": "rng", "path": "game.randomValue1", "choices": [0,1,2,3], "probabilities": [0.25,0.25,0.25,0.25] }}
+
 {{ "op": "rng", "path": "game.randomValue2", "choices": ["A","B","C"], "probabilities": [0.5,0.3,0.2] }}
 
 **Template Variables in Paths**: Use {{{{variableName}}}} for runtime values:
@@ -448,10 +471,20 @@ Common variable patterns:
 **State cleanup**: If planner hints indicate fields should be cleared/reset 
 (e.g., "clear both players' choice fields"), use delete ops or set to null as specified
 
-**⚠️ CRITICAL: Initialization Transitions (initialize_game, etc.)**
+**⚠️ CRITICAL: The Transition From "init" Phase (typically "initialize_game")**
+
+**ABSOLUTE REQUIREMENT**: The transition from the "init" phase MUST initialize EVERY field that appears
+in ANY transition precondition throughout the entire game. If ANY later transition has a precondition that
+compares \`game.roundNumber < game.maxRounds\`, BOTH \`game.roundNumber\` AND \`game.maxRounds\` must be
+initialized by the "init" transition. Otherwise those transitions will deadlock comparing undefined values.
 
 When planner says "initialize X" or "set X to Y", you MUST generate explicit stateDelta operations.
 Do NOT assume schema defaults - runtime requires explicit set operations.
+
+**Review ALL transition preconditions in the transitions artifact** and ensure every referenced field is initialized:
+- If ANY precondition checks \`game.roundNumber\`, \`game.maxRounds\`, etc. → initialize them in init
+- If ANY precondition checks \`players[*].currentMove\` → initialize for all players in init
+- If ANY precondition checks any counter or flag → initialize it to appropriate starting value in init
 
 **For ALL players** (when planner says "initialize player scores" or "set actionRequired for all players"):
 Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all player IDs in the game):
@@ -570,14 +603,73 @@ Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all
     "public": {{ "template": "Game initialized with starting position {{{{game.startingPosition}}}} under {{{{game.weatherCondition}}}} conditions." }}
   }}
 }}
+!___ END-CACHE ___!
 
----
+!___ CACHE:design-executor ___!
+# Game Specification Context
+{gameSpecificationSummary}
+
+# Narrative Markers Available
+{narrativeMarkersSection}
+
+**Preserving Narrative Markers:**
+If planner hints include narrative marker references (format: !___ NARRATIVE:MARKER_NAME ___!), 
+preserve them in the mechanicsGuidance.rules array or similar guidance fields.
+
+Example:
+{{
+  "mechanicsGuidance": {{
+    "rules": [
+      "Generate reveal description following !___ NARRATIVE:REVEAL_ATMOSPHERE ___!",
+      "Rock beats scissors",
+      "Scissors beats paper"
+    ],
+    "computation": "Compare choices, determine winner, generate dramatic reveal"
+  }}
+}}
+
+The runtime will expand !___ NARRATIVE:MARKER_NAME ___! to the full narrative content before invoking the LLM.
+
+**When to include narrative guidance:**
+- Instructions that generate messages with narrative content
+- Instructions that set state fields to generated descriptions  
+- Transitions involving reveals, events, or story moments
+
+**When NOT to include:**
+- Purely mechanical operations (increment score, set flags)
+- Simple confirmations without narrative flavor
+!___ END-CACHE ___!
+
+!___ CACHE:artifacts-executor ___!
+# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
+
+{phaseNamesList}
+
+# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
+
+{transitionIdsList}
+
+# CRITICAL ID MATCHING REQUIREMENTS
+
+Your instructions[].phase field must EXACTLY match a phase name from the list above.
+Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above.
+
+DO NOT create variations. COPY THE EXACT STRINGS INCLUDING CAPITALIZATION.
+
+# State Schema
+{stateSchema}
+
+# Planner Hints
+{plannerHints}
+!___ END-CACHE ___!
+
+{validationFeedback}
 
 # ⚠️ FINAL REMINDER - EXACT ID MATCHING ⚠️
 
 Before outputting, verify:
-✓ Every phase name in your output is FROM THE PHASE LIST AT THE TOP
-✓ Every transition ID in your output is FROM THE TRANSITION ID LIST AT THE TOP
+✓ Every phase name in your output is FROM THE PHASE LIST ABOVE
+✓ Every transition ID in your output is FROM THE TRANSITION ID LIST ABOVE
 ✓ You copied them EXACTLY (same capitalization, underscores, hyphens)
 
 If the phase list has "choicePhase", use "choicePhase" NOT "choice_phase".

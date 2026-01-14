@@ -42,21 +42,21 @@ import type { GameDesignSpecification, GamepieceMetadata, SpecPlan } from "#chai
 function createTestState(overrides: {
   messages?: any[];
   title?: string;
-  currentGameSpec?: GameDesignSpecification;
+  currentSpec?: GameDesignSpecification;
   lastSpecMessageCount?: number;
+  pendingSpecChanges?: SpecPlan[];
 } = {}) {
   return {
     messages: overrides.messages || [],
     title: overrides.title || "",
     systemPromptVersion: "1.0",
     specRequested: false,
-    currentGameSpec: overrides.currentGameSpec || undefined,
+    currentSpec: overrides.currentSpec || undefined,
     specVersion: 0,
     specUpdateNeeded: false,
     metadataUpdateNeeded: false,
     specPlan: undefined,
     metadataChangePlan: undefined,
-    spec: undefined,
     updatedSpec: undefined,
     metadata: undefined,
     specDiff: undefined,
@@ -67,6 +67,10 @@ function createTestState(overrides: {
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: overrides.lastSpecMessageCount,
     metadataPlan: undefined,
+    pendingSpecChanges: overrides.pendingSpecChanges || [],
+    forceSpecGeneration: false,
+    consolidationThreshold: 5,
+    consolidationCharLimit: 2000,
   };
 }
 
@@ -133,7 +137,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Yes, and first to win 2 rounds wins the match"),
       ],
       title: "Rock Paper Scissors",
-      currentGameSpec: undefined, // First spec
+      currentSpec: undefined, // First spec
       lastSpecMessageCount: undefined, // First spec
     });
 
@@ -210,7 +214,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Yes, and also make it best of 5 instead of best of 3"),
       ],
       title: "Rock Paper Scissors Volcano",
-      currentGameSpec: existingSpec,
+      currentSpec: existingSpec,
       lastSpecMessageCount: 4, // Only process messages after index 4
     });
 
@@ -254,7 +258,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Yes - action cards give one-time effects, treasure cards give gold, and victory cards give points but clog your deck since they don't do anything during play."),
       ],
       title: "Deck Builder",
-      currentGameSpec: undefined,
+      currentSpec: undefined,
       lastSpecMessageCount: undefined,
     });
 
@@ -287,7 +291,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Create a coin flip game - 2 players, whoever calls it right wins"),
       ],
       title: "Coin Flip",
-      currentGameSpec: undefined,
+      currentSpec: undefined,
       lastSpecMessageCount: undefined,
     });
 
@@ -342,7 +346,7 @@ describe("Plan Spec - Integration", () => {
         new HumanMessage("Change it to best of 5 flips, and add a betting mechanic where players start with 10 coins and can bet on each flip"),
       ],
       title: "Betting Coin Flip",
-      currentGameSpec: existingSpec,
+      currentSpec: existingSpec,
       lastSpecMessageCount: 2,
     });
 
@@ -409,3 +413,404 @@ describe("Plan Spec - Plan Quality (Manual Inspection)", () => {
   }, 30000);
 });
 
+describe("Plan Spec - Plan Accumulation", () => {
+  let model: any;
+  let planSpec: any;
+  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+
+  beforeAll(async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping accumulation tests - no API key configured");
+      return;
+    }
+
+    try {
+      model = await setupDesignModel();
+      planSpec = createSpecPlan(model);
+    } catch (error) {
+      console.log("⚠️  Failed to setup model:", error);
+    }
+  });
+
+  test("should return new plan in pendingSpecChanges array", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a simple dice rolling game for 2 players"),
+      ],
+      title: "Dice Game",
+      pendingSpecChanges: [], // Empty - first plan
+    });
+
+    const result = await planSpec(state);
+
+    // Should return pendingSpecChanges with the new plan
+    expect(result.pendingSpecChanges).toBeDefined();
+    expect(Array.isArray(result.pendingSpecChanges)).toBe(true);
+    expect(result.pendingSpecChanges).toHaveLength(1);
+    
+    // The returned plan should match specPlan
+    expect(result.pendingSpecChanges![0]).toEqual(result.specPlan);
+    expect(result.pendingSpecChanges![0].summary).toBe(result.specPlan!.summary);
+    expect(result.pendingSpecChanges![0].changes).toBe(result.specPlan!.changes);
+  }, 30000);
+
+  test("should append to existing pending changes", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    // Simulate one plan already accumulated
+    const existingPlan: SpecPlan = {
+      summary: "A simple dice game",
+      playerCount: { min: 2, max: 2 },
+      changes: "Create a game where players roll dice and highest roll wins",
+    };
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A simple dice game",
+      playerCount: { min: 2, max: 2 },
+      designSpecification: "# Dice Game\n\nPlayers roll dice and highest roll wins.",
+      version: 1,
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a dice game"),
+        new AIMessage("I'll generate that spec"),
+        // --- First plan generated, now in pendingSpecChanges ---
+        new HumanMessage("Actually, make it best of 3 rounds and add a scoring system"),
+      ],
+      title: "Dice Game",
+      currentSpec: existingSpec,
+      pendingSpecChanges: [existingPlan], // One plan already accumulated
+      lastSpecMessageCount: 2,
+    });
+
+    const result = await planSpec(state);
+
+    // Should return pendingSpecChanges with the new plan
+    expect(result.pendingSpecChanges).toBeDefined();
+    expect(Array.isArray(result.pendingSpecChanges)).toBe(true);
+    expect(result.pendingSpecChanges).toHaveLength(1); // Node only returns NEW plan
+    
+    // The new plan should reference the changes
+    expect(result.pendingSpecChanges![0].changes.toLowerCase()).toMatch(/best of 3|round|scor/);
+  }, 30000);
+
+  test("should handle multiple successive accumulations", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    // Simulate the workflow: plan 1 → plan 2
+    
+    // First plan
+    const state1 = createTestState({
+      messages: [
+        new HumanMessage("Create a card game"),
+      ],
+      pendingSpecChanges: [],
+    });
+
+    const result1 = await planSpec(state1);
+    expect(result1.pendingSpecChanges).toHaveLength(1);
+    
+    // Simulate state after first plan (reducer would combine)
+    const pendingAfterFirst = result1.pendingSpecChanges!;
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A card game",
+      playerCount: { min: 2, max: 4 },
+      designSpecification: "# Card Game\n\nPlayers draw and play cards to achieve victory.",
+      version: 1,
+    };
+
+    // Second plan
+    const state2 = createTestState({
+      messages: [
+        new HumanMessage("Create a card game"),
+        new AIMessage("Got it, working on the spec"),
+        new HumanMessage("Add a resource mechanic with gold coins"),
+      ],
+      currentSpec: existingSpec,
+      pendingSpecChanges: pendingAfterFirst,
+      lastSpecMessageCount: 2,
+    });
+
+    const result2 = await planSpec(state2);
+    expect(result2.pendingSpecChanges).toHaveLength(1); // Returns just the new plan
+    
+    // Verify the plan references the new mechanic
+    expect(result2.pendingSpecChanges![0].changes.toLowerCase()).toMatch(/resource|gold|coin/);
+  }, 60000);
+
+  test("pending changes should preserve full SpecPlan structure", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a racing game for 2-4 players"),
+      ],
+      pendingSpecChanges: [],
+    });
+
+    const result = await planSpec(state);
+
+    expect(result.pendingSpecChanges).toBeDefined();
+    expect(result.pendingSpecChanges).toHaveLength(1);
+    
+    const pendingPlan = result.pendingSpecChanges![0];
+    
+    // Should have all SpecPlan fields
+    expect(pendingPlan).toHaveProperty('summary');
+    expect(pendingPlan).toHaveProperty('playerCount');
+    expect(pendingPlan).toHaveProperty('changes');
+    
+    // Verify types
+    expect(typeof pendingPlan.summary).toBe('string');
+    expect(typeof pendingPlan.playerCount).toBe('object');
+    expect(typeof pendingPlan.playerCount.min).toBe('number');
+    expect(typeof pendingPlan.playerCount.max).toBe('number');
+    expect(typeof pendingPlan.changes).toBe('string');
+    
+    // Verify playerCount is valid
+    expect(pendingPlan.playerCount.min).toBeGreaterThan(0);
+    expect(pendingPlan.playerCount.max).toBeGreaterThanOrEqual(pendingPlan.playerCount.min);
+  }, 30000);
+});
+
+describe("Plan Spec - Narrative Style Guidance", () => {
+  let model: any;
+  let planSpec: any;
+  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+
+  beforeAll(async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping narrative style tests - no API key configured");
+      return;
+    }
+
+    try {
+      model = await setupDesignModel();
+      planSpec = createSpecPlan(model);
+    } catch (error) {
+      console.log("⚠️  Failed to setup model:", error);
+    }
+  });
+
+  test("should extract narrativeStyleGuidance on initial generation with narrative cues", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("I want to create a dark fantasy survival game where players make morally ambiguous choices with grim consequences"),
+        new AIMessage("Interesting! Tell me more about the mechanics."),
+        new HumanMessage("Players explore a cursed forest, each choice leads to dire outcomes. The tone should be serious and atmospheric, with mature themes."),
+      ],
+      title: "Cursed Forest",
+      currentSpec: undefined,
+      lastSpecMessageCount: undefined,
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - INITIAL (Dark Fantasy) ===");
+    console.log("Summary:", result.specPlan?.summary);
+    console.log("Player Count:", result.specPlan?.playerCount);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance);
+    console.log("Changes:", result.specPlan?.changes);
+    console.log("================================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    expect(result.specPlan!.narrativeStyleGuidance).toBeDefined();
+    expect(typeof result.specPlan!.narrativeStyleGuidance).toBe("string");
+    expect(result.specPlan!.narrativeStyleGuidance!.length).toBeGreaterThan(0);
+    
+    // Should capture dark/serious tone
+    const guidance = result.specPlan!.narrativeStyleGuidance!.toLowerCase();
+    expect(guidance).toMatch(/dark|serious|grim|morally|mature|atmospheric/);
+    
+    // Should update state
+    expect(result.narrativeStyleGuidance).toBe(result.specPlan!.narrativeStyleGuidance);
+  }, 30000);
+
+  test("should extract narrativeStyleGuidance on initial generation without explicit cues", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a simple number guessing game for kids"),
+        new AIMessage("Great! What age range?"),
+        new HumanMessage("Ages 5-8, keep it fun and educational"),
+      ],
+      title: "Number Guesser",
+      currentSpec: undefined,
+      lastSpecMessageCount: undefined,
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - INITIAL (Kids Game) ===");
+    console.log("Summary:", result.specPlan?.summary);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance);
+    console.log("=============================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    expect(result.specPlan!.narrativeStyleGuidance).toBeDefined();
+    
+    // Should capture kid-friendly/educational tone
+    const guidance = result.specPlan!.narrativeStyleGuidance!.toLowerCase();
+    expect(guidance).toMatch(/kid|child|family|fun|educational|simple|lighthearted/);
+  }, 30000);
+
+  test("should NOT output narrativeStyleGuidance on update when only mechanics change", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A dark fantasy survival game",
+      playerCount: { min: 2, max: 4 },
+      designSpecification: `# Cursed Forest
+
+A dark survival game where players navigate a cursed forest making morally ambiguous choices.
+
+## Game Setup
+Players start at the forest edge with basic supplies.
+
+## Turn Structure
+Each turn, players encounter a choice point and must decide how to proceed.
+
+## Victory Conditions
+Reach the forest center or survive 10 turns.`,
+      version: 1,
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a dark fantasy game"),
+        new AIMessage("I'll generate that spec"),
+        // --- Spec generated ---
+        new HumanMessage("Add a resource management system with food and water"),
+      ],
+      title: "Cursed Forest",
+      currentSpec: existingSpec,
+      lastSpecMessageCount: 2,
+      narrativeStyleGuidance: "Dark fantasy with grim consequences and morally ambiguous choices",
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - UPDATE (Mechanics Only) ===");
+    console.log("Changes:", result.specPlan?.changes);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance || "(not provided)");
+    console.log("=================================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    // Should NOT include narrativeStyleGuidance since only mechanics changed
+    expect(result.specPlan!.narrativeStyleGuidance).toBeUndefined();
+    
+    // Should NOT update state narrativeStyleGuidance
+    expect(result.narrativeStyleGuidance).toBeUndefined();
+    
+    // But should reference the resource mechanic
+    const changes = result.specPlan!.changes.toLowerCase();
+    expect(changes).toMatch(/resource|food|water/);
+  }, 30000);
+
+  test("should output narrativeStyleGuidance on update when tone explicitly changes", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A dark fantasy survival game",
+      playerCount: { min: 2, max: 4 },
+      designSpecification: "# Cursed Forest\n\nA dark survival game...",
+      version: 1,
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a dark fantasy game"),
+        new AIMessage("I'll generate that spec"),
+        // --- Spec generated ---
+        new HumanMessage("Actually, let's make it more lighthearted and family-friendly instead of dark"),
+      ],
+      title: "Enchanted Forest",
+      currentSpec: existingSpec,
+      lastSpecMessageCount: 2,
+      narrativeStyleGuidance: "Dark fantasy with grim consequences and morally ambiguous choices",
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - UPDATE (Tone Change) ===");
+    console.log("Old Guidance:", "Dark fantasy with grim consequences and morally ambiguous choices");
+    console.log("New Guidance:", result.specPlan?.narrativeStyleGuidance);
+    console.log("Changes:", result.specPlan?.changes);
+    console.log("==============================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    // SHOULD include narrativeStyleGuidance since tone changed
+    expect(result.specPlan!.narrativeStyleGuidance).toBeDefined();
+    expect(typeof result.specPlan!.narrativeStyleGuidance).toBe("string");
+    
+    // Should reflect the lighter tone
+    const guidance = result.specPlan!.narrativeStyleGuidance!.toLowerCase();
+    expect(guidance).toMatch(/lighthearted|family|friendly|light/);
+    expect(guidance).not.toMatch(/dark|grim/);
+    
+    // Should update state
+    expect(result.narrativeStyleGuidance).toBe(result.specPlan!.narrativeStyleGuidance);
+  }, 30000);
+
+  test("should handle abstract/mechanical game without narrative guidance", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Create a pure strategy game like chess - no theme, just abstract pieces and rules"),
+        new AIMessage("Got it, focusing on mechanics only."),
+        new HumanMessage("Right, players move pieces on a grid according to specific rules, first to capture opponent's king wins"),
+      ],
+      title: "Abstract Strategy",
+      currentSpec: undefined,
+      lastSpecMessageCount: undefined,
+    });
+
+    const result = await planSpec(state);
+
+    console.log("\n=== NARRATIVE STYLE - ABSTRACT GAME ===");
+    console.log("Summary:", result.specPlan?.summary);
+    console.log("Narrative Style:", result.specPlan?.narrativeStyleGuidance || "(minimal/none)");
+    console.log("=======================================\n");
+
+    expect(result.specPlan).toBeDefined();
+    // May or may not have guidance, but if it does, should be minimal
+    if (result.specPlan!.narrativeStyleGuidance) {
+      expect(result.specPlan!.narrativeStyleGuidance!.length).toBeLessThan(250);
+    }
+  }, 30000);
+});

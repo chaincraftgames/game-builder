@@ -207,6 +207,48 @@ export function buildRouterContext(state: BaseRuntimeState): RouterContext {
 }
 
 /**
+ * Preprocess JsonLogic to handle .length accessor on arrays.
+ * Converts {"var": "game.choices.length"} to the actual array length value.
+ * This allows LLMs to use natural .length syntax like JavaScript/TypeScript.
+ * 
+ * @param logic - The JsonLogic expression to preprocess
+ * @param context - The data context
+ * @returns Preprocessed logic with .length resolved to actual lengths
+ */
+function preprocessArrayLength(logic: any, context: any): any {
+  if (!logic || typeof logic !== 'object') {
+    return logic;
+  }
+  
+  if (Array.isArray(logic)) {
+    return logic.map(item => preprocessArrayLength(item, context));
+  }
+  
+  // Check if this is a {"var": "field.length"} expression
+  if (logic.var && typeof logic.var === 'string' && logic.var.endsWith('.length')) {
+    const arrayPath = logic.var.slice(0, -7); // Remove '.length'
+    
+    // Get the array from context
+    const arrayValue = jsonLogic.apply({ var: arrayPath }, context);
+    
+    // If it's an array, return its length
+    if (Array.isArray(arrayValue)) {
+      return arrayValue.length;
+    }
+    
+    // Not an array - return undefined (will fail the condition naturally)
+    return undefined;
+  }
+  
+  // Recursively process nested objects
+  const result: any = {};
+  for (const [key, value] of Object.entries(logic)) {
+    result[key] = preprocessArrayLength(value, context);
+  }
+  return result;
+}
+
+/**
  * Evaluate a JsonLogic expression against the provided context.
  * Returns an object containing the `result` and optional `diagnostics` when validation fails.
  */
@@ -220,15 +262,26 @@ export function evaluateJsonLogic(logic: any, context: any): { result: any; diag
     return { result: null, diagnostics };
   }
 
-  const ctxParsed = RouterContextSchema.safeParse(context);
-  if (!ctxParsed.success) {
-    diagnostics.contextValid = false;
-    diagnostics.contextErrors = ctxParsed.error.errors.map((e) => e.message);
-    return { result: null, diagnostics };
+  // Context validation is optional - the full game state is passed which includes more than RouterContext
+  // Only validate if context appears to be just a RouterContext (has the specific fields)
+  const hasRouterContextFields = context.playersCount !== undefined || 
+                                  context.playersRequiringActionCount !== undefined ||
+                                  context.allPlayersCompletedActions !== undefined;
+  
+  if (hasRouterContextFields && !context.game && !context.players) {
+    // Looks like RouterContext-only, validate it
+    const ctxParsed = RouterContextSchema.safeParse(context);
+    if (!ctxParsed.success) {
+      diagnostics.contextValid = false;
+      diagnostics.contextErrors = ctxParsed.error.errors.map((e) => e.message);
+      return { result: null, diagnostics };
+    }
   }
 
   try {
-    const result = jsonLogic.apply(logic, context);
+    // Preprocess to handle .length on arrays
+    const preprocessed = preprocessArrayLength(logic, context);
+    const result = jsonLogic.apply(preprocessed, context);
     return { result };
   } catch (err: any) {
     diagnostics.runtimeError = String(err?.message ?? err);

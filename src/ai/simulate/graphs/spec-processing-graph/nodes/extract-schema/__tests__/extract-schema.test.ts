@@ -312,4 +312,72 @@ describe("Extract Schema Node", () => {
     console.log(`Game Properties: ${Object.keys(gameProperties).length}`);
     console.log(`Player Properties: ${Object.keys(playerProperties).length}`);
   }, 120000); // 60s timeout for LLM calls
+
+  it("should add storage field for dice roll randomness", async () => {
+    console.log("\n=== Testing RNG Storage Field Detection ===");
+    
+    const DICE_ROLL_SPEC = `
+# Monster Battle Game
+
+## Overview
+A simple turn-based game where players face a monster.
+
+## Game Rules
+
+### Setup
+- 2-4 players join the game
+- Each player starts with 10 health points
+- Monster has 20 health points
+
+### Gameplay
+1. Each turn, a d20 dice is rolled to determine if the monster attacks
+2. If the roll is 15 or higher, the monster attacks a random player
+3. Players then take turns attacking the monster
+4. Each player attack does 2 damage to the monster
+
+### Victory Conditions
+- Players win if monster health reaches 0
+- Players lose if all players reach 0 health
+`;
+
+    const model = await setupSpecProcessingModel();
+    const schemaNode = extractSchema(model);
+    
+    const state = {
+      gameSpecification: DICE_ROLL_SPEC,
+      gameRules: "",
+      stateSchema: "",
+    };
+
+    console.log("Extracting schema with dice roll randomness...");
+    const result = await schemaNode(state);
+
+    expect(result.stateSchema).toBeTruthy();
+    
+    // Parse the generated schema
+    const parsedSchema = JSON.parse(result.stateSchema);
+    const gameProperties = parsedSchema.properties.game.properties;
+    
+    console.log("\nGame-level fields:", Object.keys(gameProperties));
+    
+    // Check if AI added a field to store dice roll result
+    const hasDiceRollField = Object.keys(gameProperties).some(key => 
+      key.toLowerCase().includes('roll') || 
+      key.toLowerCase().includes('dice') ||
+      key.toLowerCase().includes('attack')
+    );
+    
+    if (hasDiceRollField) {
+      const diceFields = Object.keys(gameProperties).filter(key => 
+        key.toLowerCase().includes('roll') || 
+        key.toLowerCase().includes('dice') ||
+        key.toLowerCase().includes('attack')
+      );
+      console.log("✓ AI added RNG storage field(s):", diceFields);
+    } else {
+      console.log("✗ AI did NOT add any dice roll storage field");
+    }
+    
+    expect(hasDiceRollField).toBe(true);
+  }, 120000);
 });

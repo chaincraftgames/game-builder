@@ -12,8 +12,42 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 /**
  * Get a value from an object using dot-notation path
  */
+/**
+ * Parse a path string into segments, handling both dot notation and bracket notation.
+ * Examples:
+ *   "game.score" -> ["game", "score"]
+ *   "players[0].name" -> ["players", "0", "name"]
+ *   "game.array[5]" -> ["game", "array", "5"]
+ */
+function parsePath(path: string): string[] {
+  // Split by dots first, then handle bracket notation in each segment
+  const segments: string[] = [];
+  const dotParts = path.split('.');
+  
+  for (const part of dotParts) {
+    // Check if this part contains bracket notation: "array[0]" or "array[0][1]"
+    const bracketMatch = part.match(/^([^\[]+)(.*)$/);
+    if (bracketMatch) {
+      const baseName = bracketMatch[1];
+      const bracketsStr = bracketMatch[2];
+      
+      if (baseName) {
+        segments.push(baseName);
+      }
+      
+      // Extract all bracket indices: "[0][1]" -> ["0", "1"]
+      const indexMatches = bracketsStr.matchAll(/\[(\d+)\]/g);
+      for (const match of indexMatches) {
+        segments.push(match[1]);
+      }
+    }
+  }
+  
+  return segments;
+}
+
 function getByPath(obj: any, path: string): any {
-  const keys = path.split(".");
+  const keys = parsePath(path);
   let current = obj;
   for (const key of keys) {
     if (current == null) return undefined;
@@ -23,16 +57,26 @@ function getByPath(obj: any, path: string): any {
 }
 
 /**
- * Set a value in an object using dot-notation path, creating nested objects as needed
+ * Set a value in an object using dot-notation path with array bracket support.
+ * Creates nested objects or arrays as needed.
+ * Examples:
+ *   setByPath(obj, "game.score", 10) -> obj.game.score = 10
+ *   setByPath(obj, "players[0].name", "Alice") -> obj.players[0].name = "Alice"
+ *   setByPath(obj, "game.array[5]", 42) -> obj.game.array[5] = 42
  */
 function setByPath(obj: any, path: string, value: any): void {
-  const keys = path.split(".");
+  const keys = parsePath(path);
   const lastKey = keys.pop()!;
   let current = obj;
   
-  for (const key of keys) {
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const nextKey = i < keys.length - 1 ? keys[i + 1] : lastKey;
+    const isNextKeyNumeric = /^\d+$/.test(nextKey);
+    
     if (!(key in current) || current[key] == null || typeof current[key] !== "object") {
-      current[key] = {};
+      // Create array if next key is numeric, otherwise create object
+      current[key] = isNextKeyNumeric ? [] : {};
     }
     current = current[key];
   }
@@ -48,11 +92,17 @@ function deepClone<T>(obj: T): T {
 }
 
 /**
- * Set operation: assigns a value to a path, creating nested objects as needed
+ * Set operation: assigns a value to a path, creating nested objects/arrays as needed.
+ * Supports both dot notation and array bracket notation.
  */
 export const SetOpSchema = z.object({
   op: z.literal("set"),
-  path: z.string().describe("Dot-notation path (e.g., 'game.phase', 'players.p1.score')"),
+  path: z.string().describe(
+    "Path using dot notation and/or bracket notation. " +
+    "Examples: 'game.phase', 'players.p1.score', 'game.array[0]', 'players[2].name'. " +
+    "For array elements, use bracket notation: 'arrayName[index]'. " +
+    "Arrays will be auto-created when setting indexed paths."
+  ),
   value: z.any().describe("Value to set at the path"),
 });
 
@@ -114,7 +164,11 @@ export const MergeOpSchema = z.object({
  */
 export const RngOpSchema = z.object({
   op: z.literal("rng"),
-  path: z.string().describe("Dot-notation path where the random value will be set"),
+  path: z.string().describe(
+    "Path where the random value will be set. " +
+    "Supports both dot notation and bracket notation. " +
+    "Examples: 'game.field', 'game.array[0]', 'players[2].score'"
+  ),
   choices: z.array(z.any()).describe("Array of possible values to choose from"),
   probabilities: z.array(z.number()).describe("Array of probabilities for each choice (must sum to ~1.0)"),
 });

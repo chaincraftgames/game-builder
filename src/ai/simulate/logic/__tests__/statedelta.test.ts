@@ -117,14 +117,14 @@ describe("StateDelta Operations", () => {
     it("should append objects to an array", () => {
       const state = { 
         game: { 
-          rounds: [{ round: 1, winner: "p1" }] 
+          rounds: [{ round: 1, winner: "player1" }] 
         } 
       };
       const deltas: StateDeltaOp[] = [
         { 
           op: "append", 
           path: "game.rounds", 
-          value: { round: 2, winner: "p2" } 
+          value: { round: 2, winner: "player2" } 
         },
       ];
 
@@ -132,7 +132,7 @@ describe("StateDelta Operations", () => {
 
       expect(result.success).toBe(true);
       expect(result.newState.game.rounds).toHaveLength(2);
-      expect(result.newState.game.rounds[1].winner).toBe("p2");
+      expect(result.newState.game.rounds[1].winner).toBe("player2");
     });
 
     it("should fail if path is not an array", () => {
@@ -503,7 +503,7 @@ describe("StateDelta Operations", () => {
           currentRound: 2,
           totalRounds: 3,
           history: [
-            { round: 1, winner: "p1" },
+            { round: 1, winner: "player1" },
           ],
         },
         players: {
@@ -528,7 +528,7 @@ describe("StateDelta Operations", () => {
         { 
           op: "append", 
           path: "game.history", 
-          value: { round: 2, winner: "p1" } 
+          value: { round: 2, winner: "player1" } 
         },
         // Clear submitted moves
         { op: "set", path: "players.p1.submittedMove", value: false },
@@ -600,7 +600,7 @@ describe("Template Resolution", () => {
     it("should resolve simple string templates", () => {
       const result = resolveTemplates(
         "players.{{playerId}}.score",
-        { playerId: "p1" }
+        { playerId: "player1" }
       );
       expect(result).toBe("players.p1.score");
     });
@@ -624,7 +624,7 @@ describe("Template Resolution", () => {
         path: "players.{{id}}.score",
         value: "{{points}}"
       };
-      const result = resolveTemplates(template, { id: "p1", points: 10 });
+      const result = resolveTemplates(template, { id: "player1", points: 10 });
       expect(result).toEqual({
         path: "players.p1.score",
         value: 10
@@ -640,12 +640,12 @@ describe("Template Resolution", () => {
         }
       };
       const result = resolveTemplates(template, {
-        winnerId: "p1",
+        winnerId: "player1",
         p1Move: "rock",
         p2Move: "scissors"
       });
       expect(result).toEqual({
-        winner: "p1",
+        winner: "player1",
         moves: {
           p1: "rock",
           p2: "scissors"
@@ -656,7 +656,7 @@ describe("Template Resolution", () => {
     it("should keep unresolved variables as-is", () => {
       const result = resolveTemplates(
         "players.{{playerId}}.{{unknownVar}}",
-        { playerId: "p1" }
+        { playerId: "player1" }
       );
       expect(result).toBe("players.p1.{{unknownVar}}");
     });
@@ -664,7 +664,7 @@ describe("Template Resolution", () => {
     it("should handle whitespace in variable names", () => {
       const result = resolveTemplates(
         "players.{{ playerId }}.score",
-        { playerId: "p1" }
+        { playerId: "player1" }
       );
       expect(result).toBe("players.p1.score");
     });
@@ -686,7 +686,7 @@ describe("Template Resolution", () => {
       ];
 
       const resolved = resolveStateDeltaTemplates(templates, {
-        playerId: "p1",
+        playerId: "player1",
         move: "rock"
       });
 
@@ -712,7 +712,7 @@ describe("Template Resolution", () => {
 
       const resolved = resolveStateDeltaTemplates(templates, {
         roundNum: 2,
-        winnerId: "p1",
+        winnerId: "player1",
         p1Move: "rock",
         p2Move: "scissors"
       });
@@ -722,7 +722,7 @@ describe("Template Resolution", () => {
         path: "game.history",
         value: {
           round: 2,
-          winner: "p1",
+          winner: "player1",
           p1Move: "rock",
           p2Move: "scissors"
         }
@@ -736,7 +736,7 @@ describe("Template Resolution", () => {
       ];
 
       const resolved = resolveStateDeltaTemplates(templates, {
-        playerId: "p2",
+        playerId: "player2",
         playerAction: "paper"
       });
 

@@ -11,6 +11,24 @@ import type { GameDesignState, GameDesignSpecification } from "#chaincraft/ai/de
 import { SYSTEM_PROMPT, getPreservationGuidance } from "./prompts.js";
 
 /**
+ * Extracts all narrative markers from a skeleton specification.
+ * 
+ * @param skeleton - The skeleton specification with markers
+ * @returns Array of marker keys found in the skeleton
+ */
+function extractMarkers(skeleton: string): string[] {
+  const markerPattern = /!___ NARRATIVE:(\w+) ___!/g;
+  const markers: string[] = [];
+  let match;
+  
+  while ((match = markerPattern.exec(skeleton)) !== null) {
+    markers.push(match[1]);
+  }
+  
+  return markers;
+}
+
+/**
  * Formats the current spec for inclusion in the prompt.
  */
 function formatCurrentSpec(
@@ -58,22 +76,36 @@ export function createSpecExecute(model: ModelWithOptions) {
   const systemTemplate = SystemMessagePromptTemplate.fromTemplate(SYSTEM_PROMPT);
   
   return async (state: typeof GameDesignState.State) => {
-    // 1. Get the spec plan from state
-    const { specPlan, currentGameSpec } = state;
+    console.log('[spec-execute] Node started');
     
-    if (!specPlan) {
-      throw new Error(
-        "[spec-execute] No specPlan in state. This node should only be " +
-        "called after spec-plan has generated a plan."
-      );
-    }
+    try {
+      // 1. Get the pending spec changes from state
+      const pendingPlans = state.pendingSpecChanges || [];
+      const { currentSpec: currentGameSpec } = state;
+      
+      console.log(`[spec-execute] Processing ${pendingPlans.length} pending plans`);
+      
+      if (pendingPlans.length === 0) {
+        console.error('[spec-execute] ERROR: No accumulated changes - this should not happen');
+        throw new Error(
+          "[spec-execute] No accumulated changes. This node should only be " +
+          "called when there are changes to apply."
+        );
+      }
     
-    // 2. Extract metadata from specPlan
-    const { summary, playerCount, changes } = specPlan;
+    // 2. Use LATEST plan's metadata
+    const latestPlan = pendingPlans[pendingPlans.length - 1];
+    const { summary, playerCount, changes } = latestPlan;
+    
+    // 3. Combine all change plans
+    const changePlans = pendingPlans.length === 1
+      ? pendingPlans[0].changes
+      : pendingPlans
+          .map((plan, i) => `**Change ${i + 1}:**\n${plan.changes}`)
+          .join('\n\n');
     
     // 3. Prepare template variables
     const currentSpec = formatCurrentSpec(currentGameSpec);
-    const changePlan = formatChangePlan(changes);
     const preservationGuidance = getPreservationGuidance(!currentGameSpec);
     const formattedPlayerCount = formatPlayerCount(playerCount);
     
@@ -82,11 +114,14 @@ export function createSpecExecute(model: ModelWithOptions) {
       summary,
       playerCount: formattedPlayerCount,
       currentSpec,
-      changePlan,
+      changePlan: changePlans,
       preservationGuidance,
     });
     
     // 5. Call LLM with formatted system prompt to generate pure markdown
+    console.log('[spec-execute] Calling LLM to generate specification...');
+    const startTime = Date.now();
+    
     const response = await model.invokeWithSystemPrompt(
       systemMessage.content as string,
       undefined, // No user prompt needed
@@ -98,10 +133,19 @@ export function createSpecExecute(model: ModelWithOptions) {
     
     const designSpecification = (response.content as string).trim();
     
-    // 6. Increment version number
-    const newVersion = (state.specVersion ?? 0) + 1;
+    const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[spec-execute] LLM call completed in ${elapsedSeconds}s`);
+    console.log(`[spec-execute] Generated ${designSpecification.length} chars of specification`);
     
-    // 7. Assemble the complete GameDesignSpecification with version
+    // 6. Extract narrative markers from the skeleton
+    const markers = extractMarkers(designSpecification);
+    console.log(`[spec-execute] Found ${markers.length} narrative markers: ${markers.join(', ')}`);
+    
+    // 7. Increment version number
+    const newVersion = (state.specVersion ?? 0) + 1;
+    console.log(`[spec-execute] Generated spec version ${newVersion}`);
+    
+    // 8. Assemble the complete GameDesignSpecification with version
     const spec: GameDesignSpecification = {
       summary,
       playerCount,
@@ -109,15 +153,32 @@ export function createSpecExecute(model: ModelWithOptions) {
       version: newVersion,
     };
     
-    // 8. Return state updates
+    // 9. Return state updates
+    console.log('[spec-execute] Node completed successfully - returning state updates');
     return {
-      spec,
+      currentSpec: spec,
       updatedSpec: spec, // Store in updatedSpec for diff comparison
       specVersion: newVersion, // Update the version counter in state
       lastSpecUpdate: new Date().toISOString(),
       lastSpecMessageCount: state.messages.length,
       specUpdateNeeded: false, // Reset the flag
+      pendingSpecChanges: [], // Clear pending plans after execution
+      forceSpecGeneration: false, // Reset force flag
+      narrativesNeedingUpdate: markers, // Populate markers for narrative generation
     };
+  } catch (error) {
+      console.error('[spec-execute] ========== CRITICAL ERROR ==========');
+      console.error('[spec-execute] Error:', error);
+      console.error('[spec-execute] Error message:', error instanceof Error ? error.message : String(error));
+      console.error('[spec-execute] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      console.error('[spec-execute] State at error:', {
+        pendingPlansCount: state.pendingSpecChanges?.length || 0,
+        hasCurrentSpec: !!state.currentSpec,
+        messageCount: state.messages?.length || 0
+      });
+      console.error('[spec-execute] ====================================');
+      throw error; // Re-throw to fail the graph execution
+    }
   };
 }
 

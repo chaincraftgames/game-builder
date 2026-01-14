@@ -44,15 +44,13 @@ async function runTest(testName: string, messages: any[], expectedFlags: any) {
   const state = {
     messages: [],
     title: "",
-    systemPromptVersion: "1.0",
-    specRequested: false,
-    currentGameSpec: undefined,
+    systemPromptVersion: "",
+    currentSpec: undefined,
     specVersion: 0,
     specUpdateNeeded: false,
     metadataUpdateNeeded: false,
     specPlan: undefined,
     metadataChangePlan: undefined,
-    spec: undefined,
     updatedSpec: undefined,
     metadata: undefined,
     specDiff: undefined,
@@ -63,7 +61,13 @@ async function runTest(testName: string, messages: any[], expectedFlags: any) {
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: undefined,
     metadataPlan: undefined,
-  };  console.log("\n📨 INPUT:");
+    pendingSpecChanges: [],
+    forceSpecGeneration: false,
+    consolidationThreshold: 5,
+    consolidationCharLimit: 2000,
+  };
+  
+  console.log("\n📨 INPUT:");
   messages.forEach(msg => {
     const role = msg instanceof HumanMessage ? "USER" : "ASSISTANT";
     console.log(`  ${role}: ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`);
@@ -76,7 +80,7 @@ async function runTest(testName: string, messages: any[], expectedFlags: any) {
   
   console.log("\n📊 FLAGS:");
   console.log(`  Game Title: ${result.title || '(none)'}`);
-  console.log(`  Spec Update Needed: ${result.specUpdateNeeded} ${result.specUpdateNeeded === expectedFlags.spec ? '✅' : '❌ Expected: ' + expectedFlags.spec}`);
+  console.log(`  Spec Update Needed: ${result.specUpdateNeeded} ${result.specUpdateNeeded === expectedFlags.currentspec ? '✅' : '❌ Expected: ' + expectedFlags.currentspec}`);
   console.log(`  Metadata Update Needed: ${result.metadataUpdateNeeded} ${result.metadataUpdateNeeded === expectedFlags.metadata ? '✅' : '❌ Expected: ' + expectedFlags.metadata}`);
   
   return result;

@@ -27,8 +27,8 @@ describe("Simulation Workflow", () => {
   test("should create a simulation and return the player count", async () => {
     const { gameRules } = await createSimulation(
       gameId,
-      initialGameSpec,
-      1 // Initial version
+      1, // Initial version
+      initialGameSpec // Optional override for testing
     );
 
     expect(gameRules).toBeDefined();

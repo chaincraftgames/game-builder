@@ -33,12 +33,16 @@ export async function executeGameTest(
   };
   
   try {
-    // Use provided gameId or generate a new one
-    const testGameId = gameId || `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    // Generate a unique session ID for each test run to avoid using cached data
+    const sessionId = `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    
+    // Generate unique gameId if not provided (for artifact cache isolation)
+    // If gameId IS provided, reuse existing artifacts from that gameId
+    const testGameId = gameId || `test-game-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     
     // Step 1: Generate artifacts from spec (or reuse if gameId was provided)
     console.log(`[${test.name}] ${gameId ? 'Using existing' : 'Generating'} artifacts...`);
-    const artifacts = await generateArtifacts(test.spec, testGameId);
+    const artifacts = await generateArtifacts(test.spec, sessionId, testGameId);
     result.artifactsGenerated = true;
     
     // Step 2: Validate artifacts
@@ -54,7 +58,7 @@ export async function executeGameTest(
     
     // Step 3: Initialize simulation
     console.log(`[${test.name}] Starting simulation...`);
-    const { publicMessage, playerStates } = await initializeSimulation(testGameId, playerIds);
+    const { publicMessage, playerStates } = await initializeSimulation(sessionId, playerIds);
     
     // Track game state
     let gameEnded = false;
@@ -68,7 +72,7 @@ export async function executeGameTest(
       
       // Process action through simulation workflow
       const response = await processAction(
-        testGameId,
+        sessionId,
         action.playerId,
         JSON.stringify(action.actionData)
       );
@@ -78,7 +82,7 @@ export async function executeGameTest(
       finalPlayerStates = response.playerStates;
       
       // Retrieve full game state for assertions
-      finalGameState = await getGameState(testGameId);
+      finalGameState = await getGameState(sessionId);
       
       console.log(`[${test.name}] Response: ${response.publicMessage || 'no message'}`);
       
@@ -128,9 +132,11 @@ export async function executeGameTest(
 /**
  * Generate artifacts from game specification
  */
-async function generateArtifacts(spec: string, gameId: string): Promise<any> {
+async function generateArtifacts(spec: string, sessionId: string, gameId?: string): Promise<any> {
   // Use createSimulation which calls spec-processing-graph
-  const result = await createSimulation(gameId, spec, 1);
+  // Pass spec directly (no gameId since we're providing the spec, not fetching from design workflow)
+  // Signature: createSimulation(sessionId, gameId?, version?, spec?)
+  const result = await createSimulation(sessionId, gameId, 1, spec);
   return result;
 }
 

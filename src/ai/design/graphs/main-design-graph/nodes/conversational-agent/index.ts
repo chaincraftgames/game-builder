@@ -5,9 +5,9 @@
  * Sets flags for routing to spec or metadata updates.
  */
 import { AIMessage } from "@langchain/core/messages";
-import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js"
 import { GameDesignState } from "#chaincraft/ai/design/game-design-state.js";
+import { createCachedSystemMessage } from "#chaincraft/ai/prompt-template-processor.js";
 import { 
   SYSTEM_PROMPT, 
   formatFewShotExamples,
@@ -54,39 +54,43 @@ export async function createConversationalAgent(
   constraintsRegistry: string,
   mechanicsRegistry: string
 ) {
-  // Create system prompt template
-  const systemTemplate = SystemMessagePromptTemplate.fromTemplate(SYSTEM_PROMPT);
-  
   return async (state: typeof GameDesignState.State) => {
-    // 1. Format the system prompt with injected registries and examples
-    const systemMessage = await systemTemplate.format({
+    // 1. Get available narrative keys from state.specNarratives
+    const narrativeMarkers = Object.keys(state.specNarratives || {});
+    const narrativeContext = narrativeMarkers.length > 0
+      ? `\nAvailable narrative sections for this game:\n${narrativeMarkers.map(m => `- ${m}`).join('\n')}`
+      : '';
+    
+    // 2. Create cached system message with variable substitution
+    const systemMessage = createCachedSystemMessage(SYSTEM_PROMPT, {
       mechanicsRegistry,
       constraintsRegistry,
-      fewShotExamples: formatFewShotExamples()
+      fewShotExamples: formatFewShotExamples(),
+      narrativeContext
     });
     
-    // 2. Build message history with formatted system message
+    // 3. Build message history with cached system message
     const messages = [
       systemMessage,
       ...state.messages
     ];
     
-    // 3. Call LLM with full message history
+    // 4. Call LLM with full message history
     const response = await model.invokeWithMessages(messages, {
       agent: "conversational-design-agent",
       workflow: "design"
     });
     const responseText = response.content as string;
     
-    // 4. Parse response for tags
+    // 5. Parse response for tags
     const gameTitle = extractGameTitle(responseText);
     const specUpdateNeeded = hasTag(responseText, SPEC_UPDATE_TAG);
     const metadataUpdateNeeded = hasTag(responseText, METADATA_UPDATE_TAG);
     
-    // 5. Strip internal tags for user-facing message
+    // 6. Strip internal tags for user-facing message
     const userMessage = stripInternalTags(responseText);
     
-    // 6. Return state updates
+    // 7. Return state updates
     return {
       messages: [new AIMessage(userMessage)],
       title: gameTitle,

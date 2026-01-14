@@ -36,9 +36,10 @@ export const SimResponseSchema = z.object({
 
 // Create simulation schemas
 export const CreateSimulationRequestSchema = z.object({
-  gameId: z.string().min(1),
-  gameSpecification: z.string().min(1),
-  gameSpecificationVersion: z.number().min(1),
+  sessionId: z.string().min(1), // Session ID where artifacts are stored (e.g., "sim-xxx")
+  gameSpecificationVersion: z.number().min(1).optional(), // Optional - if omitted, uses latest version from design workflow
+  gameSpecification: z.string().min(1).optional(), // Optional override - if not provided, retrieves from design workflow
+  gameId: z.string().min(1).optional(), // Optional - game ID (conversationId) to fetch spec from design workflow. If not provided, uses sessionId (backward compatibility)
 });
 
 export const CreateSimulationResponseSchema = z.object({

@@ -163,7 +163,8 @@ export function router() {
           `Player ID not found in game state: ${state.playerAction!.playerId}`,
           { 
             playerId: state.playerAction!.playerId,
-            availablePlayers: Object.keys(gameState.players || {})
+            availablePlayers: Object.keys(gameState.players || {}),
+            playerMapping: state.playerMapping
           }
         );
       }
@@ -378,6 +379,9 @@ function handleError(
     errorContext,
     timestamp: new Date().toISOString(),
   };
+  
+  // Fatal errors end the game
+  gameState.game.gameEnded = true;
   
   // Set public message to inform players
   gameState.game.publicMessage = `Game Error: ${errorMessage}`;

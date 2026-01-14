@@ -142,6 +142,65 @@ function containsForbiddenArrayAccess(logic: any): string | null {
 }
 
 /**
+ * Check if JsonLogic contains explicit player ID references.
+ * References like players.player1, players.p1, players.alice are forbidden.
+ * ONLY allPlayers/anyPlayer operations should be used to check player fields.
+ * 
+ * Valid patterns:
+ * - {"allPlayers": ["field", "op", value]}
+ * - {"anyPlayer": ["field", "op", value]}
+ * - {"var": "game.field"} (game-level access is fine)
+ * - {"var": "playersCount"} (computed context fields are fine)
+ * 
+ * Invalid patterns:
+ * - {"var": "players.player1.field"}
+ * - {"var": "players.p1.field"}
+ * - {"var": "players.alice.score"}
+ * - Any {"var": "players.<identifier>.*"} where identifier is not [*]
+ */
+function containsExplicitPlayerReference(logic: any, parentKey?: string): string | null {
+  if (!logic || typeof logic !== 'object') return null;
+  
+  // If we're inside an allPlayers or anyPlayer operation, explicit player refs are being
+  // consumed by the operation and are OK (they iterate over all players)
+  if (parentKey === 'allPlayers' || parentKey === 'anyPlayer') {
+    return null;
+  }
+  
+  // Check if this is a "var" operation with explicit player reference
+  if (logic.var && typeof logic.var === 'string') {
+    const varPath = logic.var;
+    
+    // Match patterns like players.player1, players.p1, players.alice, etc.
+    // But NOT players[*] (which is valid wildcard)
+    // Must match: players.<something>.<field> where <something> is not [*]
+    const explicitPlayerPattern = /^players\.([a-zA-Z_][a-zA-Z0-9_]*)\.(.+)$/;
+    const match = varPath.match(explicitPlayerPattern);
+    
+    if (match) {
+      const playerId = match[1];
+      const field = match[2];
+      return `players.${playerId}.${field}`;
+    }
+  }
+  
+  // Recursively check all nested objects and arrays
+  if (Array.isArray(logic)) {
+    for (const item of logic) {
+      const result = containsExplicitPlayerReference(item, parentKey);
+      if (result) return result;
+    }
+  } else if (typeof logic === 'object') {
+    for (const [key, value] of Object.entries(logic)) {
+      const result = containsExplicitPlayerReference(value, key);
+      if (result) return result;
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Format fields list for prompt injection.
  * Creates clear, readable list of available state fields.
  */
@@ -380,6 +439,18 @@ export function extractTransitions(model: ModelWithOptions) {
                 `[extract_transitions] Forbidden array index access in transition '${t.id}', ` +
                 `precondition '${p.id}': ${forbiddenAccess}. ` +
                 `Use 'allPlayersCompletedActions' computed property or 'players[*]' wildcard instead.`
+              );
+            }
+            
+            // Check for explicit player ID references
+            const explicitPlayerRef = containsExplicitPlayerReference(p.logic);
+            if (explicitPlayerRef) {
+              throw new Error(
+                `[extract_transitions] Explicit player ID reference in transition '${t.id}', ` +
+                `precondition '${p.id}': ${explicitPlayerRef}. ` +
+                `Player IDs at runtime are UUIDs, not 'player1' or 'p1'. ` +
+                `MUST use allPlayers or anyPlayer operations to check player fields. ` +
+                `Example: {"anyPlayer": ["score", ">=", 3]} instead of {"var": "players.player1.score"}`
               );
             }
           }

@@ -9,7 +9,7 @@
  */
 import { describe, expect, test, beforeAll } from "@jest/globals";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { setupDesignModel } from "#chaincraft/ai/model-config.js";
+import { setupConversationalAgentModel, setupDesignModel } from "#chaincraft/ai/model-config.js";
 import { 
   createConversationalAgent,
   extractGameTitle,
@@ -38,15 +38,13 @@ function createTestState(overrides: {
     messages: overrides.messages || [],
     title: overrides.title || "",
     systemPromptVersion: "1.0",
-    specRequested: false,
-    currentGameSpec: overrides.currentGameSpec || undefined,
+    currentSpec: overrides.currentGameSpec || undefined,
     specVersion: 0,
     specUpdateNeeded: overrides.specUpdateNeeded ?? false,
     metadataUpdateNeeded: overrides.metadataUpdateNeeded ?? false,
     specPlan: undefined,
     metadataPlan: undefined,
     metadataChangePlan: undefined,
-    spec: overrides.spec || undefined,
     updatedSpec: undefined,
     metadata: overrides.metadata || undefined,
     specDiff: undefined,
@@ -56,21 +54,25 @@ function createTestState(overrides: {
     lastSpecUpdate: undefined,
     lastMetadataUpdate: undefined,
     lastSpecMessageCount: undefined,
+    pendingSpecChanges: [],
+    forceSpecGeneration: false,
+    consolidationThreshold: 5,
+    consolidationCharLimit: 2000,
   };
 }
 
-// Mock registries for testing
+// Mock registries for testing - moderate size to test cache thresholds
 const MOCK_MECHANICS_REGISTRY = `
-- Deck Building: Players construct decks during the game
-- Area Control: Players compete for control of board spaces
-- Resource Management: Players collect and spend resources
-- Drafting: Players select cards from a shared pool
+- Deck Building: Players construct and modify decks during gameplay
+- Area Control: Players compete for control of board spaces and territories
+- Resource Management: Players collect, spend, and optimize resources
+- Drafting: Players select cards or items from a shared pool in turn order
 `;
 
 const MOCK_CONSTRAINTS_REGISTRY = `
 NOT SUPPORTED:
-- Real-time action games
-- Games requiring precise timing
+- Real-time action games requiring simultaneous play
+- Games requiring precise timing or dexterity
 
 SUPPORTED WITH LIMITATIONS:
 - Complex card interactions (may require manual clarification)
@@ -165,8 +167,7 @@ describe("Conversational Agent - Integration", () => {
     }
 
     try {
-      // Setup model for testing
-      model = await setupDesignModel();
+      model = await setupConversationalAgentModel();
       
       // Create agent instance
       agent = await createConversationalAgent(
@@ -382,4 +383,75 @@ describe("Conversational Agent - Edge Cases", () => {
     // (The exact behavior depends on the LLM, but it should respond)
     expect(result.messages[0].content).toBeDefined();
   }, 30000);
+
+  test("should disambiguate narrative section requests", async () => {
+    if (!hasApiKey) {
+      console.log("⚠️  Skipping - no API key");
+      return;
+    }
+
+    const model = await setupDesignModel();
+    const agent = await createConversationalAgent(
+      model,
+      MOCK_CONSTRAINTS_REGISTRY,
+      MOCK_MECHANICS_REGISTRY
+    );
+
+    const existingSpec: GameDesignSpecification = {
+      summary: "A survival horror game",
+      playerCount: { min: 1, max: 4 },
+      designSpecification: `# Haunted Mansion
+
+## Game Structure
+8 sequential turns through haunted rooms.
+
+## Narrative Guidance
+
+### Tone and Style
+<!-- NARRATIVE:TONE_STYLE -->
+
+### Turn 1 Content
+<!-- NARRATIVE:TURN_1_GUIDE -->
+
+### Turn 2 Content
+<!-- NARRATIVE:TURN_2_GUIDE -->
+
+## Victory
+Reach turn 8 alive.`,
+      version: 1,
+    };
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Make the first room less scary and more mysterious")
+      ],
+      currentGameSpec: existingSpec,
+      specUpdateNeeded: false,
+    });
+
+    const result = await agent(state);
+
+    console.log("\\n=== NARRATIVE DISAMBIGUATION TEST ===");
+    console.log("User request: Make the first room less scary");
+    console.log("Available markers: TONE_STYLE, TURN_1_GUIDE, TURN_2_GUIDE");
+    console.log("\\nAgent response:");
+    console.log(result.messages[0].content);
+    console.log("=====================================\\n");
+
+    // Should respond (asking for clarification or confirming which section)
+    expect(result.messages[0].content).toBeDefined();
+    const response = result.messages[0].content.toLowerCase();
+    
+    // Should either:
+    // 1. Ask which narrative section (TURN_1_GUIDE), or
+    // 2. Confirm it's updating TURN_1_GUIDE
+    // The response should reference the available markers or ask for clarification
+    const mentionsNarrative = response.includes('turn_1') || 
+                             response.includes('turn 1') ||
+                             response.includes('which') ||
+                             response.includes('section');
+    
+    expect(mentionsNarrative).toBe(true);
+  }, 30000);
 });
+

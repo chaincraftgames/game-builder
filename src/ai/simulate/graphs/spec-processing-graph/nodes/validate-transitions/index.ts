@@ -176,6 +176,55 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
     });
   }
   
+  // Validate that all non-terminal phases can reach a terminal phase
+  // Build adjacency list for reachability check
+  const adjacencyList = new Map<string, Set<string>>();
+  phases.forEach((phase: string) => adjacencyList.set(phase, new Set()));
+  transitionList.forEach((t: any) => {
+    adjacencyList.get(t.fromPhase)?.add(t.toPhase);
+  });
+  
+  // Check reachability from each non-terminal phase to any terminal phase
+  phases.forEach((phase: string) => {
+    if (phase === initPhase || terminalPhases.has(phase)) return;
+    
+    // BFS to find if any terminal phase is reachable
+    const visited = new Set<string>();
+    const queue = [phase];
+    visited.add(phase);
+    let foundTerminal = false;
+    
+    while (queue.length > 0 && !foundTerminal) {
+      const current = queue.shift()!;
+      
+      if (terminalPhases.has(current)) {
+        foundTerminal = true;
+        break;
+      }
+      
+      const neighbors = adjacencyList.get(current) || new Set();
+      for (const neighbor of neighbors) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+    
+    if (!foundTerminal) {
+      issues.push({
+        severity: 'error',
+        category: 'deadlock',
+        message: `Phase "${phase}" has no path to any terminal phase. Game cannot end from this phase.`,
+        context: { 
+          phase, 
+          terminalPhases: Array.from(terminalPhases),
+          outboundTransitions: transitionList.filter((t: any) => t.fromPhase === phase).map((t: any) => t.toPhase)
+        }
+      });
+    }
+  });
+  
   // Validate preconditions reference valid schema fields
   const schemaFields = extractSchemaFields(schema);
   

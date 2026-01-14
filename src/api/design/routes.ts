@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import {
   handleContinueDesignConversation,
   handleGenerateImage,
+  handleGenerateSpec,
   handleGetFullSpecification,
   handleGetCachedSpecification,
   handleGetConversationHistory,
@@ -10,6 +11,8 @@ import {
 import {
   ContinueDesignConversationRequestSchema,
   ContinueDesignConversationResponseSchema,
+  GenerateSpecRequestSchema,
+  GenerateSpecResponseSchema,
   GenerateImageRequestSchema,
   GenerateImageResponseSchema,
   GetFullSpecificationRequestSchema,
@@ -37,6 +40,20 @@ export async function registerDesignRoutes(server: FastifyInstance) {
       },
     },
     handler: handleContinueDesignConversation,
+  });
+
+  // Force spec generation (bypasses conversation)
+  server.post("/conversation/generate-spec", {
+    schema: {
+      body: zodToJsonSchema(GenerateSpecRequestSchema, "generateSpecRequest"),
+      response: {
+        200: zodToJsonSchema(
+          GenerateSpecResponseSchema,
+          "generateSpecResponse"
+        ),
+      },
+    },
+    handler: handleGenerateSpec,
   });
 
   // Generate image for game design (supports both legacy cartridge and raw image types)
