@@ -1,172 +1,92 @@
 /**
- * Extract Schema Node
- * 
- * Analyzes game specification and generates:
- * - State schema (Zod-compatible structure)
- * - Example state object
- * - Game rules summary
+ * Schema Extraction Configuration
+ *
+ * Exports node configuration for schema extraction with planner/executor pattern
  */
 
-import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
-import { SpecProcessingStateType } from "../../spec-processing-state.js";
-import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
-import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
-import { planSchemaTemplate, executeSchemaTemplate } from "./prompts.js";
-import { baseGameStateSchemaJson } from "#chaincraft/ai/simulate/schema.js";
-import { extractSchemaResponseSchema } from "./schema.js";
+import {
+  setupSpecExecuteModel,
+  setupSpecPlanModel,
+} from "#chaincraft/ai/model-config.js";
+import { schemaPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/planner.js";
+import { schemaExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/executor.js";
+import {
+  validatePlanCompleteness,
+  validatePlanFieldCoverage,
+  validateJsonParseable,
+  validateSchemaStructure,
+  validateRequiredFields,
+  validateFieldTypes,
+  validatePlannerFieldsInSchema,
+} from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/validators.js";
+import {
+  getFromStore,
+  NodeConfig,
+} from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 
-/**
- * Parse planner output to extract field definitions
- */
-function extractPlannerFields(plannerOutput: string): Array<{name: string, path: string}> {
-  const fields: Array<{name: string, path: string}> = [];
-  
-  try {
-    // Look for Fields: ```json [...] ``` markdown code block in planner output
-    const fieldsMatch = plannerOutput.match(/Fields:\s*```json\s*([\s\S]*?)```/i);
-    if (!fieldsMatch) return fields;
-    
-    const fieldsJson = fieldsMatch[1].trim();
-    const parsed = JSON.parse(fieldsJson);
-    
-    if (Array.isArray(parsed)) {
-      parsed.forEach((field: any) => {
-        if (field.name && field.path) {
-          fields.push({ name: field.name, path: field.path });
-        }
-      });
+export const schemaExtractionConfig: NodeConfig = {
+  namespace: "schema",
+
+  planner: {
+    node: schemaPlannerNode,
+    model: await setupSpecPlanModel(),
+    validators: [validatePlanCompleteness, validatePlanFieldCoverage],
+  },
+
+  executor: {
+    node: schemaExecutorNode,
+    model: await setupSpecExecuteModel(),
+    validators: [
+      validateJsonParseable,
+      validateSchemaStructure,
+      validateRequiredFields,
+      validateFieldTypes,
+      validatePlannerFieldsInSchema,
+    ],
+  },
+
+  maxAttempts: {
+    plan: 1,
+    execution: 1,
+  },
+
+  commit: async (store, state, threadId) => {
+    if (!store) {
+      throw new Error(
+        "[schema_extraction_config] Store not configured - cannot commit data"
+      );
     }
-  } catch (error) {
-    console.warn("[extract_schema] Failed to parse planner fields:", error);
-  }
-  
-  return fields;
-}
 
-/**
- * Validate that all planner-identified fields are present in executor schema
- * Exported for testing
- */
-export function validatePlannerFieldsInSchema(
-  plannerFields: Array<{name: string, path: string}>,
-  executorSchema: any
-): { valid: boolean; missingFields: string[] } {
-  const missingFields: string[] = [];
-  
-  for (const field of plannerFields) {
-    const fieldPath = field.path === 'game' ? 'game' : 'player';
-    
-    // Extract bare field name by stripping path prefix if present
-    let bareFieldName = field.name;
-    if (fieldPath === 'game' && field.name.startsWith('game.')) {
-      bareFieldName = field.name.substring('game.'.length);
-    } else if (fieldPath === 'player' && (field.name.startsWith('players.') || field.name.startsWith('player.'))) {
-      // Handle patterns like "players.<id>.fieldName" or "player.fieldName"
-      const lastDotIndex = field.name.lastIndexOf('.');
-      bareFieldName = field.name.substring(lastDotIndex + 1);
+    // Retrieve execution output (getFromStore already unwraps .value)
+    let executionOutput;
+    try {
+      executionOutput = await getFromStore(
+        store,
+        ["schema", "execution", "output"],
+        threadId
+      );
+    } catch (error) {
+      // Executor never ran (planner failed validation), return empty updates
+      // Validation errors will be added by commit node
+      return {};
     }
-    
-    if (fieldPath === 'game') {
-      // Check game.properties[bareFieldName] exists
-      if (!executorSchema?.properties?.game?.properties?.[bareFieldName]) {
-        missingFields.push(field.name);
-      }
-    } else {
-      // Check players.additionalProperties.properties[bareFieldName] exists
-      if (!executorSchema?.properties?.players?.additionalProperties?.properties?.[bareFieldName]) {
-        missingFields.push(field.name);
-      }
-    }
-  }
-  
-  return {
-    valid: missingFields.length === 0,
-    missingFields
-  };
-}
 
-export function extractSchema(model: ModelWithOptions) {
-  return async (state: SpecProcessingStateType): Promise<Partial<SpecProcessingStateType>> => {
-    console.debug("[extract_schema] Extracting schema from specification");
-
-    // Step 1: Planner analyzes spec and identifies game state structure
-    const plannerPrompt = SystemMessagePromptTemplate.fromTemplate(planSchemaTemplate);
-    const plannerSystemMessage = await plannerPrompt.format({
-      gameSpecification: state.gameSpecification,
-      schema: baseGameStateSchemaJson,
-    });
-    
-    const plannerAnalysis = await model.invokeWithSystemPrompt(
-      plannerSystemMessage.content as string,
-      undefined,
-      {
-        agent: "extract-schema-planner",
-        workflow: "spec-processing",
-      }
+    console.log("[commit] executionOutput type:", typeof executionOutput);
+    console.log(
+      "[commit] executionOutput:",
+      JSON.stringify(executionOutput).substring(0, 200)
     );
 
-    console.debug("[extract_schema] Planner analysis complete");
+    const response =
+      typeof executionOutput === "string"
+        ? JSON.parse(executionOutput)
+        : executionOutput;
 
-    // Step 2: Executor generates schema + example state
-    const executorPrompt = SystemMessagePromptTemplate.fromTemplate(executeSchemaTemplate);
-    
-    try {
-      const executorSystemMessage = await executorPrompt.format({
-        plannerAnalysis: plannerAnalysis.content,
-        schema: baseGameStateSchemaJson,
-      });
-      
-      const response = await model.invokeWithSystemPrompt(
-        executorSystemMessage.content as string,
-        undefined,
-        {
-          agent: "extract-schema-executor",
-          workflow: "spec-processing",
-        },
-        extractSchemaResponseSchema
-      ) as z.infer<typeof extractSchemaResponseSchema>;
-
-      console.debug("[extract_schema] Executor response: %o", {
-        hasGameRules: !!response.gameRules,
-        hasState: !!response.state,
-        hasStateSchema: !!response.stateSchema,
-        stateSchemaFields: response.stateSchema?.fields?.length
-      });
-
-      // Validate the response has all required fields
-      if (!response.stateSchema) {
-        console.error("[extract_schema] Missing stateSchema in response");
-        throw new Error("Executor failed to generate stateSchema field");
-      }
-
-      if (!response.state || !response.state.game || !response.state.players) {
-        console.error("[extract_schema] Incomplete state in response");
-        throw new Error("Executor failed to generate complete state structure");
-      }
-
-      // Validate planner fields are in executor schema
-      const plannerFields = extractPlannerFields(String(plannerAnalysis.content));
-      if (plannerFields.length > 0) {
-        const validation = validatePlannerFieldsInSchema(plannerFields, response.stateSchema);
-        if (!validation.valid) {
-          const errorMsg = `Executor dropped fields from planner output: ${validation.missingFields.join(', ')}\n` +
-            `The planner identified these fields as required, but the executor did not add them to the schema.\n` +
-            `Check LangSmith trace for extract_schema to see planner output.`;
-          console.error("[extract_schema] Validation failed:", errorMsg);
-          throw new Error(errorMsg);
-        }
-        console.debug(`[extract_schema] Validated ${plannerFields.length} planner fields are present in schema`);
-      }
-
-      return {
-        gameRules: response.gameRules,
-        stateSchema: JSON.stringify(response.stateSchema),
-        exampleState: JSON.stringify(response.state),
-      };
-    } catch (error) {
-      console.error("[extract_schema] Executor failed: %o", error);
-      throw error;
-    }
-  };
-}
+    // Return partial state to be merged
+    return {
+      gameRules: response.gameRules,
+      stateSchema: JSON.stringify(response.stateSchema),
+      exampleState: JSON.stringify(response.state),
+    };
+  },
+};

@@ -43,6 +43,22 @@ Rules for the planner output:
   random results. Examples: game.lastDiceRoll, game.monsterAttackRoll, game.deadlyScenario. 
   These fields allow random values to be generated once and referenced deterministically in 
   game logic.
+- ⚠️ CRITICAL: USE STANDARD PLAYER STATE FIELDS - The base schema provides "actionRequired" 
+  (boolean) to indicate whether a player must take an action for the game to progress. 
+  DO NOT create custom fields like "hasSubmitted", "hasMoved", "turnComplete", "choiceMade", 
+  etc. to track whether a player has completed their action. ALWAYS use the standard 
+  "actionRequired" field for this purpose. When a player completes their action (submits a 
+  choice, makes a move, etc.), the game logic will set actionRequired=false. This ensures 
+  the router can reliably determine when all players have acted and automatic transitions 
+  can proceed.
+- ⚠️ CRITICAL: USE STANDARD PLAYER STATE FIELDS - The base schema provides standard fields 
+  for tracking player actions: "actionRequired" (boolean) indicates whether a player must 
+  take an action for the game to progress. DO NOT create custom fields like "hasSubmitted", 
+  "hasMoved", "turnComplete", "choiceMade", etc. to track whether a player has taken their 
+  action. ALWAYS use "actionRequired" for this purpose. When a player completes their action 
+  (submits a choice, makes a move, etc.), the game logic should set actionRequired=false. 
+  This ensures the router can reliably determine when all players have acted and automatic 
+  transitions can proceed.  
 
 You are provided with a formal schema definition for the base game state.  The final schema
 must match the shape of this schema:

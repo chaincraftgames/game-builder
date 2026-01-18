@@ -7,14 +7,16 @@
  */
 
 import { describe, expect, it } from "@jest/globals";
-import { setupSpecInstructionsModel } from "#chaincraft/ai/model-config.js";
-import { extractInstructions } from "../index.js";
+import { instructionsExtractionConfig } from "../index.js";
+import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
 import { InstructionsArtifact } from "#chaincraft/ai/simulate/schema.js";
 import { JsonLogicSchema } from "#chaincraft/ai/simulate/logic/jsonlogic.js";
 import jsonLogic from "json-logic-js";
+import { InMemoryStore } from "@langchain/langgraph";
 
-describe("Extract Instructions Node", () => {
+describe("Extract Instructions Subgraph", () => {
   it("should generate complete instructions artifact for RPS game", async () => {
+    const subgraph = createExtractionSubgraph(instructionsExtractionConfig);
     const gameSpecification = `
 Rock Paper Scissors is a game for 2 players that runs for 3 rounds.
 
@@ -138,25 +140,20 @@ FINISHED:
       ]
     });
 
-    // Setup model and execute node
-    const model = await setupSpecInstructionsModel();
-    const node = extractInstructions(model);
-    
     // Create mock state
     const inputState = {
       gameSpecification,
       stateSchema,
       stateTransitions: transitionsArtifact,
       gameRules: "",
-      phaseInstructions: {},
-      exampleState: "",
-      playerPhaseInstructions: {},
-      transitionInstructions: {},
     };
     
-    // Execute node
-    console.log("\n=== Executing Extract Instructions Node ===\n");
-    const result = await node(inputState);
+    // Execute subgraph
+    console.log("\n=== Executing Extract Instructions Subgraph ===\n");
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-instructions-1" }
+    });
     
     // Parse result - separated into playerPhaseInstructions and transitionInstructions
     expect(result.playerPhaseInstructions).toBeDefined();

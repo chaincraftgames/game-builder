@@ -347,4 +347,225 @@ describe('Router Node', () => {
       expect(resultGameState.game.gameError).toBeUndefined();
     });
   });
+
+  describe('Hero Battle Transition Bug', () => {
+    it('should transition from SUBMISSION to BATTLE_GENERATION when submissionCount reaches 2', async () => {
+      const routerNode = router();
+
+      // Minimal state that matches the bug report
+      const gameState = {
+        game: {
+          currentPhase: 'SUBMISSION',
+          gameEnded: false,
+          submissionCount: 2,
+          heroSubmissions: [],
+          winner: null,
+          battleNarrative: null,
+          publicMessage: 'Submit your hero now to start the battle!'
+        },
+        players: {
+          '0x0d97a8c98334edc1d795ce68a3d66ede72b34614': {
+            hasSubmitted: true,
+            heroText: 'I am a sentient blackhole that swallows up anything in its path even light!',
+            actionRequired: true,  // BUG: This should be false after submission
+            actionsAllowed: true,
+            illegalActionCount: 0,
+            ready: true
+          },
+          '0x0000000000000000000000000000000000000002': {
+            hasSubmitted: true,
+            heroText: 'I am a faster than light anti matter entity that can form matter when needed for battle.',
+            actionRequired: true,  // BUG: This should be false after submission
+            actionsAllowed: true,
+            illegalActionCount: 0,
+            ready: true
+          }
+        }
+      };
+
+      // Minimal transitions artifact
+      const transitions = {
+        phases: ['init', 'SUBMISSION', 'BATTLE_GENERATION', 'COMPLETE', 'finished'],
+        phaseMetadata: [
+          { phase: 'init', requiresPlayerInput: false },
+          { phase: 'SUBMISSION', requiresPlayerInput: true },
+          { phase: 'BATTLE_GENERATION', requiresPlayerInput: false },
+          { phase: 'COMPLETE', requiresPlayerInput: false },
+          { phase: 'finished', requiresPlayerInput: false }
+        ],
+        transitions: [
+          {
+            id: 'start_battle_generation',
+            fromPhase: 'SUBMISSION',
+            toPhase: 'BATTLE_GENERATION',
+            condition: 'Both players have submitted their heroes (submissionCount reaches 2)',
+            humanSummary: 'Automatically transition to battle generation when both players have submitted heroes',
+            preconditions: [
+              {
+                id: 'in_submission_phase',
+                deterministic: true,
+                explain: "game.currentPhase == 'SUBMISSION'",
+                logic: {
+                  '==': [
+                    { var: 'game.currentPhase' },
+                    'SUBMISSION'
+                  ]
+                }
+              },
+              {
+                id: 'both_heroes_submitted',
+                deterministic: true,
+                explain: 'game.submissionCount == 2',
+                logic: {
+                  '==': [
+                    { var: 'game.submissionCount' },
+                    2
+                  ]
+                }
+              }
+            ],
+            checkedFields: ['game.currentPhase', 'game.submissionCount']
+          }
+        ]
+      };
+
+      const initialState: Partial<RuntimeStateType> = {
+        gameState: JSON.stringify(gameState),
+        stateTransitions: JSON.stringify(transitions),
+        playerPhaseInstructions: {
+          SUBMISSION: JSON.stringify({
+            phase: 'SUBMISSION',
+            playerActions: []
+          })
+        },
+        transitionInstructions: {
+          start_battle_generation: JSON.stringify({
+            id: 'start_battle_generation',
+            transitionName: 'Start Battle Generation',
+            stateDelta: []
+          })
+        },
+        isInitialized: true,
+        playerAction: undefined
+      };
+
+      const result = await routerNode(initialState as RuntimeStateType);
+
+      console.log('[TEST] Router result:', JSON.stringify(result, null, 2));
+
+      // The bug: Router sees actionRequired=true and waits for player input
+      // instead of checking automatic transitions
+      expect(result.requiresPlayerInput).toBe(true);
+      expect(result.transitionReady).toBe(false);
+    });
+
+    it('should transition when actionRequired is properly set to false after submissions', async () => {
+      const routerNode = router();
+
+      // Same state but with actionRequired correctly set to false
+      const gameState = {
+        game: {
+          currentPhase: 'SUBMISSION',
+          gameEnded: false,
+          submissionCount: 2,
+          heroSubmissions: [],
+          winner: null,
+          battleNarrative: null,
+          publicMessage: 'Submit your hero now to start the battle!'
+        },
+        players: {
+          '0x0d97a8c98334edc1d795ce68a3d66ede72b34614': {
+            hasSubmitted: true,
+            heroText: 'I am a sentient blackhole that swallows up anything in its path even light!',
+            actionRequired: false,  // FIXED: Set to false after submission
+            actionsAllowed: false,
+            illegalActionCount: 0,
+            ready: true
+          },
+          '0x0000000000000000000000000000000000000002': {
+            hasSubmitted: true,
+            heroText: 'I am a faster than light anti matter entity that can form matter when needed for battle.',
+            actionRequired: false,  // FIXED: Set to false after submission
+            actionsAllowed: false,
+            illegalActionCount: 0,
+            ready: true
+          }
+        }
+      };
+
+      const transitions = {
+        phases: ['init', 'SUBMISSION', 'BATTLE_GENERATION', 'COMPLETE', 'finished'],
+        phaseMetadata: [
+          { phase: 'init', requiresPlayerInput: false },
+          { phase: 'SUBMISSION', requiresPlayerInput: true },
+          { phase: 'BATTLE_GENERATION', requiresPlayerInput: false },
+          { phase: 'COMPLETE', requiresPlayerInput: false },
+          { phase: 'finished', requiresPlayerInput: false }
+        ],
+        transitions: [
+          {
+            id: 'start_battle_generation',
+            fromPhase: 'SUBMISSION',
+            toPhase: 'BATTLE_GENERATION',
+            condition: 'Both players have submitted their heroes (submissionCount reaches 2)',
+            humanSummary: 'Automatically transition to battle generation when both players have submitted heroes',
+            preconditions: [
+              {
+                id: 'in_submission_phase',
+                deterministic: true,
+                explain: "game.currentPhase == 'SUBMISSION'",
+                logic: {
+                  '==': [
+                    { var: 'game.currentPhase' },
+                    'SUBMISSION'
+                  ]
+                }
+              },
+              {
+                id: 'both_heroes_submitted',
+                deterministic: true,
+                explain: 'game.submissionCount == 2',
+                logic: {
+                  '==': [
+                    { var: 'game.submissionCount' },
+                    2
+                  ]
+                }
+              }
+            ],
+            checkedFields: ['game.currentPhase', 'game.submissionCount']
+          }
+        ]
+      };
+
+      const initialState: Partial<RuntimeStateType> = {
+        gameState: JSON.stringify(gameState),
+        stateTransitions: JSON.stringify(transitions),
+        playerPhaseInstructions: {
+          SUBMISSION: JSON.stringify({
+            phase: 'SUBMISSION',
+            playerActions: []
+          })
+        },
+        transitionInstructions: {
+          start_battle_generation: JSON.stringify({
+            id: 'start_battle_generation',
+            transitionName: 'Start Battle Generation',
+            stateDelta: []
+          })
+        },
+        isInitialized: true,
+        playerAction: undefined
+      };
+
+      const result = await routerNode(initialState as RuntimeStateType);
+
+      console.log('[TEST] Fixed router result:', JSON.stringify(result, null, 2));
+
+      // With actionRequired=false, router should check transitions and fire the transition
+      expect(result.transitionReady).toBe(true);
+      expect(result.nextPhase).toBe('BATTLE_GENERATION');
+      expect(result.requiresPlayerInput).toBe(false);
+    });
+  });
 });
