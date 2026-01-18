@@ -72,10 +72,10 @@ function routeFromSpecPlan(state: typeof GameDesignState.State):
   console.log(`[router] Current: ${accumulated.length} plans, ${accumulated.reduce((sum, plan) => sum + plan.changes.length, 0)} chars`);
   
   // Always generate initial spec immediately (no existing spec to update)
-  if (!state.currentSpec) {
-    console.log('[router] Initial spec - generating immediately');
-    return "execute_spec";
-  }
+  // if (!state.currentSpec) {
+  //   console.log('[router] Initial spec - generating immediately');
+  //   return "execute_spec";
+  // }
   
   if (state.forceSpecGeneration) {
     console.log('[router] Force flag set - generating immediately');
