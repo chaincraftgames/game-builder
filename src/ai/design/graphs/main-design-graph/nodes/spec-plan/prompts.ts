@@ -5,49 +5,50 @@
  */
 
 /**
- * Base guidelines for describing game content/changes
+ * Core guidelines for describing gameplay requirements
  */
-const BASE_CONTENT_GUIDELINES = `- Describe the mechanical rules needed to run the game
-- Include: setup, player actions, state transitions, validation rules, win/loss conditions
-- Exclude: strategy tips, player motivation, thematic flavor, "why this is fun"
-- Reference specific sections if updating (e.g., "in the Setup phase", "in the player turn structure")`;
+const BASE_CONTENT_GUIDELINES = `Focus on PLAYER EXPERIENCE and GAMEPLAY OUTCOMES, not system implementation:
+
+**Include:**
+- What players can do and when (available actions)
+- How actions resolve and what changes (outcomes and effects)
+- What information players see (public vs hidden, timing of reveals)
+- When the game ends (win/loss conditions, termination triggers)
+- Critical fairness rules (timeouts, ties, edge cases that affect outcomes)
+
+**Exclude (spec-processing will extract these):**
+- Data structures, field names, state schemas
+- Input validation details (character limits, regex patterns)
+- Phase transition logic, state machine definitions
+- Algorithm implementations (assignment methods, calculations)
+- System procedures (error handling, persistence, retries)
+
+**For narrative requirements:** Include WHAT narrative must accomplish (mention X, reveal Y, hide Z, length targets). Use markers for HOW to write (tone, style, examples).`;
 
 /**
  * Example for initial game specification
  */
 const INITIAL_EXAMPLE = `
 **Example:**
-"Based on the user's description of a card-drafting game:
+"Card-drafting game where players build winning combinations:
 
-1. **Game Setup**: Each player starts with 5 cards drawn from a shared deck of 60 cards. Place remaining deck in center.
+**Setup**: Each player starts with 5 cards from a 60-card deck.
 
-2. **Turn Structure**: On each turn, players simultaneously select one card from their hand and place it face-down. Once all players have selected, reveal cards simultaneously.
+**Player Actions**: Each turn, players simultaneously choose one card from hand and reveal together. Cards resolve in priority order (shown on card) with effects like draw, discard, or gain points.
 
-3. **Card Resolution**: Cards are resolved in priority order (shown on each card). Effects may include: draw cards, force opponent to discard, gain victory points.
+**Card Passing**: After resolution, pass remaining hand left to next player.
 
-4. **Passing Cards**: After resolution, each player passes their remaining hand to the player on their left.
-
-5. **Victory Conditions**: Game ends when deck is empty. Player with most victory points wins."`;
+**Ending**: When deck empties, player with most victory points wins."`;
 
 /**
  * Examples for updating existing specification
  */
 const UPDATE_EXAMPLES = `
-**Example for adding new mechanics:**
-"Based on the user's request to add a resource management mechanic:
-
-1. **Setup Phase**: Add a step where each player receives 10 gold coins at the start of the game
-
-2. **Player Turn Structure**: Insert a new 'Income Phase' at the beginning of each turn where players collect 2 gold coins
-
-3. **Actions**: Add a new action 'Purchase Card' - costs 5 gold coins, allows player to draw 2 cards from the deck
-
-4. **Victory Conditions**: Modify the win condition - first player to reach 20 points OR accumulate 50 gold coins wins
-
-5. **Rules Clarification**: Players can carry unlimited gold between turns, but must spend all gold before the game ends or forfeit it"
+**Example for adding mechanics:**
+"Add resource management: Players start with 10 gold coins and collect 2 per turn. New action: spend 5 gold to draw 2 cards. Win condition updated: first to 20 points OR 50 gold wins."
 
 **Example for already-implemented feature:**
-"Add score tracking to the game (already implemented - current spec includes comprehensive scoring system with point tracking and victory conditions)"`;
+"Add score tracking (already implemented - no update needed)"`;
 
 /**
  * Base template for spec planning - common context and structure
@@ -58,7 +59,9 @@ Your task is to analyze the user's conversation and extract key metadata about t
 
 **Context:**
 
+!___ CACHE:current-spec ___!
 {currentSpec}
+!___ END-CACHE ___!
 
 {conversationSummary}
 
@@ -73,18 +76,17 @@ Your task is to analyze the user's conversation and extract key metadata about t
  */
 const INITIAL_SPEC_INSTRUCTIONS = `
 
-**You must provide a structured plan with these parts:**
+**Provide a structured plan with these parts:**
 
-1. **summary**: A concise 1-2 sentence description of the game concept
-2. **playerCount**: The minimum and maximum number of players (as min/max numbers)
-3. **narrativeStyleGuidance**: Extract tone, style, and narrative preferences from the user's description
-   - Look for descriptors like "dark", "humorous", "serious", "whimsical", "dramatic", "lighthearted"
-   - Identify target audience and narrative voice (e.g., "family-friendly", "mature themes", "educational")
-   - Note any specific stylistic requirements or genre conventions
-   - Examples: "Dark fantasy with grim consequences and morally ambiguous choices", "Lighthearted family game with silly humor and simple language"
-4. **changes**: A comprehensive description of what the game specification should contain (setup, rules, mechanics, turn structure, win conditions, etc.)
+1. **summary**: Concise 1-2 sentence game concept
+2. **playerCount**: Min/max players (as numbers)
+3. **narrativeStyleGuidance**: Tone, style, and narrative voice from user's description
+   - Tone: "dark", "humorous", "whimsical", "dramatic", "lighthearted"
+   - Audience: "family-friendly", "mature themes", "educational"
+   - Examples: "Whimsical and absurd, encouraging silly creativity" or "Dark fantasy with grim consequences"
+4. **changes**: Complete gameplay requirements
 
-**Guidelines for the 'changes' field:**
+**Guidelines for 'changes':**
 ${BASE_CONTENT_GUIDELINES}
 ${INITIAL_EXAMPLE}`;
 
@@ -94,27 +96,24 @@ ${INITIAL_EXAMPLE}`;
 const ITERATIVE_SPEC_INSTRUCTIONS = `
 
 **You must provide a structured plan with these parts:**
+Provide a structured plan with these parts:**
 
-1. **summary**: A concise 1-2 sentence description of the game concept (only if changed)
-2. **playerCount**: The minimum and maximum number of players (only if changed)
-3. **narrativeStyleGuidance**: Updated tone/style guidance (ONLY if user explicitly changed narrative style)
-   - Examples of when to include: "make it darker", "more humorous", "less serious", "family-friendly version"
-   - Examples of when to OMIT: User only changed mechanics, rules, or gameplay elements
-   - If included, provide the COMPLETE updated guidance, not just the change
-4. **narrativeChanges**: Array of specific narrative section updates (ONLY if user explicitly requests changes to narrative content)
-   - Use this when user requests changes to story elements, atmospheric descriptions, flavor text, or narrative guidance
-   - Each entry should have: \`key\` (the narrative marker like "TONE_STYLE", "TURN_1_GUIDE") and \`changes\` (what to modify)
-   - If user references narrative content but you're unsure which marker, the conversational agent will have asked them to clarify
-   - Examples of when to include:
-     * "Make turn 1 less scary" → \`[{{ key: "TURN_1_GUIDE", changes: "Reduce horror elements, make more mysterious" }}]\`
-     * "Update the opening atmosphere" → \`[{{ key: "OPENING_SCENE", changes: "User's requested changes..." }}]\`
-   - Examples of when to OMIT: User changed game rules/mechanics (that goes in 'changes' field)
-5. **changes**: A clear, natural language plan describing what needs to change in the specification
+1. **summary**: Updated game concept (only if changed)
+2. **playerCount**: Updated min/max (only if changed)
+3. **narrativeStyleGuidance**: Updated tone/style (ONLY if user explicitly changed it)
+   - Include when user says: "make it darker", "more humorous", "family-friendly version"
+   - Omit when user only changed mechanics/rules
+   - Provide COMPLETE guidance, not just changes
+4. **narrativeChanges**: Specific narrative section updates (ONLY if user requests narrative content changes)
+   - For story elements, atmosphere, flavor text changes
+   - Format: \`[{ key: "TONE_STYLE", changes: "what to modify" }]\`
+   - Example: "Make turn 1 less scary" → \`[{ key: "TURN_1_GUIDE", changes: "Reduce horror, more mysterious" }]\`
+   - Omit for pure gameplay changes
+5. **changes**: What needs to change in the specification
 
-**Guidelines for the 'changes' field:**
+**Guidelines for 'changes':**
 ${BASE_CONTENT_GUIDELINES}
-- **If the requested feature already exists in the spec**: Keep it VERY brief - just state what was requested and note "(already implemented)" or "(no update required)". Do NOT provide lengthy explanations.
-${UPDATE_EXAMPLES}`;
+- **If feature already exists**: Note "(already implemented)" and keep brief
 
 /**
  * Get the appropriate spec plan prompt based on whether this is initial generation
