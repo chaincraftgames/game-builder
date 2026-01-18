@@ -114,6 +114,7 @@ Provide a structured plan with these parts:**
 **Guidelines for 'changes':**
 ${BASE_CONTENT_GUIDELINES}
 - **If feature already exists**: Note "(already implemented)" and keep brief
+`
 
 /**
  * Get the appropriate spec plan prompt based on whether this is initial generation
