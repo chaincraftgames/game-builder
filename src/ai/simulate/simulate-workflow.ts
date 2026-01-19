@@ -155,6 +155,7 @@ export type SimResponse = {
   publicMessage?: string;
   playerStates: PlayerStates;
   gameEnded: boolean;
+  winner?: string | string[] | null; // Player ID(s) who won, null for tie/no winner, undefined if game hasn't ended
   gameError?: {
     errorType: 'deadlock' | 'invalid_state' | 'rule_violation' | 'transition_failed';
     errorMessage: string;
@@ -237,10 +238,76 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
     playerStates.set(playerId, playerState);
   }
   
+  // Extract winner information from game state
+  // Winner can be stored as:
+  // - game.winner (single player ID or null)
+  // - game.winners (array of player IDs)
+  // - Determined from player scores (highest score wins)
+  let winner: string | string[] | null | undefined = undefined;
+  
+  if (gameEnded) {
+    // Helper to convert player alias to UUID if needed
+    const resolvePlayerId = (playerIdOrAlias: string | null): string | null => {
+      if (playerIdOrAlias === null) return null;
+      // Check if it's an alias (player1, player2, etc.)
+      const alias = playerIdOrAlias.toLowerCase();
+      const uuid = playerMapping[alias];
+      return uuid || playerIdOrAlias; // Return UUID if found, otherwise return as-is
+    };
+    
+    // First, check for explicit winner fields
+    if (game?.winner !== undefined) {
+      // Handle null (tie/no winner) or string (single winner)
+      if (game.winner === null) {
+        winner = null;
+      } else {
+        winner = resolvePlayerId(String(game.winner));
+      }
+    } else if (game?.winners !== undefined) {
+      // Handle array of winners
+      if (Array.isArray(game.winners)) {
+        winner = game.winners.map(w => w === null ? null : resolvePlayerId(String(w))).filter(w => w !== null) as string[];
+        if (winner.length === 0) winner = null;
+        else if (winner.length === 1) winner = winner[0];
+      } else {
+        winner = resolvePlayerId(String(game.winners));
+      }
+    } else if (players && Object.keys(players).length > 0) {
+      // Fallback: determine winner from highest score
+      // This is a common pattern in games where winner is determined by score
+      const playerScores: Array<{ playerId: string; score: number }> = [];
+      for (const playerId in players) {
+        const score = players[playerId]?.score ?? 0;
+        playerScores.push({ playerId, score });
+      }
+      
+      if (playerScores.length > 0) {
+        const maxScore = Math.max(...playerScores.map(p => p.score));
+        const winners = playerScores.filter(p => p.score === maxScore).map(p => p.playerId);
+        
+        if (winners.length === 1) {
+          winner = winners[0];
+        } else if (winners.length > 1) {
+          // Multiple players tied for highest score
+          winner = winners;
+        } else {
+          // No scores found, no winner
+          winner = null;
+        }
+      } else {
+        winner = null;
+      }
+    } else {
+      // Game ended but no winner information available
+      winner = null;
+    }
+  }
+  
   return {
     publicMessage,
     playerStates,
     gameEnded,
+    winner,
     gameError,
   };
 }

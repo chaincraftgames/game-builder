@@ -19,6 +19,7 @@ export const SimResponseSchema = z.object({
   publicMessage: z.string().optional(),
   playerStates: PlayerStatesSchema,
   gameEnded: z.boolean(),
+  winner: z.union([z.string(), z.array(z.string()), z.null()]).optional(), // Player ID(s) who won, null for tie/no winner, undefined if game hasn't ended
   gameError: z
     .object({
       errorType: z.enum([
