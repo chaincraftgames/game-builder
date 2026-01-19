@@ -54,4 +54,20 @@ export const SpecProcessingState = Annotation.Root({
     reducer: (_, y) => y,
     default: () => "",
   }),
+
+  // Arrays to capture validation errors across retry attempts
+  schemaValidationErrors: Annotation<string[] | undefined>({
+    reducer: (x, y) => y ? [...(x || []), ...y] : x,
+    default: () => undefined,
+  }),
+
+  transitionsValidationErrors: Annotation<string[] | undefined>({
+    reducer: (x, y) => y ? [...(x || []), ...y] : x,
+    default: () => undefined,
+  }),
+
+  instructionsValidationErrors: Annotation<string[] | undefined>({
+    reducer: (x, y) => y ? [...(x || []), ...y] : x,
+    default: () => undefined,
+  }),
 });

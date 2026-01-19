@@ -35,14 +35,30 @@ Rules for the planner output:
   empty array "[]".
 - The Natural summary may be plain text (1–3 sentences). The Fields section MUST be valid 
   JSON parseable by the executor.
-- ⚠️ CRITICAL: Keep state structure FLAT. Only one level of properties under "game" and 
-  under "players". Do NOT create nested objects like game.settings.difficulty or 
-  players.<id>.inventory.gold. Use simple flat fields: game.difficulty, players.<id>.gold.
+- ⚠️ CRITICAL: STATE STRUCTURE RULES
+  * game: Properties are ONE level deep directly under "game"
+    ✓ CORRECT: game.round, game.currentPhase, game.difficulty
+    ✗ INCORRECT: game.settings.difficulty (nested object)
+  * players: This is a map/record where each player ID is a key, with properties ONE level 
+    under that key
+    ✓ CORRECT: players.<id>.score, players.<id>.hand, players.<id>.currentMove
+    ✗ INCORRECT: players.<id>.inventory.gold (nested under player)
+    ✗ INCORRECT: game.scoreP1, game.player1Hand (player data under game with suffixes)
+  Player-specific data MUST be organized under the players map, NOT as separate fields 
+  under game with player suffixes. This ensures scalability to N-player games.
 - ⚠️ RANDOMNESS STORAGE: If the game specification mentions dice rolls, card draws, 
   shuffling, random events, or any non-deterministic outcomes, add fields to store the 
   random results. Examples: game.lastDiceRoll, game.monsterAttackRoll, game.deadlyScenario. 
   These fields allow random values to be generated once and referenced deterministically in 
   game logic.
+- ⚠️ CRITICAL: USE STANDARD PLAYER STATE FIELDS - The base schema provides "actionRequired" 
+  (boolean) to indicate whether a player must take an action for the game to progress. 
+  DO NOT create custom fields like "hasSubmitted", "hasMoved", "turnComplete", "choiceMade", 
+  etc. to track whether a player has completed their action. ALWAYS use the standard 
+  "actionRequired" field for this purpose. When a player completes all required actions 
+  (submits a choice, makes a move, etc.),even if the payer may still take optional actions, 
+  the game logic will set actionRequired=false. This ensures the router can reliably 
+  determine when all players have acted and automatic transitions can proceed.
 
 You are provided with a formal schema definition for the base game state.  The final schema
 must match the shape of this schema:
@@ -144,10 +160,14 @@ CRITICAL RULES:
 - Use "required" arrays to specify which fields are mandatory
 - Include "description" for all game-specific fields you add
 - Keep it simple: use object, array, string, number, boolean, integer types and enum for constrained strings
-- ⚠️ CRITICAL: Keep structure FLAT - only ONE level of properties under "game" and under 
-  "players". Do NOT nest objects. Example: use "difficulty" directly under game.properties, 
-  NOT "settings.properties.difficulty". All player fields go directly under 
-  players.additionalProperties.properties, NOT nested inside other objects.
+- ⚠️ CRITICAL: STATE STRUCTURE RULES
+  * game: Properties are ONE level deep directly under "game"
+    Example: use "difficulty" directly under game.properties, NOT "settings.properties.difficulty"
+  * players: This is a map/record where each player ID is a key, with properties ONE level 
+    under that key
+    All player fields go directly under players.additionalProperties.properties
+    ✗ INCORRECT: nested objects like players.additionalProperties.properties.inventory.properties.gold
+    ✓ CORRECT: players.additionalProperties.properties.gold
 
 Example game-specific additions:
 - Game phase tracking: {{ "currentPhase": {{ "type": "string", "description": "Current game phase - valid values defined by transitions artifact" }} }}

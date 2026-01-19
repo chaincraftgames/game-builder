@@ -12,9 +12,10 @@ import {
 } from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
-import { getSaver } from "../memory/sqlite-memory.js";
-import { queueAction } from "./action-queues.js";
+import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
+import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
+import { InMemoryStore } from "@langchain/langgraph";
 
 /**
  * Replace player aliases (player1, player2, etc.) with real UUIDs in message text.
@@ -399,12 +400,28 @@ export async function createSimulation(
       
       // Get or create spec processing graph for this spec
       const specGraph = await specGraphCache.getGraph(specKey);
-      const config = { configurable: { thread_id: specKey } };
+      const specConfig = { 
+        configurable: { thread_id: specKey },
+        store: new InMemoryStore()
+      };
       
-      // Invoke spec graph - results saved to checkpoint automatically
+      // Invoke spec graph - results saved to checkpoint automatically (cached by specKey)
       const specResult = await specGraph.invoke({
         gameSpecification: specToUse,
-      }, config);
+      }, specConfig);
+      
+      // Check for validation errors before using artifacts
+      const validationErrors = [
+        ...(specResult.schemaValidationErrors || []),
+        ...(specResult.transitionsValidationErrors || []),
+        ...(specResult.instructionsValidationErrors || []),
+      ];
+      
+      if (validationErrors.length > 0) {
+        const errorMessage = `Spec processing failed validation with ${validationErrors.length} error(s):\n${validationErrors.join('\n')}`;
+        console.error("[simulate]", errorMessage);
+        throw new Error(errorMessage);
+      }
       
       artifacts = {
         gameRules: specResult.gameRules,
@@ -419,18 +436,22 @@ export async function createSimulation(
       console.log("[simulate] Using cached spec artifacts");
     }
     
-    // Step 2: Store artifacts in runtime graph checkpoint
+    // Step 2: Store artifacts in runtime graph checkpoint using sessionId
     // Get cached runtime graph for this session
     const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
-    const config = { configurable: { thread_id: sessionId } };
+    const runtimeConfig = { configurable: { thread_id: sessionId } };
     
-    console.log("[simulate] Invoking runtime graph to store artifacts (should route to END)");
+    console.log("[simulate] Storing artifacts in runtime graph with sessionId:", sessionId);
     
-    // Store artifacts by invoking runtime graph
-    // Don't pass isInitialized or players - this routes to END and saves artifacts
+    // Store artifacts by invoking runtime graph with the artifacts
+    // Don't pass isInitialized or players - this routes to END and saves artifacts to checkpoint
     const storeResult = await runtimeGraph.invoke({
-      ...artifacts,
-    }, config);
+      gameRules: artifacts.gameRules,
+      stateSchema: artifacts.stateSchema,
+      stateTransitions: artifacts.stateTransitions,
+      playerPhaseInstructions: artifacts.playerPhaseInstructions,
+      transitionInstructions: artifacts.transitionInstructions,
+    }, runtimeConfig);
     
     console.log("[simulate] Artifact storage invoke completed, result:", {
       hasGameRules: !!storeResult.gameRules,

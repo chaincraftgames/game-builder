@@ -5,12 +5,16 @@
  */
 
 import { describe, expect, it } from "@jest/globals";
-import { extractTransitions } from "../index.js";
-import { setupSpecTransitionsModel } from "#chaincraft/ai/model-config.js";
+import { transitionsExtractionConfig } from "../index.js";
+import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
 import { JsonLogicSchema } from "#chaincraft/ai/simulate/logic/jsonlogic.js";
+import { InMemoryStore } from "@langchain/langgraph";
 
-describe("Extract Transitions Node", () => {
+describe("Extract Transitions Subgraph", () => {
   it("should extract phase transitions from specification", async () => {
+    // Setup - Create subgraph from config
+    const subgraph = createExtractionSubgraph(transitionsExtractionConfig);
+    
     // Use the RPS game rules and schema from extract-schema test
     const gameRules = `
 Rock Paper Scissors is a game for 2-3 players that runs for 3 rounds.
@@ -24,65 +28,56 @@ SCORING (Scoring Phase):
 FINISHED:
 `;
 
-    const stateSchema = `[
-  {
-    "name": "game",
-    "type": "object",
-    "description": "Core game state tracking rounds, moves, and outcomes",
-    "properties": {
-      "phase": {
-        "name": "phase",
-        "type": "string",
-        "description": "Current game phase: playing, scoring, or finished"
-      },
-      "currentRound": {
-        "name": "currentRound",
-        "type": "number",
-        "description": "Current round number (1-3)"
-      },
-      "gameEnded": {
-        "name": "gameEnded",
-        "type": "boolean",
-        "description": "Whether the game has ended"
-      }
-    }
-  },
-  {
-    "name": "players",
-    "type": "object",
-    "description": "Player-specific state keyed by player ID",
-    "items": {
+    const stateSchema = `{
+  "type": "object",
+  "properties": {
+    "game": {
       "type": "object",
+      "description": "Core game state tracking rounds, moves, and outcomes",
       "properties": {
-        "totalScore": {
-          "name": "totalScore",
-          "type": "number",
-          "description": "Total score across all rounds"
+        "currentPhase": {
+          "type": "string",
+          "description": "Current game phase: playing, scoring, or finished"
         },
-        "submittedMove": {
-          "name": "submittedMove",
+        "currentRound": {
+          "type": "number",
+          "description": "Current round number (1-3)"
+        },
+        "gameEnded": {
           "type": "boolean",
-          "description": "Whether player has submitted move this round"
+          "description": "Whether the game has ended"
+        }
+      }
+    },
+    "players": {
+      "type": "object",
+      "description": "Player-specific state keyed by player ID",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "totalScore": {
+            "type": "number",
+            "description": "Total score across all rounds"
+          },
+          "submittedMove": {
+            "type": "boolean",
+            "description": "Whether player has submitted move this round"
+          }
         }
       }
     }
   }
-]`;
+}`;
 
-    const model = await setupSpecTransitionsModel();
-    const extractFn = extractTransitions(model);
-
-    const result = await extractFn({
+    const inputState = {
       gameSpecification: gameRules,
       gameRules,
       stateSchema,
-      stateTransitions: "",
-      playerPhaseInstructions: {},
-      transitionInstructions: {},
-      exampleState: JSON.stringify({
-        game: { phase: "playing", currentRound: 1, gameEnded: false },
-        players: [ { id: "player1", submittedMove: false }, { id: "player2", submittedMove: false } ]
-      }),
+    };
+
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-thread-1" }
     });
 
     console.log("\n=== Extracted Transitions ===\n");
@@ -91,10 +86,10 @@ FINISHED:
 
     // Validate structure
     expect(result.stateTransitions).toBeDefined();
-    // `stateTransitions` is expected to be a structured object artifact.
-    expect(typeof result.stateTransitions).toBe('object');
-    expect(result.stateTransitions).not.toBeNull();
-    const parsed = result.stateTransitions as any;
+    // Parse if string
+    const parsed = typeof result.stateTransitions === 'string'
+      ? JSON.parse(result.stateTransitions)
+      : result.stateTransitions;
     const jsonLen = JSON.stringify(parsed).length;
     expect(jsonLen).toBeGreaterThan(10);
     console.log(`✓ Transitions object length (json): ${jsonLen} chars`);
@@ -205,6 +200,8 @@ FINISHED:
   }, 60000); // 60s timeout for LLM calls
 
   it("should use two-step pattern for random monster attacks", async () => {
+    const subgraph = createExtractionSubgraph(transitionsExtractionConfig);
+    
     const gameRules = `
 A simple adventuring game with a roaming monster.
 
@@ -217,59 +214,51 @@ TRANSITIONS:
 - When a monster attack occurs (random roll), transition from "explore" to "battle".
 `;
 
-    const stateSchema = `[
-      {
-        "name": "game",
-        "type": "object",
-        "description": "Core game state",
-        "properties": {
-          "phase": { "name": "phase", "type": "string" },
-          "round": { "name": "round", "type": "number" },
-          "monsterAttackRoll": { "name": "monsterAttackRoll", "type": "number", "description": "Result of dice roll to determine if monster attacks (1-100)" }
-        }
-      },
-      {
-        "name": "monster",
-        "type": "object",
-        "description": "Monster state",
-        "properties": {
-          "attacking": { "name": "attacking", "type": "boolean", "description": "Whether monster is currently attacking" }
+    const stateSchema = `{
+  "type": "object",
+  "properties": {
+    "game": {
+      "type": "object",
+      "description": "Core game state",
+      "properties": {
+        "currentPhase": { "type": "string" },
+        "round": { "type": "number" },
+        "monsterAttackRoll": { 
+          "type": "number", 
+          "description": "Result of dice roll to determine if monster attacks (1-100)" 
         }
       }
-    ]`;
+    },
+    "monster": {
+      "type": "object",
+      "description": "Monster state",
+      "properties": {
+        "attacking": { 
+          "type": "boolean", 
+          "description": "Whether monster is currently attacking" 
+        }
+      }
+    }
+  }
+}`;
 
-    const model = await setupSpecTransitionsModel();
-    const extractFn = extractTransitions(model);
-
-    const result = await extractFn({
+    const inputState = {
       gameSpecification: gameRules,
       gameRules,
       stateSchema,
-      stateTransitions: "",
-      playerPhaseInstructions: {},
-      transitionInstructions: {},
-      exampleState: JSON.stringify({
-        game: { phase: "explore", round: 1 },
-        monster: { attacking: false },
-        players: [ { id: "player1" }, { id: "player2" } ]
-      }),
+    };
+
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-thread-2" }
     });
 
-    // Normalize structured transitions (accept either `stateTransitionsJson` or structured `stateTransitions` object)
+    // Normalize structured transitions
     let parsed: any;
-    if ((result as any).stateTransitionsJson) {
-      parsed = JSON.parse((result as any).stateTransitionsJson as string);
-    } else if (typeof result.stateTransitions === 'object') {
-      parsed = result.stateTransitions;
-    } else if (typeof result.stateTransitions === 'string') {
-      // try to parse string output as JSON if possible
-      try {
-        parsed = JSON.parse(result.stateTransitions as string);
-      } catch (e) {
-        parsed = { transitions: [] };
-      }
+    if (typeof result.stateTransitions === 'string') {
+      parsed = JSON.parse(result.stateTransitions);
     } else {
-      parsed = { transitions: [] };
+      parsed = result.stateTransitions;
     }
 
     expect(Array.isArray(parsed.transitions)).toBe(true);
@@ -325,6 +314,8 @@ TRANSITIONS:
   }, 60000);
 
   it("should use custom player operations in preconditions", async () => {
+    const subgraph = createExtractionSubgraph(transitionsExtractionConfig);
+    
     console.log("\n=== TEST: Custom Player Operations in Transitions ===");
     
     const gameRules = `
@@ -385,29 +376,22 @@ The game should NOT enumerate individual player checks. It should use logic that
   "required": ["game", "players"]
 }`;
 
-    const model = await setupSpecTransitionsModel();
-    const extractFn = extractTransitions(model);
-
-    const result = await extractFn({
+    const inputState = {
       gameSpecification: gameRules,
       gameRules,
       stateSchema,
-      stateTransitions: "",
-      playerPhaseInstructions: {},
-      transitionInstructions: {},
-      exampleState: JSON.stringify({
-        game: { currentPhase: "waiting_for_rolls", gameEnded: false, publicMessage: "Waiting for all players to roll dice" },
-        players: { 
-          p1: { position: 5, actionRequired: true, privateMessage: "Roll your dice" }, 
-          p2: { position: 7, actionRequired: true, privateMessage: "Roll your dice" },
-          p3: { position: 3, actionRequired: false, privateMessage: "Waiting for others" }
-        }
-      }),
+    };
+
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-thread-3" }
     });
 
     console.log("\n=== Extracted Transitions ===");
     expect(result.stateTransitions).toBeDefined();
-    const parsed = result.stateTransitions as any;
+    const parsed = typeof result.stateTransitions === 'string'
+      ? JSON.parse(result.stateTransitions)
+      : result.stateTransitions;
 
     const transitions = parsed.transitions || [];
     console.log("\n=== ALL TRANSITIONS (for debugging) ===");

@@ -1,6 +1,14 @@
 import z from "zod";
 
 /**
+ * Planner field definition
+ */
+export interface PlannerField {
+  name: string;
+  path: string;
+}
+
+/**
  * JSON Schema validation for LLM structured output
  * 
  * PURPOSE: This is a DELIBERATE CONSTRAINT, not a bug.

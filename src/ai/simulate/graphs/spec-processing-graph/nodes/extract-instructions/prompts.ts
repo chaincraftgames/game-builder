@@ -88,6 +88,12 @@ Rules & Guidance:
    - Template variables:
      * Always include: playerId, input fields (choice, moveData, etc.)
      * Often include: playerName for messages
+   - ⚠️ CRITICAL: State changes must include actionRequired:
+     * EVERY player action MUST include a state change to set actionRequired
+     * Set to false if player has completed all required actions for this phase
+     * Set to true if player must take additional actions (multi-step phases)
+     * Example state changes: "set player choice", "set actionRequired to false"
+     * DO NOT create custom completion flags like "hasSubmitted", "hasMoved", "turnComplete"
    
 3. Automatic Transitions:
    - Create EXACTLY ONE instruction hint per AUTOMATIC transition in transitions artifact
@@ -153,7 +159,7 @@ Example Player Action Hint:
   "id": "submit-choice",
   "actionName": "Submit Choice",
   "description": "Player submits their RPS choice (rock/paper/scissors)",
-  "stateChanges": ["set player choice", "set submitted flag"],
+  "stateChanges": ["set player choice", "set actionRequired to false"],
   "validationNeeded": {{
     "hasJsonLogicValidation": true,
     "validationDescription": "Check phase is 'choice', player hasn't submitted yet, choice is valid",
@@ -345,6 +351,14 @@ Other RNG examples:
 {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
 {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
 
+**Path Structure Requirements (CRITICAL)**:
+- Each path segment must be EITHER a literal OR a complete template variable
+- NEVER mix literals and templates within a single segment
+- Valid: "players.{{{{playerId}}}}.score" (each segment is atomic)
+- Invalid: "game.roundWinsP{{{{playerId}}}}" (mixes "roundWinsP" + template)
+- If you need player-specific fields, structure the schema with nested player objects:
+  Use "players.{{{{playerId}}}}.roundsWon" NOT "game.roundWinsP{{{{playerId}}}}"
+
 **Prefer Atomic Operations**: Break complex changes into simple atomic ops.
 
 **CRITICAL VALIDATION**: All operations EXCEPT 'delete' MUST include the appropriate value/amount field:
@@ -452,10 +466,14 @@ Common variable patterns:
 
 **Standard Player State Fields**:
 
-**actionRequired** (boolean) - REQUIRED field, indicates if player MUST take action before game proceeds:
-- Set to true when player must act (game blocks until they act)
-- Set to false after player acts or when phase doesn't require player action
+**actionRequired** (boolean) - REQUIRED field for EVERY player action:
+- ⚠️ CRITICAL: EVERY player action's stateDelta MUST include an operation to set actionRequired
+- Set to false when player has completed all required actions for this phase
+- Set to true when player must take additional actions (multi-step phases like bet-then-confirm)
+- The router uses this flag to determine if the game can proceed or must wait for player input
+- Missing this operation will cause deadlocks where transitions cannot fire
 - Example: {{ "op": "set", "path": "players.{{{{playerId}}}}.actionRequired", "value": false }}
+- DO NOT create custom completion flags (hasSubmitted, hasMoved, etc.) - use actionRequired only
 
 **actionsAllowed** (boolean) - OPTIONAL field for games with optional/voluntary actions:
 - For MOST games, omit actionsAllowed operations - it will default to match actionRequired
