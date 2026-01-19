@@ -351,6 +351,14 @@ Other RNG examples:
 {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
 {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
 
+**Path Structure Requirements (CRITICAL)**:
+- Each path segment must be EITHER a literal OR a complete template variable
+- NEVER mix literals and templates within a single segment
+- Valid: "players.{{{{playerId}}}}.score" (each segment is atomic)
+- Invalid: "game.roundWinsP{{{{playerId}}}}" (mixes "roundWinsP" + template)
+- If you need player-specific fields, structure the schema with nested player objects:
+  Use "players.{{{{playerId}}}}.roundsWon" NOT "game.roundWinsP{{{{playerId}}}}"
+
 **Prefer Atomic Operations**: Break complex changes into simple atomic ops.
 
 **CRITICAL VALIDATION**: All operations EXCEPT 'delete' MUST include the appropriate value/amount field:

@@ -15,6 +15,7 @@ import {
   validateNarrativeMarkers,
   validateArtifactStructure,
   validateInitialStatePreconditions,
+  validatePathStructure,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/validators.js";
 import { getFromStore, NodeConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import { InstructionsArtifact } from "#chaincraft/ai/simulate/schema.js";
@@ -39,6 +40,7 @@ export const instructionsExtractionConfig: NodeConfig = {
     model: await setupSpecExecuteModel(),
     validators: [
       validateJsonParseable,
+      validatePathStructure,
       validateArtifactStructure,
       validateInitializationCompleteness,
       validateActionRequiredSet,

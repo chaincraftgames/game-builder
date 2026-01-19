@@ -129,6 +129,114 @@ export async function validateJsonParseable(
 }
 
 /**
+ * Validate that path segments don't mix literals with template variables
+ */
+function validatePathSegmentStructure(
+  path: string,
+  context: string,
+  errors: string[]
+): void {
+  // Split path into segments
+  const segments = path.split('.');
+  
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    
+    // Skip empty segments
+    if (!segment) continue;
+    
+    // Find all template occurrences
+    const templateMatches = segment.match(/\{\{[^}]+\}\}/g);
+    
+    if (!templateMatches || templateMatches.length === 0) {
+      // Pure literal - OK
+      continue;
+    }
+    
+    if (templateMatches.length === 1) {
+      // Check if the template is the entire segment
+      const isFullTemplate = segment === templateMatches[0];
+      if (isFullTemplate) {
+        // Pure template - OK
+        continue;
+      }
+    }
+    
+    // Has templates but is not a pure template - this is invalid
+    errors.push(
+      `${context}: Path segment "${segment}" mixes literal text with template variables. ` +
+      `Each segment must be EITHER a literal value OR a complete template variable. ` +
+      `Invalid: "scoreP{{id}}", Valid: "score" or "{{fieldName}}"`
+    );
+  }
+}
+
+/**
+ * Validate path structure in all stateDelta operations
+ */
+export async function validatePathStructure(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+
+  const executionOutput = await getFromStore(
+    store,
+    ["instructions", "execution", "output"],
+    threadId
+  );
+
+  if (!executionOutput) {
+    return ["Execution output is missing"];
+  }
+
+  const artifact: InstructionsArtifact = typeof executionOutput === 'string' 
+    ? JSON.parse(executionOutput)
+    : executionOutput;
+
+  // Validate player phases
+  for (const [phaseName, phaseInst] of Object.entries(artifact.playerPhases || {})) {
+    for (const action of phaseInst.playerActions || []) {
+      if (action.stateDelta && Array.isArray(action.stateDelta)) {
+        for (let i = 0; i < action.stateDelta.length; i++) {
+          const op = action.stateDelta[i] as any;
+          const pathField = op.path || op.fromPath || op.toPath;
+          
+          if (pathField && typeof pathField === 'string') {
+            validatePathSegmentStructure(
+              pathField,
+              `Action '${action.id}' stateDelta[${i}]`,
+              errors
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // Validate transitions
+  for (const [transitionId, transition] of Object.entries(artifact.transitions || {})) {
+    if (transition.stateDelta && Array.isArray(transition.stateDelta)) {
+      for (let i = 0; i < transition.stateDelta.length; i++) {
+        const op = transition.stateDelta[i] as any;
+        const pathField = op.path || op.fromPath || op.toPath;
+        
+        if (pathField && typeof pathField === 'string') {
+          validatePathSegmentStructure(
+            pathField,
+            `Transition '${transition.id}' stateDelta[${i}]`,
+            errors
+          );
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Validate stateDelta operations for correctness
  */
 function validateStateDelta(
