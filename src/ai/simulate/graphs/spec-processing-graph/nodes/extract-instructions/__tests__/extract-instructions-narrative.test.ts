@@ -10,14 +10,16 @@
  */
 
 import { describe, expect, it } from "@jest/globals";
-import { setupSpecInstructionsModel } from "#chaincraft/ai/model-config.js";
-import { extractInstructions } from "../index.js";
+import { instructionsExtractionConfig } from "../index.js";
+import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
 import { InstructionsArtifact } from "#chaincraft/ai/simulate/schema.js";
 import { JsonLogicSchema } from "#chaincraft/ai/simulate/logic/jsonlogic.js";
 import jsonLogic from "json-logic-js";
+import { InMemoryStore } from "@langchain/langgraph";
 
-describe("Extract Instructions Node - Narrative Game", () => {
+describe("Extract Instructions Subgraph - Narrative Game", () => {
   it("should generate instructions for narrative-driven oracle game", async () => {
+    const subgraph = createExtractionSubgraph(instructionsExtractionConfig);
     const gameSpecification = `
 The Oracle is a single-player narrative game where the player seeks wisdom from a mystical oracle.
 
@@ -239,25 +241,21 @@ The final wisdom delivery should feel like a culmination of the entire conversat
       ]
     });
 
-    // Setup model and execute node
-    const model = await setupSpecInstructionsModel();
-    const node = extractInstructions(model);
-    
     // Create mock state
     const inputState = {
       gameSpecification,
       stateSchema,
       stateTransitions: transitionsArtifact,
-      specNarratives,
       gameRules: "",
-      playerPhaseInstructions: {},
-      transitionInstructions: {},
-      exampleState: "",
+      specNarratives,
     };
     
-    // Execute node
-    console.log("\n=== Executing Extract Instructions Node (Narrative Game) ===\n");
-    const result = await node(inputState);
+    // Execute subgraph
+    console.log("\n=== Executing Extract Instructions Subgraph (Narrative) ===\n");
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-instructions-narrative-1" }
+    });
     
     // Parse result
     expect(result.playerPhaseInstructions).toBeDefined();

@@ -1,0 +1,326 @@
+/**
+ * Validation functions for schema extraction
+ */
+
+import { PlannerField } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js";
+import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js";
+import { getFromStore } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
+import { BaseStore } from "@langchain/langgraph";
+
+/**
+ * Parse planner output to extract field definitions
+ */
+export function extractPlannerFields(plannerOutput: string): PlannerField[] {
+  const fields: PlannerField[] = [];
+  
+  try {
+    // Look for Fields: ```json [...] ``` markdown code block in planner output
+    const fieldsMatch = plannerOutput.match(/Fields:\s*```json\s*([\s\S]*?)```/i);
+    if (!fieldsMatch) return fields;
+    
+    const fieldsJson = fieldsMatch[1].trim();
+    const parsed = JSON.parse(fieldsJson);
+    
+    if (Array.isArray(parsed)) {
+      parsed.forEach((field: any) => {
+        if (field.name && field.path) {
+          fields.push({ name: field.name, path: field.path });
+        }
+      });
+    }
+  } catch (error) {
+    console.warn("[validator] Failed to parse planner fields:", error);
+  }
+  
+  return fields;
+}
+
+/**
+ * Validate planner output completeness
+ */
+export async function validatePlanCompleteness(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const plannerOutput = await getFromStore(store, ["schema", "plan", "output"], threadId);
+  
+  console.log("[validatePlanCompleteness] plannerOutput type:", typeof plannerOutput);
+  console.log("[validatePlanCompleteness] plannerOutput value:", JSON.stringify(plannerOutput).substring(0, 200));
+  
+  if (!plannerOutput || (typeof plannerOutput === 'string' && plannerOutput.trim().length === 0)) {
+    errors.push("Planner output is empty");
+    return errors;
+  }
+  
+  // Handle if it's still wrapped
+  const outputString = typeof plannerOutput === 'string' ? plannerOutput : JSON.stringify(plannerOutput);
+  
+  // Check for natural summary
+  if (!outputString.match(/Natural summary:/i)) {
+    errors.push("Missing natural summary section");
+  }
+  
+  // Check for fields section
+  if (!outputString.match(/Fields:/i)) {
+    errors.push("Missing fields section");
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate planner identified required fields
+ */
+export async function validatePlanFieldCoverage(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const plannerOutput = await getFromStore(store, ["schema", "plan", "output"], threadId);
+  
+  if (!plannerOutput) {
+    errors.push("No planner output found");
+    return errors;
+  }
+  
+  const fields = extractPlannerFields(plannerOutput);
+  
+  // It's okay to have zero fields if game is very simple
+  // But log a warning
+  if (fields.length === 0) {
+    console.warn("[validator] Planner identified zero custom fields - game uses only base schema");
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate executor output is valid JSON
+ */
+export async function validateJsonParseable(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const executionOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
+  
+  if (!executionOutput) {
+    errors.push("No execution output found");
+    return errors;
+  }
+  
+  try {
+    JSON.parse(executionOutput);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(`Executor output is not valid JSON: ${message}`);
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate schema structure has required top-level fields
+ */
+export async function validateSchemaStructure(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const executionOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
+  
+  if (!executionOutput) {
+    errors.push("No execution output found");
+    return errors;
+  }
+  
+  try {
+    const response = JSON.parse(executionOutput);
+    
+    if (!response.stateSchema) {
+      errors.push("Missing stateSchema field in executor output");
+    }
+    
+    if (!response.state) {
+      errors.push("Missing state field in executor output");
+    }
+    
+    if (!response.gameRules) {
+      errors.push("Missing gameRules field in executor output");
+    }
+    
+    // Validate state structure
+    if (response.state) {
+      if (!response.state.game) {
+        errors.push("State missing game object");
+      }
+      if (!response.state.players) {
+        errors.push("State missing players object");
+      }
+    }
+    
+  } catch (error) {
+    // JSON parse error already caught by validateJsonParseable
+    return errors;
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate required base fields are present in schema
+ */
+export async function validateRequiredFields(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const executionOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
+  
+  if (!executionOutput) {
+    errors.push("No execution output found");
+    return errors;
+  }
+  
+  try {
+    const response = JSON.parse(executionOutput);
+    const schema = response.stateSchema;
+    
+    if (!schema) return errors; // Already caught by validateSchemaStructure
+    
+    // Check game required fields
+    const gameProps = schema?.properties?.game?.properties;
+    if (gameProps) {
+      const requiredGameFields = ['currentPhase', 'gameEnded', 'publicMessage'];
+      for (const field of requiredGameFields) {
+        if (!gameProps[field]) {
+          errors.push(`Schema missing required game field: ${field}`);
+        }
+      }
+    }
+    
+    // Check player required fields
+    const playerProps = schema?.properties?.players?.additionalProperties?.properties;
+    if (playerProps) {
+      const requiredPlayerFields = ['ready', 'actionRequired', 'illegalActionCount'];
+      for (const field of requiredPlayerFields) {
+        if (!playerProps[field]) {
+          errors.push(`Schema missing required player field: ${field}`);
+        }
+      }
+    }
+    
+  } catch (error) {
+    // JSON parse error already caught
+    return errors;
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate field types are appropriate
+ */
+export async function validateFieldTypes(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const executionOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
+  
+  if (!executionOutput) {
+    errors.push("No execution output found");
+    return errors;
+  }
+  
+  try {
+    const response = JSON.parse(executionOutput);
+    const schema = response.stateSchema;
+    
+    if (!schema) return errors;
+    
+    // Check that currentPhase is string (not enum)
+    const currentPhaseType = schema?.properties?.game?.properties?.currentPhase?.type;
+    if (currentPhaseType && currentPhaseType !== 'string') {
+      errors.push(`currentPhase must be type 'string', found: ${currentPhaseType}`);
+    }
+    
+  } catch (error) {
+    return errors;
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate that all planner-identified fields are present in executor schema
+ */
+export async function validatePlannerFieldsInSchema(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  const plannerOutput = await getFromStore(store, ["schema", "plan", "output"], threadId);
+  
+  const executionOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
+  
+  if (!plannerOutput || !executionOutput) {
+    return errors; // Other validators will catch missing outputs
+  }
+  
+  try {
+    const plannerFields = extractPlannerFields(plannerOutput);
+    const response = JSON.parse(executionOutput);
+    const executorSchema = response.stateSchema;
+    
+    if (!executorSchema || plannerFields.length === 0) {
+      return errors;
+    }
+    
+    for (const field of plannerFields) {
+      const fieldPath = field.path === 'game' ? 'game' : 'player';
+      
+      // Extract bare field name by stripping path prefix if present
+      let bareFieldName = field.name;
+      if (fieldPath === 'game' && field.name.startsWith('game.')) {
+        bareFieldName = field.name.substring('game.'.length);
+      } else if (fieldPath === 'player' && (field.name.startsWith('players.') || field.name.startsWith('player.'))) {
+        // Handle patterns like "players.<id>.fieldName" or "player.fieldName"
+        const lastDotIndex = field.name.lastIndexOf('.');
+        bareFieldName = field.name.substring(lastDotIndex + 1);
+      }
+      
+      if (fieldPath === 'game') {
+        // Check game.properties[bareFieldName] exists
+        if (!executorSchema?.properties?.game?.properties?.[bareFieldName]) {
+          errors.push(`Planner identified field '${field.name}' but executor did not add it to schema`);
+        }
+      } else {
+        // Check players.additionalProperties.properties[bareFieldName] exists
+        if (!executorSchema?.properties?.players?.additionalProperties?.properties?.[bareFieldName]) {
+          errors.push(`Planner identified field '${field.name}' but executor did not add it to schema`);
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.warn("[validator] Error validating planner fields in schema:", error);
+  }
+  
+  return errors;
+}

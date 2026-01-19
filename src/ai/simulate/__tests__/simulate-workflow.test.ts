@@ -10,8 +10,8 @@ import { fail } from "assert";
 
 describe("Simulation Workflow", () => {
   setConfig("simulation-graph-type", "test-game-simulation");
-  // Generate unique gameId for each test run to avoid cached artifacts
-  const gameId = `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  // Generate unique sessionId for each test run
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   
   // Use realistic UUID-style player IDs to test player mapping
   const player1Id = `player-${crypto.randomUUID()}`;
@@ -26,9 +26,10 @@ describe("Simulation Workflow", () => {
 
   test("should create a simulation and return the player count", async () => {
     const { gameRules } = await createSimulation(
-      gameId,
-      1, // Initial version
-      initialGameSpec // Optional override for testing
+      sessionId,          // Unique session ID
+      undefined,          // gameId not needed when passing spec directly
+      undefined,          // version not needed when passing spec directly
+      initialGameSpec     // Pass spec directly for testing
     );
 
     expect(gameRules).toBeDefined();
@@ -36,13 +37,14 @@ describe("Simulation Workflow", () => {
   }, 120000); // 120s timeout for spec processing + artifact storage
 
   test("Should initialize the state when the required number of players join", async () => {
-    const { publicMessage, playerStates } = await initializeSimulation(gameId, [
+    const { publicMessage, playerStates } = await initializeSimulation(sessionId, [
       player1Id,
       player2Id,
     ]);
 
     console.debug("publicMessage", publicMessage);
     console.debug("playerStates", playerStates);
+    console.log("Session ID:", sessionId);
     console.log("Player IDs used:", { player1Id, player2Id });
 
     expect(publicMessage).toBeDefined();
@@ -70,7 +72,7 @@ describe("Simulation Workflow", () => {
         for (let playerIndex = 0; playerIndex < 2; playerIndex++) {
           const playerId = playerIds[playerIndex];
           let { publicMessage, playerStates, gameEnded } = await processAction(
-            gameId,
+            sessionId,
             playerId,
             playerMoves[round - 1][playerIndex]
           ).catch((error) => {

@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "@jest/globals";
 import { createSpecProcessingGraph } from "../graphs/spec-processing-graph/index.js";
+import { InMemoryStore } from "@langchain/langgraph";
 
 const RPS_SPEC = `
 # 3-Player Rock-Paper-Scissors Tournament
@@ -77,9 +78,12 @@ describe("Spec Processing Graph - End to End", () => {
     // Create and compile the graph
     const graph = await createSpecProcessingGraph();
     
-    // Run the graph with game specification
+    // Run the graph with game specification and store
     const result = await graph.invoke({
       gameSpecification: RPS_SPEC,
+    }, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-spec-processing-1" }
     });
     
     console.log("\n=== Graph Execution Complete ===\n");
@@ -101,29 +105,30 @@ describe("Spec Processing Graph - End to End", () => {
     expect(result.gameRules.toLowerCase()).toContain("scissors");
     console.log(`✓ Game rules: ${result.gameRules.length} characters`);
     
-    // Validate state schema
+    // Validate state schema (JSON Schema object format)
     const schema = JSON.parse(result.stateSchema);
-    expect(Array.isArray(schema)).toBe(true);
-    expect(schema.length).toBeGreaterThanOrEqual(2);
+    expect(schema.type).toBe("object");
+    expect(schema.properties).toBeDefined();
+    expect(schema.properties.game).toBeDefined();
+    expect(schema.properties.players).toBeDefined();
     
-    const gameField = schema.find((f: any) => f.name === "game");
-    const playersField = schema.find((f: any) => f.name === "players");
+    const gameField = schema.properties.game;
+    const playersField = schema.properties.players;
     
-    expect(gameField).toBeDefined();
-    expect(playersField).toBeDefined();
     expect(gameField.type).toBe("object");
     expect(playersField.type).toBe("object");
     
-    // Check for required runtime fields
-    expect(gameField.items?.properties?.gameEnded).toBeDefined();
-    expect(gameField.items?.properties?.publicMessage).toBeDefined();
-    expect(playersField.items?.properties?.privateMessage).toBeDefined();
-    expect(playersField.items?.properties?.illegalActionCount).toBeDefined();
-    // actionsAllowed should exist in schema as optional field
-    expect(playersField.items?.properties?.actionsAllowed).toBeDefined();
-    expect(playersField.items?.properties?.actionRequired).toBeDefined();
+    // Check for required runtime fields in game
+    expect(gameField.properties.gameEnded).toBeDefined();
+    expect(gameField.properties.publicMessage).toBeDefined();
     
-    console.log(`✓ State schema: ${schema.length} top-level fields with all required runtime fields`);
+    // Check for required runtime fields in players (additionalProperties pattern)
+    expect(playersField.additionalProperties).toBeDefined();
+    expect(playersField.additionalProperties.properties.privateMessage).toBeDefined();
+    expect(playersField.additionalProperties.properties.illegalActionCount).toBeDefined();
+    expect(playersField.additionalProperties.properties.actionRequired).toBeDefined();
+    
+    console.log(`✓ State schema: Valid JSON Schema with all required runtime fields`);
     
     // Validate example state
     const exampleState = JSON.parse(result.exampleState);

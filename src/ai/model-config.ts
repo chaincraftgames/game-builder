@@ -16,6 +16,31 @@ const myEnv = dotenv.config();
 dotenvExpand.expand(myEnv);
 
 /**
+ * Guidance automatically appended to system prompts when using structured output.
+ * Helps prevent LLMs from stringifying JSON instead of returning proper structures.
+ */
+const STRUCTURED_OUTPUT_GUIDANCE = `
+
+## CRITICAL: JSON Output Requirements
+Your response MUST be valid JSON matching the provided schema.
+- ALL fields must be proper JSON types (arrays, objects, strings, numbers, booleans)
+- DO NOT wrap arrays or objects in quote strings
+- DO NOT return stringified JSON (e.g., "[\\"item\\"]" is wrong, ["item"] is correct)
+
+❌ WRONG (stringified array):
+{
+  "items": "[{\\"id\\": 1, \\"name\\": \\"foo\\"}]"
+}
+
+✅ CORRECT (actual array):
+{
+  "items": [{"id": 1, "name": "foo"}]
+}
+
+This applies to ALL nested structures - arrays of objects, objects containing arrays, etc.
+`;
+
+/**
  * Model setup result interface
  */
 export interface ModelWithOptions {
@@ -285,6 +310,11 @@ export const setupModel = async (
     metadata?: Record<string, any>,
     schema?: any
   ): Promise<ModelResponse | any> => {
+    // If schema is provided, append structured output guidance to system prompt
+    if (schema) {
+      systemPrompt = systemPrompt + STRUCTURED_OUTPUT_GUIDANCE;
+    }
+    
     // Check if the prompt contains cache markers
     const hasCacheMarkers = /!___ CACHE:[\w-]+ ___!/.test(systemPrompt);
     

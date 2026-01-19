@@ -13,8 +13,9 @@
  */
 
 import { describe, expect, it } from "@jest/globals";
-import { extractTransitions } from "../index.js";
-import { setupSpecTransitionsModel } from "#chaincraft/ai/model-config.js";
+import { transitionsExtractionConfig } from "../index.js";
+import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
+import { InMemoryStore } from "@langchain/langgraph";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -100,10 +101,9 @@ describe("Space Odyssey - State Denormalization Pattern", () => {
   }
 ]`;
 
-    const model = await setupSpecTransitionsModel();
-    const extractFn = extractTransitions(model);
+    const subgraph = createExtractionSubgraph(transitionsExtractionConfig);
 
-    const result = await extractFn({
+    const result = await subgraph.invoke({
       gameSpecification: gameSpec,
       gameRules: gameSpec,
       stateSchema,
@@ -127,6 +127,9 @@ describe("Space Odyssey - State Denormalization Pattern", () => {
           privateMessage: null
         }]
       }),
+    }, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-space-odyssey-1" }
     });
 
     console.log("\n=== Space Odyssey Transitions ===\n");
@@ -134,8 +137,8 @@ describe("Space Odyssey - State Denormalization Pattern", () => {
 
     // Validate structure
     expect(result.stateTransitions).toBeDefined();
-    expect(typeof result.stateTransitions).toBe('object');
-    const transitions = result.stateTransitions as any;
+    expect(typeof result.stateTransitions).toBe('string');
+    const transitions = JSON.parse(result.stateTransitions!);
 
     // Should have phases including init, round_active, finished
     expect(transitions.phases).toContain("init");
