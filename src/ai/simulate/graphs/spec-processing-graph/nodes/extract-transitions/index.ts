@@ -4,7 +4,7 @@
  * Exports node configuration for transitions extraction with planner/executor pattern
  */
 
-import { ModelWithOptions, setupSpecExecuteModel, setupSpecPlanModel } from "#chaincraft/ai/model-config.js";
+import { setupSpecTransitionsModel } from "#chaincraft/ai/model-config.js";
 import { transitionsPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/planner.js";
 import { transitionsExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/executor.js";
 import {
@@ -23,7 +23,7 @@ export const transitionsExtractionConfig: NodeConfig = {
   
   planner: {
     node: transitionsPlannerNode,
-    model: await setupSpecPlanModel(),
+    model: await setupSpecTransitionsModel(),
     validators: [
       validatePlanCompleteness
     ]
@@ -31,7 +31,7 @@ export const transitionsExtractionConfig: NodeConfig = {
   
   executor: {
     node: transitionsExecutorNode,
-    model: await setupSpecExecuteModel(),
+    model: await setupSpecTransitionsModel(),
     validators: [
       validateJsonParseable,
       validateJsonLogic,

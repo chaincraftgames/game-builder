@@ -442,7 +442,7 @@ export const setupSpecDiffModel = createSetupFunction(SPEC_DIFF_DEFAULTS);
  * Uses Sonnet by default for high-quality schema generation with complex structured output
  * Haiku hits token limits with detailed schemas, so Sonnet is required
  */
-export const setupSpecProcessingModel = createSetupFunction(
+export const setupSpecSchemaModel = createSetupFunction(
   SIM_SCHEMA_EXTRACTION_DEFAULTS
 );
 
@@ -537,7 +537,6 @@ const invokeWithSchema = async (
   schema: any
 ) => {
   const structuredModel = (model as any).withStructuredOutput(schema, {
-    maxTokens: 8192,
     includeRaw: true, // Get raw response with metadata
   });
   const result = await structuredModel.invoke(messages, invokeOptions);

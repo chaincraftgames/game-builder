@@ -5,8 +5,7 @@
  */
 
 import {
-  setupSpecExecuteModel,
-  setupSpecPlanModel,
+  setupSpecSchemaModel,
 } from "#chaincraft/ai/model-config.js";
 import { schemaPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/planner.js";
 import { schemaExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/executor.js";
@@ -29,13 +28,13 @@ export const schemaExtractionConfig: NodeConfig = {
 
   planner: {
     node: schemaPlannerNode,
-    model: await setupSpecPlanModel(),
+    model: await setupSpecSchemaModel(),
     validators: [validatePlanCompleteness, validatePlanFieldCoverage],
   },
 
   executor: {
     node: schemaExecutorNode,
-    model: await setupSpecExecuteModel(),
+    model: await setupSpecSchemaModel(),
     validators: [
       validateJsonParseable,
       validateSchemaStructure,
