@@ -20,7 +20,7 @@ import {
   rawImageGenPrompt,
   rawImageNegativePrompt,
 } from "#chaincraft/ai/design/game-design-prompts.js";
-import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
+import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
 import {
   isActiveConversation as _isActiveConversation,
