@@ -106,8 +106,8 @@ Provide a structured plan with these parts:**
    - Provide COMPLETE guidance, not just changes
 4. **narrativeChanges**: Specific narrative section updates (ONLY if user requests narrative content changes)
    - For story elements, atmosphere, flavor text changes
-   - Format: \`[{ key: "TONE_STYLE", changes: "what to modify" }]\`
-   - Example: "Make turn 1 less scary" → \`[{ key: "TURN_1_GUIDE", changes: "Reduce horror, more mysterious" }]\`
+   - Format: \`[{{ key: "TONE_STYLE", changes: "what to modify" }}]\`
+   - Example: "Make turn 1 less scary" → \`[{{ key: "TURN_1_GUIDE", changes: "Reduce horror, more mysterious" }}]\`
    - Omit for pure gameplay changes
 5. **changes**: What needs to change in the specification
 
