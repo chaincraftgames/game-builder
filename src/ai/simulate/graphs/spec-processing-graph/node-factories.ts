@@ -187,25 +187,35 @@ export function createExtractionSubgraph(nodeConfig: NodeConfig) {
   graph.addConditionalEdges(
     `${namespace}_plan_validate` as any,
     async (_state, config) => {
-      const store = config?.store;
-      const threadId = config?.configurable?.thread_id || "default";
+      const store = (config as GraphConfigWithStore)?.store;
+      const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
 
       // Check validation errors from store
-      const errors = await getFromStore(
-        store,
-        [namespace, "plan", ValidationErrorsKey],
-        threadId
-      );
+      let errors: string[] = [];
+      try {
+        errors = await getFromStore(
+          store,
+          [namespace, "plan", ValidationErrorsKey],
+          threadId
+        ) || [];
+      } catch {
+        // No errors found, which means validation passed
+      }
       if (!errors || errors.length === 0) {
         return "continue"; // Validation passed
       }
 
       // Check attempt count
-      const attempts = await getFromStore(
-        store,
-        [namespace, "plan", "attempts"],
-        threadId
-      );
+      let attempts = 0;
+      try {
+        attempts = await getFromStore(
+          store,
+          [namespace, "plan", "attempts"],
+          threadId
+        ) || 0;
+      } catch {
+        // No attempt count found, default to 0
+      }
       if (attempts >= maxAttempts.plan) {
         return "commit"; // Max attempts reached, commit errors to state
       }
@@ -228,23 +238,33 @@ export function createExtractionSubgraph(nodeConfig: NodeConfig) {
   graph.addConditionalEdges(
     `${namespace}_execute_validate` as any,
     async (_state, config) => {
-      const store = config?.store;
-      const threadId = config?.configurable?.thread_id || "default";
+      const store = (config as GraphConfigWithStore)?.store;
+      const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
 
-      const errors = await getFromStore(
-        store,
-        [namespace, "execution", ValidationErrorsKey],
-        threadId
-      );
+      let errors: string[] = [];
+      try {
+        errors = await getFromStore(
+          store,
+          [namespace, "execution", ValidationErrorsKey],
+          threadId
+        ) || [];
+      } catch {
+        // No errors found, which means validation passed
+      }
       if (!errors || errors.length === 0) {
         return "commit"; // Validation passed
       }
 
-      const attempts = await getFromStore(
-        store,
-        [namespace, "execution", "attempts"],
-        threadId
-      );
+      let attempts = 0;
+      try {
+        attempts = await getFromStore(
+          store,
+          [namespace, "execution", "attempts"],
+          threadId
+        ) || 0;
+      } catch {
+        // No attempt count found, default to 0
+      }
       if (attempts >= maxAttempts.execution) {
         return "commit"; // Max attempts reached, commit errors to state
       }

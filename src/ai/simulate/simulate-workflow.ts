@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
+import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import { 
@@ -341,13 +342,16 @@ export async function createSimulation(
       // Invoke spec graph - results saved to checkpoint automatically (cached by specKey)
       const specResult = await specGraph.invoke({
         gameSpecification: specToUse,
-      }, specConfig);
+      }, specConfig) as SpecProcessingStateType;
       
       // Check for validation errors before using artifacts
+      const schemaErrors = Array.isArray(specResult.schemaValidationErrors) ? specResult.schemaValidationErrors : [];
+      const transitionsErrors = Array.isArray(specResult.transitionsValidationErrors) ? specResult.transitionsValidationErrors : [];
+      const instructionsErrors = Array.isArray(specResult.instructionsValidationErrors) ? specResult.instructionsValidationErrors : [];
       const validationErrors = [
-        ...(specResult.schemaValidationErrors || []),
-        ...(specResult.transitionsValidationErrors || []),
-        ...(specResult.instructionsValidationErrors || []),
+        ...schemaErrors,
+        ...transitionsErrors,
+        ...instructionsErrors,
       ];
       
       if (validationErrors.length > 0) {
@@ -357,11 +361,15 @@ export async function createSimulation(
       }
       
       artifacts = {
-        gameRules: specResult.gameRules,
-        stateSchema: specResult.stateSchema,
-        stateTransitions: specResult.stateTransitions,
-        playerPhaseInstructions: specResult.playerPhaseInstructions,
-        transitionInstructions: specResult.transitionInstructions,
+        gameRules: String(specResult.gameRules || ""),
+        stateSchema: String(specResult.stateSchema || ""),
+        stateTransitions: String(specResult.stateTransitions || ""),
+        playerPhaseInstructions: (specResult.playerPhaseInstructions && typeof specResult.playerPhaseInstructions === 'object') 
+          ? specResult.playerPhaseInstructions as Record<string, string>
+          : {},
+        transitionInstructions: (specResult.transitionInstructions && typeof specResult.transitionInstructions === 'object')
+          ? specResult.transitionInstructions as Record<string, string>
+          : {},
       };
       
       console.log("[simulate] Spec processing complete, artifacts cached");
@@ -375,6 +383,11 @@ export async function createSimulation(
     const runtimeConfig = { configurable: { thread_id: sessionId } };
     
     console.log("[simulate] Storing artifacts in runtime graph with sessionId:", sessionId);
+    
+    // Ensure artifacts is defined before using it
+    if (!artifacts) {
+      throw new Error("[simulate] Artifacts not available - cannot store in runtime graph");
+    }
     
     // Store artifacts by invoking runtime graph with the artifacts
     // Don't pass isInitialized or players - this routes to END and saves artifacts to checkpoint
