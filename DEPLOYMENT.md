@@ -135,6 +135,12 @@ CHAINCRAFT_SIMULATION_MODEL_NAME=your-simulation-model
 CHAINCRAFT_GAMEBUILDER_DALLE_IMAGEGEN_API_KEY=your-openai-key
 CHAINCRAFT_GAMEBUILDER_LEO_IMAGEGEN_API_KEY=your-leonardo-key
 
+# Checkpoint Database Configuration
+# Default: sqlite (uses data/ directory)
+# For ephemeral filesystem deployments (Railway, etc.), use postgres
+CHECKPOINT_DB_TYPE=sqlite
+# POSTGRES_CONNECTION_STRING=postgresql://user:password@host:port/database
+
 # Other configurations...
 ```
 
@@ -327,5 +333,14 @@ pm2 save
 # Monitoring dashboard
 pm2 monit
 ```
+
+## Checkpoint Database Configuration
+
+The application supports both SQLite (default) and PostgreSQL for checkpoint storage:
+
+- **SQLite** (`CHECKPOINT_DB_TYPE=sqlite`): Stores checkpoints in `data/` directory. Suitable for persistent filesystems.
+- **PostgreSQL** (`CHECKPOINT_DB_TYPE=postgres`): Required for ephemeral filesystem deployments (Railway, Docker containers, etc.). Set `POSTGRES_CONNECTION_STRING` to your database connection string.
+
+Tables are created automatically on first run. Data is not automatically migrated between backends.
 
 Remember: Always test deployments in a staging environment first!
