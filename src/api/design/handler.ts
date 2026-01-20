@@ -169,13 +169,13 @@ export async function handleGetCachedSpecification(
     const { conversationId } = result.data;
     const specification = await getCachedDesignSpecification(conversationId);
 
-    if (!specification) {
+    if (!specification?.specification) {
       reply.code(404).send({ error: "Specification not found" });
       return Promise.reject();
     }
 
     // Expand narratives for API response
-    const expandedSpec = expandSpecForAPI(specification, specification.specNarratives);
+    const expandedSpec = expandSpecForAPI(specification.specification, specification.specNarratives);
 
     return {
       title: expandedSpec.title,
