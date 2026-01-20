@@ -12,7 +12,7 @@ import {
 } from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
-import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
+import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
 import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
 import { InMemoryStore } from "@langchain/langgraph";

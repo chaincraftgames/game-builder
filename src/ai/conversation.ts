@@ -1,4 +1,4 @@
-import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
+import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
 
 // Map of conversation IDs by graph type
 const conversationIds = new Map<string, Set<string>>();
