@@ -169,23 +169,38 @@ export async function handleGetCachedSpecification(
     const { conversationId } = result.data;
     const specification = await getCachedDesignSpecification(conversationId);
 
-    if (!specification?.specification) {
+    // If no specification data at all, return 404
+    if (!specification) {
       reply.code(404).send({ error: "Specification not found" });
       return Promise.reject();
+    }
+
+    // If specification exists but spec is missing, still return pending changes
+    if (!specification.specification || !specification.specification.designSpecification) {
+      return {
+        title: specification.title || "Untitled Game",
+        summary: "", // No summary until spec is generated
+        // Don't return playerCount until spec is generated (it won't be accurate)
+        designSpecification: "", // Empty until spec is generated
+        version: 0, // Version 0 indicates spec hasn't been generated yet
+        pendingSpecChanges: specification.pendingSpecChanges || [],
+        consolidationThreshold: specification.consolidationThreshold,
+        consolidationCharLimit: specification.consolidationCharLimit,
+      };
     }
 
     // Expand narratives for API response
     const expandedSpec = expandSpecForAPI(specification.specification, specification.specNarratives);
 
     return {
-      title: expandedSpec.title,
+      title: specification.title || "Untitled Game", // Title comes from specification wrapper, not the spec itself
       summary: expandedSpec.summary,
       playerCount: expandedSpec.playerCount,
       designSpecification: expandedSpec.designSpecification,
-      version: expandedSpec.version,
-      pendingSpecChanges: expandedSpec.pendingSpecChanges,
-      consolidationThreshold: expandedSpec.consolidationThreshold,
-      consolidationCharLimit: expandedSpec.consolidationCharLimit,
+      version: expandedSpec.version || 1, // Default to 1 if version is missing
+      pendingSpecChanges: expandedSpec.pendingSpecChanges || specification.pendingSpecChanges || [],
+      consolidationThreshold: expandedSpec.consolidationThreshold || specification.consolidationThreshold,
+      consolidationCharLimit: expandedSpec.consolidationCharLimit || specification.consolidationCharLimit,
     };
   } catch (error) {
     console.error("Error in getCachedSpecification:", error);
