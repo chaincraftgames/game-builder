@@ -1,0 +1,11 @@
+{
+  "gameRules": "# Game Rules\n\nDescribe your game rules here...",
+  "stateSchema": "{\"type\":\"object\",\"properties\":{\"game\":{\"type\":\"object\",\"properties\":{\"currentPhase\":{\"type\":\"string\"},\"gameEnded\":{\"type\":\"boolean\"}}},\"players\":{\"type\":\"object\"}},\"required\":[\"game\",\"players\"]}",
+  "stateTransitions": "{\"phases\":[\"init\",\"playing\",\"finished\"],\"phaseMetadata\":[{\"phase\":\"init\",\"requiresPlayerInput\":false},{\"phase\":\"playing\",\"requiresPlayerInput\":true},{\"phase\":\"finished\",\"requiresPlayerInput\":false}],\"transitions\":[{\"id\":\"start_game\",\"fromPhase\":\"init\",\"toPhase\":\"playing\",\"preconditions\":[],\"humanSummary\":\"Start the game\"}]}",
+  "playerPhaseInstructions": {
+    "playing": "{\"phase\":\"playing\",\"playerActions\":[{\"id\":\"take_action\",\"actionName\":\"Take Action\",\"description\":\"Player takes an action\",\"validation\":{\"checks\":[]},\"stateDelta\":[],\"messages\":{}}]}"
+  },
+  "transitionInstructions": {
+    "start_game": "{\"id\":\"start_game\",\"transitionName\":\"Start Game\",\"description\":\"Initialize game state\",\"priority\":1,\"stateDelta\":[],\"messages\":{}}"
+  }
+}

@@ -201,14 +201,22 @@ export function router() {
         };
       }
       
-      // No player input - check if player input is required
+      // Check if THIS PHASE accepts player input (from phase metadata)
+      const phaseRequiresInput = phaseMetadata?.requiresPlayerInput || false;
+      console.log(`[router] Phase metadata requiresPlayerInput: ${phaseMetadata?.requiresPlayerInput}, resolved to: ${phaseRequiresInput}`);
+      
+      // Check if any player actually needs to act
       const playerInputRequired = gameState.players && typeof gameState.players === 'object'
         ? Object.values(gameState.players).some(
             ({actionRequired}) => actionRequired
           )
         : false;
+      console.log(`[router] Any player has actionRequired=true: ${playerInputRequired}`);
       
-      if (playerInputRequired) {
+      // Only wait for player input if:
+      // 1. The phase accepts player input (phaseRequiresInput === true), AND
+      // 2. At least one player needs to act (playerInputRequired === true)
+      if (phaseRequiresInput && playerInputRequired) {
         console.log('[router] Waiting for player input');
         return {
           currentPhase,
@@ -218,7 +226,9 @@ export function router() {
         };
       }
       
-      // No player input required - check automatic transitions
+      console.log('[router] Not waiting for player input, checking automatic transitions');
+      
+      // No player input required OR phase doesn't accept input - check automatic transitions
       const transition = findTriggeredTransition(
         currentPhase,
         gameState,

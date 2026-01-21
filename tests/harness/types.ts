@@ -6,6 +6,18 @@ export interface GameTest {
   name: string;
   spec: string;
   scenarios: Scenario[];
+  
+  /**
+   * Optional path to pre-generated artifacts JSON file.
+   * If provided, artifacts will be loaded from this file instead of generating from spec.
+   * Path is relative to the test file location.
+   * 
+   * Use this for:
+   * - Debugging specific artifact sets that cause issues
+   * - Regression tests to lock in known problematic artifacts
+   * - Faster test iteration by skipping artifact generation
+   */
+  artifactsFile?: string;
 }
 
 export interface Scenario {
