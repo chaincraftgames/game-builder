@@ -186,6 +186,238 @@ export class ValidationError extends RuntimeError {
 }
 
 /**
+ * Extract winner from game state if explicitly set
+ * Handles both game.winner and game.winners fields
+ */
+function extractWinnerFromGameState(
+  game: any,
+  playerMapping: Record<string, string>
+): string | string[] | null | undefined {
+  // Helper to convert player alias to UUID if needed
+  const resolvePlayerId = (playerIdOrAlias: string | null): string | null => {
+    if (playerIdOrAlias === null) return null;
+    // Check if it's an alias (player1, player2, etc.)
+    const alias = playerIdOrAlias.toLowerCase();
+    const uuid = playerMapping[alias];
+    return uuid || playerIdOrAlias; // Return UUID if found, otherwise return as-is
+  };
+  
+  // First, check for game.winner (singular)
+  if (game?.winner !== undefined) {
+    // Winner can be a string (single winner), array (multiple winners), or null (tie)
+    if (game.winner === null) {
+      return null;
+    } else if (Array.isArray(game.winner)) {
+      // Map winner IDs through player mapping if needed
+      const mapped = game.winner.map((w: string) => resolvePlayerId(String(w))).filter((w: string | null): w is string => w !== null);
+      if (mapped.length === 0) return null;
+      if (mapped.length === 1) return mapped[0];
+      return mapped;
+    } else if (typeof game.winner === 'string') {
+      // Single winner - map through player mapping if needed
+      return resolvePlayerId(game.winner);
+    }
+  }
+  
+  // Check for game.winners (plural) if game.winner is not set
+  if (game?.winners !== undefined) {
+    if (Array.isArray(game.winners)) {
+      const mapped = game.winners.map((w: any) => w === null ? null : resolvePlayerId(String(w))).filter((w: any) => w !== null) as string[];
+      if (mapped.length === 0) return null;
+      if (mapped.length === 1) return mapped[0];
+      return mapped;
+    } else {
+      return resolvePlayerId(String(game.winners));
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Extract winner from player states by checking winner flags and scores
+ */
+function extractWinnerFromPlayerStates(
+  players: Record<string, any>
+): { winner: string | string[] | null; hasExplicitScores: boolean } {
+  let winnerFromStates: string | string[] | null = null;
+  let maxScore = -Infinity;
+  const winners: string[] = [];
+  let hasExplicitScores = false;
+  
+  // First, check player states for explicit winner flags or scores
+  for (const playerId in players) {
+    const player = players[playerId];
+    // Check for explicit winner flag
+    if (player.winner === true) {
+      if (winnerFromStates === null) {
+        winnerFromStates = playerId;
+      } else if (typeof winnerFromStates === 'string') {
+        winnerFromStates = [winnerFromStates, playerId];
+      } else {
+        winnerFromStates.push(playerId);
+      }
+    }
+    // Check for highest score - only consider if the field actually exists (not undefined)
+    const score = player.score ?? player.points ?? player.wins;
+    if (typeof score === 'number') {
+      hasExplicitScores = true;
+      if (score > maxScore) {
+        maxScore = score;
+        winners.length = 0;
+        winners.push(playerId);
+      } else if (score === maxScore) {
+        winners.push(playerId);
+      }
+    }
+  }
+  
+  // Use winner flag if found
+  if (winnerFromStates !== null) {
+    return { winner: winnerFromStates, hasExplicitScores };
+  }
+  
+  // Use scores from player states if available
+  if (hasExplicitScores && winners.length > 0) {
+    if (maxScore > 0) {
+      // Only return winners if maxScore > 0 (at least one player has wins/points)
+      // If multiple players have the same max score, it's a tie (return array)
+      // If only one winner, return string
+      return { winner: winners.length === 1 ? winners[0] : winners, hasExplicitScores };
+    }
+  }
+  
+  return { winner: null, hasExplicitScores };
+}
+
+/**
+ * Parse winner information from message text
+ * Handles patterns like "Player 1: 2 wins", "Player 2 wins", etc.
+ */
+function extractWinnerFromMessage(
+  message: string,
+  playerMapping: Record<string, string>
+): string | string[] | null | undefined {
+  const lowerMessage = message.toLowerCase();
+  
+  // Pattern: "Player X: N wins" or "Player X N wins"
+  const playerWinsPattern = /player\s*(\d+)[:\s]+(\d+)\s+wins?/gi;
+  const matches = Array.from(lowerMessage.matchAll(playerWinsPattern));
+  
+  if (matches.length >= 2) {
+    // Compare wins from message
+    const playerWins: Array<{ playerNum: number; wins: number; playerId: string }> = [];
+    for (const match of matches) {
+      const playerNum = parseInt(match[1], 10);
+      const wins = parseInt(match[2], 10);
+      // Map player number to UUID using playerMapping
+      const alias = `player${playerNum}`;
+      const playerId = playerMapping[alias];
+      if (playerId) {
+        playerWins.push({
+          playerNum,
+          wins,
+          playerId,
+        });
+      }
+    }
+    
+    if (playerWins.length > 0) {
+      // Find player(s) with highest wins
+      const maxWins = Math.max(...playerWins.map(p => p.wins));
+      const topPlayers = playerWins.filter(p => p.wins === maxWins);
+      
+      if (topPlayers.length === 1 && maxWins > 0) {
+        // Single winner
+        return topPlayers[0].playerId;
+      } else if (topPlayers.length > 1 && maxWins > 0) {
+        // Multiple winners (tie)
+        return topPlayers.map(p => p.playerId);
+      } else {
+        // All players have 0 wins or tie at 0
+        return null;
+      }
+    }
+  }
+  
+  // Try simpler patterns: "Player X wins" or "Player X is the winner"
+  const singleWinnerPattern = /player\s*(\d+)\s+(?:wins|is\s+the\s+winner)/i;
+  const singleMatch = lowerMessage.match(singleWinnerPattern);
+  if (singleMatch) {
+    const playerNum = parseInt(singleMatch[1], 10);
+    const alias = `player${playerNum}`;
+    const playerId = playerMapping[alias];
+    if (playerId) {
+      return playerId;
+    }
+  }
+  
+  // No winner found in message
+  return undefined;
+}
+
+/**
+ * Extract winner from game state when game has ended
+ */
+function extractWinner(
+  game: any,
+  players: Record<string, any> | undefined,
+  publicMessage: string | undefined,
+  playerMapping: Record<string, string>
+): string | string[] | null | undefined {
+  // Check if winner is explicitly set in game state (highest priority)
+  const explicitWinner = extractWinnerFromGameState(game, playerMapping);
+  if (explicitWinner !== undefined) {
+    return explicitWinner;
+  }
+  
+  // If no explicit winner and no players, return null
+  if (!players || typeof players !== 'object') {
+    return null;
+  }
+  
+  const playerIds = Object.keys(players);
+  
+  // Handle edge case: single player game
+  if (playerIds.length === 1) {
+    // For single player games, if game ended, that player is the winner (unless explicitly null)
+    return playerIds[0];
+  }
+  
+  // Try to determine winner from player states (most reliable after explicit winner)
+  const { winner: winnerFromStates, hasExplicitScores } = extractWinnerFromPlayerStates(players);
+  
+  if (winnerFromStates !== null) {
+    return winnerFromStates;
+  }
+  
+  // If we have scores but all are 0, or no scores, try parsing message as fallback
+  if (hasExplicitScores && playerIds.length >= 2) {
+    // All players have 0 or same score - try parsing message as fallback
+    // This handles cases where message has more accurate info than player states
+    if (publicMessage) {
+      const messageWinner = extractWinnerFromMessage(publicMessage, playerMapping);
+      if (messageWinner !== undefined) {
+        return messageWinner;
+      }
+    }
+    // All players have 0 score
+    return null;
+  }
+  
+  // Fallback to parsing publicMessage if player states don't have clear winner info
+  if (publicMessage && playerIds.length >= 2) {
+    const messageWinner = extractWinnerFromMessage(publicMessage, playerMapping);
+    if (messageWinner !== undefined) {
+      return messageWinner;
+    }
+  }
+  
+  // No clear winner found
+  return null;
+}
+
+/**
  * Helper to extract SimResponse from RuntimeState
  */
 function getRuntimeResponse(state: RuntimeStateType): SimResponse {
@@ -239,70 +471,10 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
     playerStates.set(playerId, playerState);
   }
   
-  // Extract winner information from game state
-  // Winner can be stored as:
-  // - game.winner (single player ID or null)
-  // - game.winners (array of player IDs)
-  // - Determined from player scores (highest score wins)
-  let winner: string | string[] | null | undefined = undefined;
-  
-  if (gameEnded) {
-    // Helper to convert player alias to UUID if needed
-    const resolvePlayerId = (playerIdOrAlias: string | null): string | null => {
-      if (playerIdOrAlias === null) return null;
-      // Check if it's an alias (player1, player2, etc.)
-      const alias = playerIdOrAlias.toLowerCase();
-      const uuid = playerMapping[alias];
-      return uuid || playerIdOrAlias; // Return UUID if found, otherwise return as-is
-    };
-    
-    // First, check for explicit winner fields
-    if (game?.winner !== undefined) {
-      // Handle null (tie/no winner) or string (single winner)
-      if (game.winner === null) {
-        winner = null;
-      } else {
-        winner = resolvePlayerId(String(game.winner));
-      }
-    } else if (game?.winners !== undefined) {
-      // Handle array of winners
-      if (Array.isArray(game.winners)) {
-        winner = game.winners.map(w => w === null ? null : resolvePlayerId(String(w))).filter(w => w !== null) as string[];
-        if (winner.length === 0) winner = null;
-        else if (winner.length === 1) winner = winner[0];
-      } else {
-        winner = resolvePlayerId(String(game.winners));
-      }
-    } else if (players && Object.keys(players).length > 0) {
-      // Fallback: determine winner from highest score
-      // This is a common pattern in games where winner is determined by score
-      const playerScores: Array<{ playerId: string; score: number }> = [];
-      for (const playerId in players) {
-        const score = players[playerId]?.score ?? 0;
-        playerScores.push({ playerId, score });
-      }
-      
-      if (playerScores.length > 0) {
-        const maxScore = Math.max(...playerScores.map(p => p.score));
-        const winners = playerScores.filter(p => p.score === maxScore).map(p => p.playerId);
-        
-        if (winners.length === 1) {
-          winner = winners[0];
-        } else if (winners.length > 1) {
-          // Multiple players tied for highest score
-          winner = winners;
-        } else {
-          // No scores found, no winner
-          winner = null;
-        }
-      } else {
-        winner = null;
-      }
-    } else {
-      // Game ended but no winner information available
-      winner = null;
-    }
-  }
+  // Extract winner from game state if game has ended
+  const winner = gameEnded 
+    ? extractWinner(game, players, publicMessage, playerMapping)
+    : undefined;
   
   return {
     publicMessage,
@@ -411,10 +583,13 @@ export async function createSimulation(
       }, specConfig);
       
       // Check for validation errors before using artifacts
+      const schemaErrors = Array.isArray(specResult.schemaValidationErrors) ? specResult.schemaValidationErrors : [];
+      const transitionsErrors = Array.isArray(specResult.transitionsValidationErrors) ? specResult.transitionsValidationErrors : [];
+      const instructionsErrors = Array.isArray(specResult.instructionsValidationErrors) ? specResult.instructionsValidationErrors : [];
       const validationErrors = [
-        ...(specResult.schemaValidationErrors || []),
-        ...(specResult.transitionsValidationErrors || []),
-        ...(specResult.instructionsValidationErrors || []),
+        ...schemaErrors,
+        ...transitionsErrors,
+        ...instructionsErrors,
       ];
       
       if (validationErrors.length > 0) {
@@ -424,11 +599,15 @@ export async function createSimulation(
       }
       
       artifacts = {
-        gameRules: specResult.gameRules,
-        stateSchema: specResult.stateSchema,
-        stateTransitions: specResult.stateTransitions,
-        playerPhaseInstructions: specResult.playerPhaseInstructions,
-        transitionInstructions: specResult.transitionInstructions,
+        gameRules: String(specResult.gameRules || ""),
+        stateSchema: String(specResult.stateSchema || ""),
+        stateTransitions: String(specResult.stateTransitions || ""),
+        playerPhaseInstructions: (specResult.playerPhaseInstructions && typeof specResult.playerPhaseInstructions === 'object') 
+          ? specResult.playerPhaseInstructions as Record<string, string>
+          : {},
+        transitionInstructions: (specResult.transitionInstructions && typeof specResult.transitionInstructions === 'object')
+          ? specResult.transitionInstructions as Record<string, string>
+          : {},
       };
       
       console.log("[simulate] Spec processing complete, artifacts cached");
@@ -442,6 +621,11 @@ export async function createSimulation(
     const runtimeConfig = { configurable: { thread_id: sessionId } };
     
     console.log("[simulate] Storing artifacts in runtime graph with sessionId:", sessionId);
+    
+    // Ensure artifacts is defined before using it
+    if (!artifacts) {
+      throw new Error("[simulate] Artifacts not available - cannot store in runtime graph");
+    }
     
     // Store artifacts by invoking runtime graph with the artifacts
     // Don't pass isInitialized or players - this routes to END and saves artifacts to checkpoint
