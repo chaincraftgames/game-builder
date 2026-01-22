@@ -129,12 +129,19 @@ export function createCommitNode(
       // No errors found in store, which is fine
     }
 
-    const updates = await commitFunction(store, state, threadId);
-
-    // Add validation errors to state if they exist
+    // If there are validation errors, only commit the errors (not invalid artifacts)
     if (validationErrors && validationErrors.length > 0) {
-      (updates as any)[`${namespace}ValidationErrors`] = validationErrors;
+      console.warn(
+        `[${namespace}_commit] Validation failed with ${validationErrors.length} error(s). ` +
+        `Committing errors only, skipping artifact commit.`
+      );
+      return {
+        [`${namespace}ValidationErrors`]: validationErrors,
+      } as Partial<SpecProcessingStateType>;
     }
+
+    // No validation errors - commit successful artifacts
+    const updates = await commitFunction(store, state, threadId);
 
     console.debug(`[${namespace}_commit] Commit complete`);
 

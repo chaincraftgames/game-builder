@@ -17,7 +17,7 @@ decision-relevant state).
 
 2) Fields: a compact JSON array describing any new fields required 
 beyond the provided base schema. Each field entry must be an object with the following keys:
-   - "name" (string): dot-path (example: "players.<id>.currentMove")
+   - "name" (string): dot-path (example: "players.*.currentMove" or "game.round")
    - "type" (string): one of "number|string|boolean|enum|object|array|record"
    - "path" (string): either "game" or "player" indicating wether the field is at the
      game-level or player-level
@@ -29,7 +29,7 @@ Rules for the planner output:
 - Do NOT output full JSON schemas or example state objects
 - Do not include histories unless explicitly required by the game spec.  Prefer cumulative
   updates to current state fields.
-- Do NOT add "players.<id>.ready" or player-join tracking fields unless the 
+- Do NOT add "players.*.ready" or player-join tracking fields unless the 
   specification explicitly states players can join after the game starts.
 - Keep the field list to at most 6 entries. If no new fields are required, return an 
   empty array "[]".
@@ -41,8 +41,8 @@ Rules for the planner output:
     ✗ INCORRECT: game.settings.difficulty (nested object)
   * players: This is a map/record where each player ID is a key, with properties ONE level 
     under that key
-    ✓ CORRECT: players.<id>.score, players.<id>.hand, players.<id>.currentMove
-    ✗ INCORRECT: players.<id>.inventory.gold (nested under player)
+    ✓ CORRECT: players.*.score, players.*.hand, players.*.currentMove
+    ✗ INCORRECT: players.*.inventory.gold (nested under player)
     ✗ INCORRECT: game.scoreP1, game.player1Hand (player data under game with suffixes)
   Player-specific data MUST be organized under the players map, NOT as separate fields 
   under game with player suffixes. This ensures scalability to N-player games.
@@ -140,9 +140,10 @@ The 'stateSchema' MUST be a valid JSON Schema object with this structure:
       "type": "object",
       "additionalProperties": {{
         "type": "object",
-        "required": ["ready", /* other required player fields */],
+        "required": ["actionRequired", "illegalActionCount", /* other required player fields */],
         "properties": {{
-          "ready": {{ "type": "boolean", "description": "Whether player is ready" }},
+          "actionRequired": {{ "type": "boolean", "description": "Whether player must act for game to proceed" }},
+          "illegalActionCount": {{ "type": "number", "description": "Count of illegal actions taken" }},
           /* Add player-specific fields here */
         }}
       }}
