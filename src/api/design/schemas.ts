@@ -79,7 +79,7 @@ export const GetFullSpecificationRequestSchema = z.object({
 export const GetFullSpecificationResponseSchema = z.object({
   title: z.string(),
   summary: z.string(),
-  playerCount: PlayerCountSchema,
+  playerCount: PlayerCountSchema.optional(), // Optional when spec hasn't been generated yet
   designSpecification: z.string(),
   version: z.number(),
   pendingSpecChanges: z.array(z.string()).optional(),
