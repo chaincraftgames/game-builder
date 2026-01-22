@@ -213,7 +213,7 @@ export async function validateRequiredFields(
     // Check player required fields
     const playerProps = schema?.properties?.players?.additionalProperties?.properties;
     if (playerProps) {
-      const requiredPlayerFields = ['ready', 'actionRequired', 'illegalActionCount'];
+      const requiredPlayerFields = ['actionRequired', 'illegalActionCount'];
       for (const field of requiredPlayerFields) {
         if (!playerProps[field]) {
           errors.push(`Schema missing required player field: ${field}`);
