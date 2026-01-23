@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
+import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import { 
@@ -12,7 +13,7 @@ import {
 } from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
-import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
+import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
 import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
 import { InMemoryStore } from "@langchain/langgraph";
@@ -497,6 +498,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
  * to use. If omitted, uses latest version.
  * @param gameSpecification - Optional override: if provided, uses this spec directly 
  * instead of retrieving from design workflow
+ * @param preGeneratedArtifacts - Optional pre-generated artifacts (for testing)
  * @returns The extracted game rules
  */
 export async function createSimulation(
@@ -504,11 +506,35 @@ export async function createSimulation(
   gameId?: string,
   gameSpecificationVersion?: number,
   gameSpecification?: string,
+  preGeneratedArtifacts?: SpecArtifacts,
 ): Promise<{
   gameRules: string;
 }> {
   try {
     console.log("[simulate] Creating simulation for session %s", sessionId);
+    
+    // If pre-generated artifacts provided (testing mode), use them directly
+    if (preGeneratedArtifacts) {
+      console.log("[simulate] Using pre-generated artifacts (test mode)");
+      
+      // Store artifacts in runtime graph checkpoint using sessionId
+      const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
+      const runtimeConfig = { configurable: { thread_id: sessionId } };
+      
+      console.log("[simulate] Storing pre-generated artifacts in runtime graph with sessionId:", sessionId);
+      
+      await runtimeGraph.invoke({
+        gameRules: preGeneratedArtifacts.gameRules,
+        stateSchema: preGeneratedArtifacts.stateSchema,
+        stateTransitions: preGeneratedArtifacts.stateTransitions,
+        playerPhaseInstructions: preGeneratedArtifacts.playerPhaseInstructions,
+        transitionInstructions: preGeneratedArtifacts.transitionInstructions,
+      }, runtimeConfig);
+      
+      console.log("[simulate] Pre-generated artifacts stored successfully");
+      
+      return { gameRules: preGeneratedArtifacts.gameRules };
+    }
     
     // If gameSpecification not provided, retrieve it from design workflow
     let specToUse = gameSpecification;
@@ -529,14 +555,14 @@ export async function createSimulation(
         console.log("[simulate] No version specified, retrieving latest spec from design workflow:", gameId);
         const latestSpec = await getCachedDesignSpecification(gameId!);
         
-        if (!latestSpec) {
+        if (!latestSpec?.specification?.designSpecification) {
           throw new Error(
             `Design specification not found for game ${gameId} (latest version)`
           );
         }
         
-        specToUse = latestSpec.designSpecification;
-        versionToUse = latestSpec.version;
+        specToUse = latestSpec.specification?.designSpecification;
+        versionToUse = latestSpec.specification?.version;
         console.log("[simulate] Retrieved latest spec from design workflow, version:", versionToUse, "title:", latestSpec.title);
       } else {
         // Specific version requested
@@ -580,7 +606,7 @@ export async function createSimulation(
       // Invoke spec graph - results saved to checkpoint automatically (cached by specKey)
       const specResult = await specGraph.invoke({
         gameSpecification: specToUse,
-      }, specConfig);
+      }, specConfig) as SpecProcessingStateType;
       
       // Check for validation errors before using artifacts
       const schemaErrors = Array.isArray(specResult.schemaValidationErrors) ? specResult.schemaValidationErrors : [];

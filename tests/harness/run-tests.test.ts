@@ -53,5 +53,10 @@ describe("Game Test Harness", () => {
       const result = await runGameTestScenario("westward-peril", 0);
       assertTestSuccess(result);
     }, 10 * 60 * 1000); // 10 minutes timeout for complex narrative games
+
+    it("should run Wacky Weapons Router Bug test - scenario 1", async () => {
+      const result = await runGameTestScenario("wacky-weapons-router-bug", 0);
+      assertTestSuccess(result);
+    }, 4 * 60 * 1000); // 4 minutes timeout
   }
 });

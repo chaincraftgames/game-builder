@@ -4,8 +4,12 @@
  * Executes a single game test scenario against the simulation workflow.
  */
 
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import type { GameTest, Scenario, TestResult, FailurePhase } from "./types.js";
 import { createSimulation, initializeSimulation, processAction, getGameState } from "#chaincraft/ai/simulate/simulate-workflow.js";
+import { injectPreGeneratedArtifacts, type SpecArtifacts } from "./helpers.js";
 
 /**
  * Execute a single game test scenario
@@ -13,11 +17,13 @@ import { createSimulation, initializeSimulation, processAction, getGameState } f
  * @param test The game test containing spec and scenarios
  * @param scenario The specific scenario to run
  * @param gameId Optional game ID - if provided, reuses existing artifacts. If not provided, generates new artifacts.
+ * @param testFileDir Optional directory of the test file (for resolving relative artifact paths)
  */
 export async function executeGameTest(
   test: GameTest,
   scenario: Scenario,
-  gameId?: string
+  gameId?: string,
+  testFileDir?: string
 ): Promise<TestResult> {
   const startTime = Date.now();
   
@@ -40,17 +46,45 @@ export async function executeGameTest(
     // If gameId IS provided, reuse existing artifacts from that gameId
     const testGameId = gameId || `test-game-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     
-    // Step 1: Generate artifacts from spec (or reuse if gameId was provided)
-    console.log(`[${test.name}] ${gameId ? 'Using existing' : 'Generating'} artifacts...`);
-    const artifacts = await generateArtifacts(test.spec, sessionId, testGameId);
-    result.artifactsGenerated = true;
-    
-    // Step 2: Validate artifacts
-    const validation = validateArtifacts(artifacts);
-    if (!validation.valid) {
-      result.artifactErrors = validation.errors;
-      result.duration = Date.now() - startTime;
-      return result;
+    // Step 1: Check if test specifies pre-generated artifacts
+    if (test.artifactsFile) {
+      console.log(`[${test.name}] Loading pre-generated artifacts from: ${test.artifactsFile}`);
+      
+      // Resolve artifact file path relative to test file
+      const artifactPath = testFileDir 
+        ? resolve(testFileDir, test.artifactsFile)
+        : resolve(test.artifactsFile);
+      
+      try {
+        const artifactsJson = readFileSync(artifactPath, 'utf-8');
+        const artifacts: SpecArtifacts = JSON.parse(artifactsJson);
+        
+        console.log(`[${test.name}] Pre-generated artifacts loaded successfully`);
+        
+        // Pass artifacts directly to createSimulation
+        await createSimulation(sessionId, testGameId, 1, undefined, artifacts);
+        result.artifactsGenerated = true;
+        
+      } catch (error) {
+        result.artifactErrors = [
+          `Failed to load artifacts from ${test.artifactsFile}: ${error instanceof Error ? error.message : String(error)}`
+        ];
+        result.duration = Date.now() - startTime;
+        return result;
+      }
+    } else {
+      // Step 1: Generate artifacts from spec (or reuse if gameId was provided)
+      console.log(`[${test.name}] ${gameId ? 'Using existing' : 'Generating'} artifacts...`);
+      const artifacts = await generateArtifacts(test.spec, sessionId, testGameId);
+      result.artifactsGenerated = true;
+      
+      // Step 2: Validate artifacts
+      const validation = validateArtifacts(artifacts);
+      if (!validation.valid) {
+        result.artifactErrors = validation.errors;
+        result.duration = Date.now() - startTime;
+        return result;
+      }
     }
     
     // Extract player IDs from scenario actions

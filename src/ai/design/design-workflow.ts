@@ -20,7 +20,7 @@ import {
   rawImageGenPrompt,
   rawImageNegativePrompt,
 } from "#chaincraft/ai/design/game-design-prompts.js";
-import { getSaver } from "#chaincraft/ai/memory/sqlite-memory.js";
+import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
 import { OverloadedError } from "#chaincraft/ai/error.js";
 import {
   isActiveConversation as _isActiveConversation,
@@ -117,13 +117,13 @@ export async function generateImage(
   // Image generation is triggered after conversation continues, so the spec should already exist
   const specAndTitle = await getCachedDesignSpecification(conversationId);
 
-  if (!specAndTitle) {
+  if (!specAndTitle || !specAndTitle.specification) {
     throw new Error(
       "Failed to generate image: no game design spec found. Spec should be generated before image generation."
     );
   }
 
-  const { summary, title } = specAndTitle;
+  const { specification: { summary }, title } = specAndTitle;
 
   // Setup model with design defaults (includes tracer callbacks)
   const modelWithOptions = await setupDesignModel();
@@ -239,8 +239,9 @@ export async function getFullDesignSpecification(
 // Read-only version that gets cached specification without creating checkpoints
 export async function getCachedDesignSpecification(
   conversationId: string
-): Promise<(GameDesignSpecification & { 
+): Promise<({ 
   title: string;
+  specification?: GameDesignSpecification
   specNarratives?: Record<string, string>;
   pendingSpecChanges?: string[];
   consolidationThreshold?: number;
@@ -297,9 +298,9 @@ export async function getCachedDesignSpecification(
   );
 
   // If we have a cached spec, return it with pending changes
-  if (currentGameSpec && currentGameSpec.designSpecification) {
+  // if (currentGameSpec && currentGameSpec.designSpecification) {
     return {
-      ...currentGameSpec,
+      specification: currentGameSpec?.designSpecification ? currentGameSpec : undefined,
       title: title || "Untitled Game",
       specNarratives,
       // Convert SpecPlan[] to string[] (extract changes field)
@@ -309,11 +310,11 @@ export async function getCachedDesignSpecification(
       consolidationThreshold,
       consolidationCharLimit,
     };
-  }
+  // }
 
   // No cached spec available
-  console.log("[getCachedDesignSpecification] No cached specification found");
-  return undefined;
+  // console.log("[getCachedDesignSpecification] No cached specification found");
+  // return undefined;
 }
 
 /**

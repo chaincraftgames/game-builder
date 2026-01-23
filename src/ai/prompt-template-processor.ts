@@ -123,9 +123,14 @@ export function createCachedSystemMessage(
   }
   
   // Use content blocks for cache-enabled messages
-  return new SystemMessage({
-    content: processed.content,
-  });
+  // In v1.x, SystemMessage accepts content array directly or as a string
+  // Convert content blocks to the format expected by SystemMessage
+  const contentBlocks = processed.content.map(block => ({
+    type: block.type,
+    text: block.text,
+    ...(block.cache_control && { cache_control: block.cache_control })
+  }));
+  return new SystemMessage(contentBlocks as any);
 }
 
 /**

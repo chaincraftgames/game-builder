@@ -4,7 +4,7 @@
  * Exports node configuration for instructions extraction with planner/executor pattern
  */
 
-import { ModelWithOptions, setupSpecExecuteModel, setupSpecPlanModel } from "#chaincraft/ai/model-config.js";
+import { setupSpecInstructionsModel } from "#chaincraft/ai/model-config.js";
 import { instructionsPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/planner.js";
 import { instructionsExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/executor.js";
 import {
@@ -29,7 +29,7 @@ export const instructionsExtractionConfig: NodeConfig = {
   
   planner: {
     node: instructionsPlannerNode,
-    model: await setupSpecPlanModel(),
+    model: await setupSpecInstructionsModel(),
     validators: [
       validatePlanCompleteness
     ]
@@ -37,7 +37,7 @@ export const instructionsExtractionConfig: NodeConfig = {
   
   executor: {
     node: instructionsExecutorNode,
-    model: await setupSpecExecuteModel(),
+    model: await setupSpecInstructionsModel(),
     validators: [
       validateJsonParseable,
       validatePathStructure,

@@ -12,7 +12,7 @@
  */
 
 import { executeGameTest } from "./executor.js";
-import { getGameTest, listGameTestNames } from "../games/index.js";
+import { getGameTest, listGameTestNames, getGameTestsDirectory } from "../games/index.js";
 import { createGameId } from "./helpers.js";
 import { setConfig } from "#chaincraft/config.js";
 
@@ -65,10 +65,16 @@ Examples:
     console.log(`\n${'='.repeat(80)}`);
     console.log(`GAME TEST: ${test.name}`);
     console.log(`Game ID: ${gameId} ${usingExistingArtifacts ? '(reusing artifacts)' : '(fresh artifacts)'}`);
+    if (test.artifactsFile) {
+      console.log(`Using pre-generated artifacts: ${test.artifactsFile}`);
+    }
     console.log(`Scenarios: ${test.scenarios.length}`);
     console.log(`${'='.repeat(80)}\n`);
     
     const results = [];
+    
+    // Get test files directory for resolving relative artifact paths
+    const testFileDir = getGameTestsDirectory();
     
     // Run all scenarios with the same game ID
     for (let i = 0; i < test.scenarios.length; i++) {
@@ -77,7 +83,7 @@ Examples:
       console.log(`\n--- Scenario ${i + 1}/${test.scenarios.length}: ${scenario.name} ---`);
       console.log(`Description: ${scenario.description}\n`);
       
-      const result = await executeGameTest(test, scenario, gameId);
+      const result = await executeGameTest(test, scenario, gameId, testFileDir);
       results.push(result);
       
       // Print result summary
