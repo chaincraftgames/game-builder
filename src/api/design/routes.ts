@@ -3,10 +3,8 @@ import {
   handleContinueDesignConversation,
   handleGenerateImage,
   handleGenerateSpec,
-  handleGetFullSpecification,
   handleGetCachedSpecification,
   handleGetConversationHistory,
-  handlePublishGame,
 } from "./handler.js";
 import {
   ContinueDesignConversationRequestSchema,
@@ -19,8 +17,6 @@ import {
   GetFullSpecificationResponseSchema,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponseSchema,
-  PublishGameRequestSchema,
-  PublishGameResponseSchema,
 } from "#chaincraft/api/design/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -70,23 +66,6 @@ export async function registerDesignRoutes(server: FastifyInstance) {
     handler: handleGenerateImage,
   });
 
-  // Get full specification
-  server.post("/conversation/specification", {
-    schema: {
-      body: zodToJsonSchema(
-        GetFullSpecificationRequestSchema,
-        "getFullSpecificationRequest"
-      ),
-      response: {
-        200: zodToJsonSchema(
-          GetFullSpecificationResponseSchema,
-          "getFullSpecificationResponse"
-        ),
-      },
-    },
-    handler: handleGetFullSpecification,
-  });
-
   // Get cached specification (no recomputation)
   server.post("/conversation/specification/cached", {
     schema: {
@@ -119,17 +98,5 @@ export async function registerDesignRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetConversationHistory,
-  });
-
-
-  // Publish game to IPFS
-  server.post("/publish", {
-    schema: {
-      body: zodToJsonSchema(PublishGameRequestSchema, "publishGameRequest"),
-      response: {
-        200: zodToJsonSchema(PublishGameResponseSchema, "publishGameResponse"),
-      },
-    },
-    handler: handlePublishGame,
   });
 }

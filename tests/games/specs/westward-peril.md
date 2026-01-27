@@ -10,6 +10,8 @@ Each playthrough generates a unique story driven by your character's random moti
 
 ## Tone & Narrative Style
 
+!___ NARRATIVE:TONE_STYLE ___!
+
 Westward Peril balances dramatic peril with the dark humor and grim fatalism characteristic of frontier survival stories. The game presents genuinely dangerous situations where death is always a possibility, but maintains narrative engagement rather than descending into pure melodrama or comedy.
 
 **Narrative Approach**:
@@ -50,7 +52,7 @@ The game acknowledges that westward pioneers faced genuine mortal threats (disea
 
 The game consists of exactly **3 turns**, each representing a major encounter or decision point during your westward journey. Each turn follows this sequence:
 
-1. **Situation Description**: The AI generates and presents a unique narrative scenario describing your current circumstances, location, and immediate challenge. This description is created fresh for this specific playthrough, incorporating elements tied to your particular motivation when thematically appropriate. The scenario feels like a natural progression of your westward journey and reflects your current geographic position.
+1. **Situation Description**: !___ NARRATIVE:SCENARIO_GENERATION_GUIDE ___! The AI generates and presents a unique narrative scenario describing your current circumstances, location, and immediate challenge. This description is created fresh for this specific playthrough, incorporating elements tied to your particular motivation when thematically appropriate. The scenario feels like a natural progression of your westward journey and reflects your current geographic position.
 
 2. **Choice Presentation**: The AI generates exactly **4 distinct choices** representing different approaches to the situation. Each choice is presented as **a single sentence** describing what action your character will take. The four choices include:
    - 1 deadly choice (leads to death if selected)
@@ -60,8 +62,8 @@ The game consists of exactly **3 turns**, each representing a major encounter or
 3. **Choice Selection**: You select one of the four choices. You make this selection without any indicators, warnings, or hints about which choice is deadly or which aligns with your motivation. You must rely on narrative context, your judgment, and consideration of your character's motivation.
 
 4. **Outcome Resolution**: The AI generates a narrative consequence for your specific choice:
-   - **Safe Choice Selected**: The AI generates **1-2 sentences** describing how you successfully navigate the situation and continue your journey. This brief narrative is unique to the choice you made and explains the immediate and relevant consequences. The outcome may be better or worse in narrative quality, but you survive. The turn ends and you proceed to the next turn.
-   - **Deadly Choice Selected**: The AI generates **a full paragraph (3-4 sentences minimum)** explaining how and why your specific choice led to death or catastrophic failure. This detailed narrative creates a clear causal chain between the action you chose and the fatal outcome - it is not an arbitrary death. The explanation makes narrative sense within the context of the scenario and your choice, fully describing the sequence of events that led to your demise. The game ends immediately in defeat.
+   - **Safe Choice Selected**: !___ NARRATIVE:SAFE_OUTCOME_GUIDE ___! The AI generates **1-2 sentences** describing how you successfully navigate the situation and continue your journey. This brief narrative is unique to the choice you made and explains the immediate and relevant consequences. The outcome may be better or worse in narrative quality, but you survive. The turn ends and you proceed to the next turn.
+   - **Deadly Choice Selected**: !___ NARRATIVE:DEADLY_OUTCOME_GUIDE ___! The AI generates **a full paragraph (3-4 sentences minimum)** explaining how and why your specific choice led to death or catastrophic failure. This detailed narrative creates a clear causal chain between the action you chose and the fatal outcome - it is not an arbitrary death. The explanation makes narrative sense within the context of the scenario and your choice, fully describing the sequence of events that led to your demise. The game ends immediately in defeat.
 
 5. **Turn Advancement**: If you survived by selecting a safe choice, the game increments to the next turn (Turn 2, 3, 4, or 5) and the AI generates a completely new procedural scenario for that turn.
 

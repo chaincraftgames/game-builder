@@ -45,12 +45,12 @@ function createTestState(overrides: {
   currentSpec?: GameDesignSpecification;
   lastSpecMessageCount?: number;
   pendingSpecChanges?: SpecPlan[];
+  narrativeStyleGuidance?: string;
 } = {}) {
   return {
     messages: overrides.messages || [],
     title: overrides.title || "",
     systemPromptVersion: "1.0",
-    specRequested: false,
     currentSpec: overrides.currentSpec || undefined,
     specVersion: 0,
     specUpdateNeeded: false,
@@ -71,6 +71,9 @@ function createTestState(overrides: {
     forceSpecGeneration: false,
     consolidationThreshold: 5,
     consolidationCharLimit: 2000,
+    narrativeStyleGuidance: overrides.narrativeStyleGuidance || undefined,
+    specNarratives: undefined,
+    narrativesNeedingUpdate: [],
   };
 }
 

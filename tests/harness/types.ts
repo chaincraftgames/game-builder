@@ -18,6 +18,18 @@ export interface GameTest {
    * - Faster test iteration by skipping artifact generation
    */
   artifactsFile?: string;
+  
+  /**
+   * Optional path to narratives JSON file.
+   * If provided, narratives will be loaded from this file and passed to spec processing.
+   * Path is relative to the test file location.
+   * 
+   * Use this for:
+   * - Injecting pre-generated narratives into the spec processing
+   * - Testing specific narrative guidance for consistent scenario generation
+   * - Validating that narratives are properly used by the instruction planner
+   */
+  narrativesFile?: string;
 }
 
 export interface Scenario {

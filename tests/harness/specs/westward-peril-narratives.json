@@ -1,0 +1,12 @@
+{
+  "TONE_STYLE": "Use a gritty western frontier tone: terse, atmospheric, occasionally darkly ironic.",
+  "PROCEDURAL_GENERATION": "AI must procedurally generate scenario, choice, and outcome text each turn using the game's random motivation and current turn context.",
+  "CHOICE_QUALITY": "Choices must be single-sentence, distinct, plausible, and include exactly one motivation-aligned safe option per turn.",
+  "AI_GENERATION_PARAMETERS": "Preferred lengths: scenarios 2-4 sentences, safe outcomes 1-2 sentences, deadly outcomes 3-4 sentences. Emphasize concrete details and causal clarity.",
+  "TURN_1_GUIDE": "Turn 1: introduce the departure setting (town, outpost), present four choices (1 deadly, 3 safe), and include one motivation-aligned choice among the safe options.",
+  "TURN_2_GUIDE": "Turn 2: open frontier setting (prairies, river crossings); generate four choices consistent with escalating stakes.",
+  "TURN_3_GUIDE": "Turn 3: major obstacles (mountains, deep wilderness); choices should reflect heightened danger and logistical challenges.",
+  "TURN_4_GUIDE": "Turn 4: lawless west (deserts, outlaw settlements); create tense, morally ambiguous choices that could plausibly lead to death.",
+  "TURN_5_GUIDE": "Turn 5: final approach to the coast; produce a decisive scenario where surviving the choice results in victory and arrival narrative.",
+  "EDGE_CASES": "If motivation is missing or contradictory, default to 'seeking fortune' and ensure choices remain clear; avoid supernatural content unless motivation specifies it."
+}

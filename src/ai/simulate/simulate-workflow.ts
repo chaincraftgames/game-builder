@@ -8,8 +8,8 @@ import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-pro
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import { 
-  getDesignSpecificationByVersion,
-  getCachedDesignSpecification 
+  getDesignByVersion,
+  getCachedDesign as getCachedDesign 
 } from "#chaincraft/ai/design/design-workflow.js";
 
 import { getConfig } from "#chaincraft/config.js";
@@ -103,6 +103,7 @@ export interface SpecArtifacts {
   stateTransitions: string;
   playerPhaseInstructions: Record<string, string>;
   transitionInstructions: Record<string, string>;
+  specNarratives?: Record<string, string>;
 }
 
 /**
@@ -258,7 +259,8 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
  * @param gameSpecificationVersion - Optional: The version number of the specification 
  * to use. If omitted, uses latest version.
  * @param gameSpecification - Optional override: if provided, uses this spec directly 
- * instead of retrieving from design workflow
+ * instead of retrieving from design workflow.  Deprecated in favor of gameId.  Do not
+ * use.
  * @param preGeneratedArtifacts - Optional pre-generated artifacts (for testing)
  * @returns The extracted game rules
  */
@@ -268,8 +270,10 @@ export async function createSimulation(
   gameSpecificationVersion?: number,
   gameSpecification?: string,
   preGeneratedArtifacts?: SpecArtifacts,
+  specNarrativesOverride?: Record<string, string>,
 ): Promise<{
   gameRules: string;
+  specNarratives?: Record<string, string>;
 }> {
   try {
     console.log("[simulate] Creating simulation for session %s", sessionId);
@@ -290,16 +294,18 @@ export async function createSimulation(
         stateTransitions: preGeneratedArtifacts.stateTransitions,
         playerPhaseInstructions: preGeneratedArtifacts.playerPhaseInstructions,
         transitionInstructions: preGeneratedArtifacts.transitionInstructions,
+        specNarratives: preGeneratedArtifacts.specNarratives,
       }, runtimeConfig);
       
       console.log("[simulate] Pre-generated artifacts stored successfully");
       
-      return { gameRules: preGeneratedArtifacts.gameRules };
+      return { gameRules: preGeneratedArtifacts.gameRules, specNarratives: preGeneratedArtifacts.specNarratives };
     }
     
     // If gameSpecification not provided, retrieve it from design workflow
     let specToUse = gameSpecification;
     let versionToUse = gameSpecificationVersion;
+    let narrativesToUse: Record<string, string> | undefined = specNarrativesOverride;
     
     if (!specToUse) {
       // We need to fetch spec from design workflow - gameId is required
@@ -308,27 +314,26 @@ export async function createSimulation(
           `gameId is required when gameSpecification is not provided. sessionId (${sessionId}) cannot be used to fetch spec from design workflow.`
         );
       }
-    } 
-    
-    if (!specToUse) {
+
       // If no version specified, get the latest
       if (!versionToUse) {
         console.log("[simulate] No version specified, retrieving latest spec from design workflow:", gameId);
-        const latestSpec = await getCachedDesignSpecification(gameId!);
+        const cachedDesign = await getCachedDesign(gameId!);
         
-        if (!latestSpec?.specification?.designSpecification) {
+        if (!cachedDesign?.specification?.designSpecification) {
           throw new Error(
             `Design specification not found for game ${gameId} (latest version)`
           );
         }
         
-        specToUse = latestSpec.specification?.designSpecification;
-        versionToUse = latestSpec.specification?.version;
-        console.log("[simulate] Retrieved latest spec from design workflow, version:", versionToUse, "title:", latestSpec.title);
+        specToUse = cachedDesign.specification?.designSpecification;
+        versionToUse = cachedDesign.specification?.version;
+        narrativesToUse = cachedDesign.specNarratives;
+        console.log("[simulate] Retrieved latest spec from design workflow, version:", versionToUse, "title:", cachedDesign.title);
       } else {
         // Specific version requested
         console.log("[simulate] Retrieving spec from design workflow:", gameId, "version:", versionToUse);
-        const designSpec = await getDesignSpecificationByVersion(gameId!, versionToUse);
+        const designSpec = await getDesignByVersion(gameId!, versionToUse);
         
         if (!designSpec) {
           throw new Error(
@@ -336,7 +341,8 @@ export async function createSimulation(
           );
         }
         
-        specToUse = designSpec.designSpecification;
+        specToUse = designSpec.specification?.designSpecification;
+        narrativesToUse = designSpec.specNarratives;
         console.log("[simulate] Retrieved spec from design workflow, title:", designSpec.title);
       }
     } else {
@@ -367,6 +373,7 @@ export async function createSimulation(
       // Invoke spec graph - results saved to checkpoint automatically (cached by specKey)
       const specResult = await specGraph.invoke({
         gameSpecification: specToUse,
+        specNarratives: narrativesToUse,
       }, specConfig) as SpecProcessingStateType;
       
       // Check for validation errors before using artifacts
@@ -395,6 +402,8 @@ export async function createSimulation(
         transitionInstructions: (specResult.transitionInstructions && typeof specResult.transitionInstructions === 'object')
           ? specResult.transitionInstructions as Record<string, string>
           : {},
+        // Persist spec narratives alongside artifacts so runtime checkpoints include them
+        specNarratives: narrativesToUse || undefined,
       };
       
       console.log("[simulate] Spec processing complete, artifacts cached");
@@ -416,13 +425,19 @@ export async function createSimulation(
     
     // Store artifacts by invoking runtime graph with the artifacts
     // Don't pass isInitialized or players - this routes to END and saves artifacts to checkpoint
-    const storeResult = await runtimeGraph.invoke({
+    const storePayload: Record<string, any> = {
       gameRules: artifacts.gameRules,
       stateSchema: artifacts.stateSchema,
       stateTransitions: artifacts.stateTransitions,
       playerPhaseInstructions: artifacts.playerPhaseInstructions,
       transitionInstructions: artifacts.transitionInstructions,
-    }, runtimeConfig);
+    };
+
+    // Ensure we include specNarratives in the runtime checkpoint. Prefer persisted narratives
+    // from artifacts, but fall back to the override used when creating the simulation.
+    storePayload.specNarratives = artifacts.specNarratives || narrativesToUse || undefined;
+
+    const storeResult = await runtimeGraph.invoke(storePayload, runtimeConfig);
     
     console.log("[simulate] Artifact storage invoke completed, result:", {
       hasGameRules: !!storeResult.gameRules,
@@ -433,6 +448,8 @@ export async function createSimulation(
     
     return {
       gameRules: artifacts.gameRules,
+      // Expose specNarratives on the result for testability
+      specNarratives: artifacts.specNarratives || narrativesToUse || undefined,
     };
   } catch (error) {
     handleError("Failed to create simulation", error);
@@ -612,17 +629,6 @@ export async function getGameState(gameId: string): Promise<{ game: any; players
     return Promise.reject(error);
   }
 }
-
-/**
- * Updates a simulation with an updated game description.  This will attempt to update the
- * simulation state schema moving forward to reflect the new game description, while preserving
- * the current simulation state.  This should allow for the game design to be modified while
- * the game is in progress without losing the current game state.
- */
-export const updateSimulation = async (
-  gameId: string,
-  gameSpecification: string
-): Promise<void> => {};
 
 const handleError = (message: string, error: unknown): never => {
   if (error instanceof z.ZodError) {

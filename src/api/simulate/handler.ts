@@ -12,16 +12,12 @@ import {
   GetSimulationStateRequest,
   GetSimulationStateRequestSchema,
   GetSimulationStateResponse,
-  UpdateSimulationRequest,
-  UpdateSimulationRequestSchema,
-  UpdateSimulationResponse,
 } from "#chaincraft/api/simulate/schemas.js";
 import {
   createSimulation,
   initializeSimulation,
   processAction,
   getSimulationState,
-  updateSimulation,
 } from "#chaincraft/ai/simulate/simulate-workflow.js";
 
 export async function handleCreateSimulation(
@@ -150,31 +146,6 @@ export async function handleGetSimulationState(
     };
   } catch (error) {
     console.error("Error in getSimulationState:", error);
-    reply.code(500).send({ error: "Internal server error" });
-    return Promise.reject();
-  }
-}
-
-export async function handleUpdateSimulation(
-  request: FastifyRequest<{ Body: UpdateSimulationRequest }>,
-  reply: FastifyReply
-): Promise<UpdateSimulationResponse> {
-  const result = UpdateSimulationRequestSchema.safeParse(request.body);
-
-  if (!result.success) {
-    reply.code(400).send({ error: "Invalid request", details: result.error });
-    return Promise.reject();
-  }
-
-  try {
-    const { gameId, gameSpecification } = result.data;
-    await updateSimulation(gameId, gameSpecification);
-
-    return {
-      success: true,
-    };
-  } catch (error) {
-    console.error("Error in updateSimulation:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }

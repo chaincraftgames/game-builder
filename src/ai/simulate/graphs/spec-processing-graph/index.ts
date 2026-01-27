@@ -52,6 +52,7 @@ export async function createSpecProcessingGraph(
   });
 
   // Define flow with validation error checks
+  // Route START directly to schema extraction
   workflow.addEdge(START, "extract_schema" as any);
   
   // After schema: check for validation errors before continuing
@@ -92,7 +93,5 @@ export async function createSpecProcessingGraph(
   workflow.addEdge("extract_instructions" as any, END);
 
   console.log("[SpecProcessingGraph] Graph compiled successfully");
-  console.log(`[SpecProcessingGraph] Using NodeConfig-based subgraphs for all extraction nodes`);
-
   return workflow.compile({ checkpointer });
 }

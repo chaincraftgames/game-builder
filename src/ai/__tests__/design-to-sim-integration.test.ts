@@ -73,6 +73,7 @@ describe("Design-to-Sim Integration", () => {
 
     // This should retrieve the spec from the design workflow
     const { gameRules } = await createSimulation(
+      `sim-${gameId}`,
       gameId,
       specVersion
       // NOTE: No third parameter - should retrieve from design workflow

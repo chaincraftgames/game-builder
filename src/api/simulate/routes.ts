@@ -4,7 +4,6 @@ import {
   handleInitializeSimulation,
   handleProcessAction,
   handleGetSimulationState,
-  handleUpdateSimulation,
 } from "./handler.js";
 import {
   CreateSimulationRequestSchema,
@@ -15,8 +14,6 @@ import {
   ProcessActionResponseSchema,
   GetSimulationStateRequestSchema,
   GetSimulationStateResponseSchema,
-  UpdateSimulationRequestSchema,
-  UpdateSimulationResponseSchema,
 } from "#chaincraft/api/simulate/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -84,22 +81,5 @@ export async function registerSimulateRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetSimulationState,
-  });
-
-  // Update simulation
-  server.post("/update", {
-    schema: {
-      body: zodToJsonSchema(
-        UpdateSimulationRequestSchema,
-        "updateSimulationRequest"
-      ),
-      response: {
-        200: zodToJsonSchema(
-          UpdateSimulationResponseSchema,
-          "updateSimulationResponse"
-        ),
-      },
-    },
-    handler: handleUpdateSimulation,
   });
 }
