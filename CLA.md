@@ -1,15 +1,6 @@
 Individual Contributor License Agreement ("Agreement")
-This Agreement clarifies the intellectual property license granted with Contributions to [Project Name] (the "Project"). [Your Company Name] ("Company") requires a signed CLA from each contributor ("You") to confirm agreement to the terms.
+Thank you for your interest in contributing to Chaincraft Game Builder (the "Project"). In order to clarify the intellectual property license granted with Contributions from any person or entity, Chaincraft Games ("Company") must have a Contributor License Agreement ("CLA") on file that has been signed by each Contributor, indicating agreement to the terms below.
 1. Definitions
-"Contribution" refers to material You submit to the Project.
-"You" (or "Your") is the copyright owner or authorized entity making this Agreement.
-2. Grant of Copyright License
-You grant the Company a broad, perpetual, worldwide, royalty-free copyright license to use your Contributions.
-3. Commercial Use and Relicensing
-You agree the Company can include Your Contribution in open-source products (like AGPLv3) and in proprietary, closed-source commercial products. The Company may relicense your Contributions under its terms.
-4. Grant of Patent License
-You grant the Company a broad, perpetual, worldwide, royalty-free patent license.
-5. Representations
-You represent you are authorized to grant these licenses and that Contributions are original or you have necessary permissions.
-6. Disclaimer
-Contributions are provided "AS IS".
+"Contribution" means any original work of authorship, including any modifications or additions to an existing work, that is intentionally submitted by You to the Company for inclusion in, or documentation of, the Project.
+"You" (or "Your") means the copyright owner or legal entity authorized by the copyright owner that is making this Agreement with the Company.
+The agreement includes sections granting the company perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright and patent licenses to use contributions and derivative works. Contributors agree that the company can include their contributions in its products or services, potentially under different licenses, including proprietary, closed-source commercial licenses, and can sublicense contributions under these licenses. Contributors represent they are legally authorized to grant these licenses and have any necessary permissions. Contributions are provided "AS IS" without warranties.
