@@ -22,41 +22,53 @@ const isReliabilityMode = reliabilityIterations > 1;
 describe("Game Test Harness", () => {
   // Configure to use test simulation graph
   setConfig("simulation-graph-type", "test-game-simulation");
-  
+
+  // Support filtering by GAME env var
+  const GAME = process.env.GAME && process.env.GAME.toLowerCase();
+
   if (isReliabilityMode) {
-    // Reliability mode - run multiple iterations
-    it(`should run RPS reliability test (${reliabilityIterations} iterations, scenario ${reliabilityScenario ?? 'all'})`, async () => {
-      const report = await runReliabilityTest("rps", reliabilityScenario, reliabilityIterations);
-      
-      // Assert at least 80% success rate
-      if (report.successRate < 0.8) {
-        throw new Error(`Reliability too low: ${(report.successRate * 100).toFixed(1)}% (expected >= 80%)`);
-      }
-    }, reliabilityIterations * 4 * 60 * 1000); // 4 minutes per iteration
-
-    it(`should run Westward Peril reliability test (${reliabilityIterations} iterations, scenario ${reliabilityScenario ?? 'all'})`, async () => {
-      const report = await runReliabilityTest("westward-peril", reliabilityScenario, reliabilityIterations);
-      
-      // Assert at least 80% success rate
-      if (report.successRate < 0.8) {
-        throw new Error(`Reliability too low: ${(report.successRate * 100).toFixed(1)}% (expected >= 80%)`);
-      }
-    }, reliabilityIterations * 10 * 60 * 1000); // 10 minutes per iteration
+    if (!GAME || GAME === "rps") {
+      it(`should run RPS reliability test (${reliabilityIterations} iterations, scenario ${reliabilityScenario ?? 'all'})`, async () => {
+        const report = await runReliabilityTest("rps", reliabilityScenario, reliabilityIterations);
+        if (report.successRate < 0.8) {
+          throw new Error(`Reliability too low: ${(report.successRate * 100).toFixed(1)}% (expected >= 80%)`);
+        }
+      }, reliabilityIterations * 4 * 60 * 1000);
+    }
+    if (!GAME || GAME === "westward-peril") {
+      it(`should run Westward Peril reliability test (${reliabilityIterations} iterations, scenario ${reliabilityScenario ?? 'all'})`, async () => {
+        const report = await runReliabilityTest("westward-peril", reliabilityScenario, reliabilityIterations);
+        if (report.successRate < 0.8) {
+          throw new Error(`Reliability too low: ${(report.successRate * 100).toFixed(1)}% (expected >= 80%)`);
+        }
+      }, reliabilityIterations * 10 * 60 * 1000);
+    }
+    if (!GAME || GAME === "wacky-weapons-router-bug") {
+      it(`should run Wacky Weapons Router Bug reliability test (${reliabilityIterations} iterations, scenario ${reliabilityScenario ?? 'all'})`, async () => {
+        const report = await runReliabilityTest("wacky-weapons-router-bug", reliabilityScenario, reliabilityIterations);
+        if (report.successRate < 0.8) {
+          throw new Error(`Reliability too low: ${(report.successRate * 100).toFixed(1)}% (expected >= 80%)`);
+        }
+      }, reliabilityIterations * 4 * 60 * 1000);
+    }
   } else {
-    // Normal mode - single run per scenario
-    it("should run RPS test - scenario 1", async () => {
-      const result = await runGameTestScenario("rps", 0);
-      assertTestSuccess(result);
-    }, 4 * 60 * 1000); // 4 minutes timeout
-
-    it("should run Westward Peril test - scenario 1", async () => {
-      const result = await runGameTestScenario("westward-peril", 0);
-      assertTestSuccess(result);
-    }, 10 * 60 * 1000); // 10 minutes timeout for complex narrative games
-
-    it("should run Wacky Weapons Router Bug test - scenario 1", async () => {
-      const result = await runGameTestScenario("wacky-weapons-router-bug", 0);
-      assertTestSuccess(result);
-    }, 4 * 60 * 1000); // 4 minutes timeout
+    if (!GAME || GAME === "rps") {
+      it("should run RPS test - scenario 1", async () => {
+        const result = await runGameTestScenario("rps", 0);
+        assertTestSuccess(result);
+      }, 4 * 60 * 1000);
+    }
+    if (!GAME || GAME === "westward-peril") {
+      it("should run Westward Peril test - scenario 1", async () => {
+        const result = await runGameTestScenario("westward-peril", 0);
+        assertTestSuccess(result);
+      }, 10 * 60 * 1000);
+    }
+    if (!GAME || GAME === "wacky-weapons-router-bug") {
+      it("should run Wacky Weapons Router Bug test - scenario 1", async () => {
+        const result = await runGameTestScenario("wacky-weapons-router-bug", 0);
+        assertTestSuccess(result);
+      }, 4 * 60 * 1000);
+    }
   }
 });

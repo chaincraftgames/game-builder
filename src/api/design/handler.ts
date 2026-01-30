@@ -15,20 +15,15 @@ import {
   GetConversationHistoryRequest,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponse,
-  PublishGameRequest,
-  PublishGameRequestSchema,
-  PublishGameResponse,
 } from "#chaincraft/api/design/schemas.js";
 import {
   continueDesignConversation,
   generateImage,
-  getFullDesignSpecification,
-  getCachedDesignSpecification,
+  getCachedDesign,
   getConversationHistory,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";
 import { expandSpecification } from "#chaincraft/ai/design/expand-narratives.js";
-import { uploadToIpfs } from "#chaincraft/integrations/storage/pinata.js";
 
 /**
  * Helper to expand narratives in a specification for API responses.
@@ -117,43 +112,6 @@ export async function handleGenerateImage(
   }
 }
 
-export async function handleGetFullSpecification(
-  request: FastifyRequest<{ Body: GetFullSpecificationRequest }>,
-  reply: FastifyReply
-): Promise<GetFullSpecificationResponse> {
-  const result = GetFullSpecificationRequestSchema.safeParse(request.body);
-
-  if (!result.success) {
-    reply.code(400).send({ error: "Invalid request", details: result.error });
-    return Promise.reject();
-  }
-
-  try {
-    const { conversationId } = result.data;
-    const specification = await getFullDesignSpecification(conversationId);
-
-    if (!specification) {
-      reply.code(404).send({ error: "Specification not found" });
-      return Promise.reject();
-    }
-
-    return {
-      title: specification.title,
-      summary: specification.summary,
-      playerCount: specification.playerCount,
-      designSpecification: specification.designSpecification,
-      version: specification.version,
-      pendingSpecChanges: specification.pendingSpecChanges,
-      consolidationThreshold: specification.consolidationThreshold,
-      consolidationCharLimit: specification.consolidationCharLimit,
-    };
-  } catch (error) {
-    console.error("Error in getFullSpecification:", error);
-    reply.code(500).send({ error: "Internal server error" });
-    return Promise.reject();
-  }
-}
-
 export async function handleGetCachedSpecification(
   request: FastifyRequest<{ Body: GetFullSpecificationRequest }>,
   reply: FastifyReply
@@ -167,7 +125,7 @@ export async function handleGetCachedSpecification(
 
   try {
     const { conversationId } = result.data;
-    const specification = await getCachedDesignSpecification(conversationId);
+    const specification = await getCachedDesign(conversationId);
 
     // If no specification data at all, return 404
     if (!specification) {
@@ -233,55 +191,6 @@ export async function handleGetConversationHistory(
     } else {
       reply.code(500).send({ error: "Internal server error" });
     }
-    return Promise.reject();
-  }
-}
-
-export async function handlePublishGame(
-  request: FastifyRequest<{ Body: PublishGameRequest }>,
-  reply: FastifyReply
-): Promise<PublishGameResponse> {
-  const result = PublishGameRequestSchema.safeParse(request.body);
-
-  if (!result.success) {
-    reply.code(400).send({ error: "Invalid request", details: result.error });
-    return Promise.reject();
-  }
-
-  try {
-    const { conversationId, gameTitle, version, imageUrl, userId } =
-      result.data;
-
-    // Get the full game specification
-    const specification = await getFullDesignSpecification(conversationId);
-
-    if (!specification) {
-      reply.code(404).send({ error: "Game specification not found" });
-      return Promise.reject();
-    }
-
-    // Create PAIT token (same format as Discord version)
-    const token = {
-      game_title: gameTitle,
-      game_specification: specification,
-      spec_version: version,
-      image_url: imageUrl,
-    };
-
-    // Upload to IPFS (reuse existing function)
-    const ipfsHash = await uploadToIpfs(
-      token,
-      `PAIT_${userId}_${gameTitle.replace(/\s/g, "_")}`
-    );
-
-    return {
-      ipfsHash,
-      gameTitle,
-      version,
-    };
-  } catch (error) {
-    console.error("Error in publishGame:", error);
-    reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
 }

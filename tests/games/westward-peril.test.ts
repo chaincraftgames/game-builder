@@ -12,7 +12,8 @@ const [playerId] = createPlayerIds(1);
 
 export const westwardPerilTest: GameTest = {
   name: "Westward Peril",
-  spec: readFileSync(join(__dirname, "specs", "westward-peril.md"), "utf-8"),
+  spec: readFileSync(join(__dirname, "specs", "westward-peril-with-narratives.md"), "utf-8"),
+  narrativesFile: "specs/westward-peril-narratives.json",
   
   scenarios: [
     {

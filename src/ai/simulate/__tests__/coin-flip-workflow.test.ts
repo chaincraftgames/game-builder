@@ -30,9 +30,12 @@ describe("Coin Flip Simulation", () => {
 
   test("should create coin flip simulation and return game rules", async () => {
     const { gameRules } = await createSimulation(
+      "test-session-1", // sessionId
       gameId,
-      1, // Initial version
-      coinFlipSpec // Optional override for testing
+      1, // version
+      {
+        overrideSpecification: coinFlipSpec,
+      }
     );
 
     expect(gameRules).toBeDefined();

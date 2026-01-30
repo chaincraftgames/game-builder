@@ -58,6 +58,9 @@ function createTestState(overrides: {
     forceSpecGeneration: false,
     consolidationThreshold: 5,
     consolidationCharLimit: 2000,
+    narrativeStyleGuidance: undefined,
+    specNarratives: undefined,
+    narrativesNeedingUpdate: [],
   };
 }
 
@@ -204,7 +207,8 @@ describe("Conversational Agent - Integration", () => {
     
     // Initial conversation typically doesn't need updates yet
     // (though agent might decide to set flags - that's okay)
-    console.log("Response:", result.messages[0].content);
+    const content = typeof result.messages[0].content === 'string' ? result.messages[0].content : JSON.stringify(result.messages[0].content);
+    console.log("Response:", content);
     console.log("Spec update needed:", result.specUpdateNeeded);
     console.log("Metadata update needed:", result.metadataUpdateNeeded);
   }, 30000); // 30 second timeout
@@ -230,7 +234,8 @@ describe("Conversational Agent - Integration", () => {
 
     const result = await agent(state);
 
-    console.log("Response:", result.messages[0].content);
+    const content = typeof result.messages[0].content === 'string' ? result.messages[0].content : JSON.stringify(result.messages[0].content);
+    console.log("Response:", content);
     console.log("Spec update needed:", result.specUpdateNeeded);
     
     // After a full Q&A exchange with clear rules, should update spec
@@ -256,7 +261,8 @@ describe("Conversational Agent - Integration", () => {
 
     const result = await agent(state);
 
-    console.log("Response:", result.messages[0].content);
+    const content = typeof result.messages[0].content === 'string' ? result.messages[0].content : JSON.stringify(result.messages[0].content);
+    console.log("Response:", content);
     console.log("Metadata update needed:", result.metadataUpdateNeeded);
     
     // Should recognize game components and set metadata flag
@@ -284,7 +290,8 @@ describe("Conversational Agent - Integration", () => {
 
     const result = await agent(state);
 
-    console.log("Response:", result.messages[0].content);
+    const content = typeof result.messages[0].content === 'string' ? result.messages[0].content : JSON.stringify(result.messages[0].content);
+    console.log("Response:", content);
     console.log("Spec update needed:", result.specUpdateNeeded);
     console.log("Metadata update needed:", result.metadataUpdateNeeded);
     
@@ -316,8 +323,8 @@ describe("Conversational Agent - Integration", () => {
 
     const result = await agent(state);
 
-    console.log("Response:", result.messages[0].content);
-    console.log("Spec update needed:", result.specUpdateNeeded);
+    const content = typeof result.messages[0].content === 'string' ? result.messages[0].content : JSON.stringify(result.messages[0].content);
+    console.log("Response:", content);
     
     // Should set spec flag for explicit request after conversation
     expect(result.specUpdateNeeded).toBe(true);
@@ -440,7 +447,8 @@ Reach turn 8 alive.`,
 
     // Should respond (asking for clarification or confirming which section)
     expect(result.messages[0].content).toBeDefined();
-    const response = result.messages[0].content.toLowerCase();
+    const content = typeof result.messages[0].content === 'string' ? result.messages[0].content : JSON.stringify(result.messages[0].content);
+    const response = content.toLowerCase();
     
     // Should either:
     // 1. Ask which narrative section (TURN_1_GUIDE), or

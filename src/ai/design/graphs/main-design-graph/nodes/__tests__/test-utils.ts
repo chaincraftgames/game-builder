@@ -33,6 +33,9 @@ export function createMockState(overrides?: Partial<typeof GameDesignState.State
     forceSpecGeneration: false,
     consolidationThreshold: 5,
     consolidationCharLimit: 2000,
+    narrativeStyleGuidance: undefined,
+    specNarratives: undefined,
+    narrativesNeedingUpdate: [],
     ...overrides,
   };
 }

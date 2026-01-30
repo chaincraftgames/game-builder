@@ -1,7 +1,7 @@
 import "dotenv/config.js";
 
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
-import { CompiledStateGraph } from "@langchain/langgraph";
+import { Checkpoint, CompiledStateGraph } from "@langchain/langgraph";
 import {
   AIMessage,
   HumanMessage,
@@ -66,25 +66,23 @@ const gameTitleRegex = new RegExp(
   "s"
 );
 
-export type DesignResponse = {
-  designResponse: string;
+/** The state of the game design conversation. */
+export interface DesignState {
   updatedTitle?: string;
-  systemPromptVersion?: string;
-  specification?: {
-    summary: string;
-    playerCount: {
-      min: number;
-      max: number;
-    };
-    designSpecification: string;
-    version: number;
-  };
+  title: string;
+  specification?: GameDesignSpecification
   specNarratives?: Record<string, string>;
-  specDiff?: string;
   pendingSpecChanges?: string[];
   consolidationThreshold?: number;
   consolidationCharLimit?: number;
 };
+
+/** A response from the design workflow. */
+export interface DesignResponse extends DesignState {
+  designResponse: string;
+  systemPromptVersion?: string;
+  specDiff?: string;
+}
 
 export async function continueDesignConversation(
   conversationId: string,
@@ -115,7 +113,7 @@ export async function generateImage(
 ): Promise<string> {
   // Retrieve cached specification to avoid regenerating it
   // Image generation is triggered after conversation continues, so the spec should already exist
-  const specAndTitle = await getCachedDesignSpecification(conversationId);
+  const specAndTitle = await getCachedDesign(conversationId);
 
   if (!specAndTitle || !specAndTitle.specification) {
     throw new Error(
@@ -210,43 +208,12 @@ export async function generateImage(
   }
 }
 
-export async function getFullDesignSpecification(
+
+
+// Read-only version that gets cached design state without creating checkpoints
+export async function getCachedDesign(
   conversationId: string
-): Promise<(GameDesignSpecification & { 
-  title: string;
-  pendingSpecChanges?: string[];
-  consolidationThreshold?: number;
-  consolidationCharLimit?: number;
-}) | undefined> {
-  const designResponse = await continueDesignConversation(
-    conversationId,
-    produceFullGameDesignPrompt
-  );
-
-  if (!designResponse.specification) {
-    return undefined;
-  }
-
-  return {
-    ...designResponse.specification,
-    title: designResponse.updatedTitle ?? "",
-    pendingSpecChanges: designResponse.pendingSpecChanges,
-    consolidationThreshold: designResponse.consolidationThreshold,
-    consolidationCharLimit: designResponse.consolidationCharLimit,
-  };
-}
-
-// Read-only version that gets cached specification without creating checkpoints
-export async function getCachedDesignSpecification(
-  conversationId: string
-): Promise<({ 
-  title: string;
-  specification?: GameDesignSpecification
-  specNarratives?: Record<string, string>;
-  pendingSpecChanges?: string[];
-  consolidationThreshold?: number;
-  consolidationCharLimit?: number;
-}) | undefined> {
+): Promise<DesignState | undefined> {
   // Check if conversation exists
   if (!(await isActiveConversation(conversationId))) {
     throw new Error(`Conversation ${conversationId} not found`);
@@ -257,7 +224,7 @@ export async function getCachedDesignSpecification(
   const config = { configurable: { thread_id: conversationId } };
 
   console.log(
-    "[getCachedDesignSpecification] Getting latest checkpoint for conversation:",
+    "[getCachedDesign] Getting latest checkpoint for conversation:",
     conversationId
   );
 
@@ -266,7 +233,7 @@ export async function getCachedDesignSpecification(
   const firstCheckpoint = await checkpointIterator.next();
 
   if (firstCheckpoint.done) {
-    console.log("[getCachedDesignSpecification] No checkpoints found");
+    console.log("[getCachedDesign] No checkpoints found");
     return undefined;
   }
 
@@ -279,42 +246,7 @@ export async function getCachedDesignSpecification(
     return undefined;
   }
 
-  // Extract state from the checkpoint
-  const channelValues = latestCheckpoint.checkpoint.channel_values as any;
-  const currentGameSpec = channelValues.currentSpec;
-  const title = channelValues.title;
-  const specNarratives = channelValues.specNarratives as Record<string, string> | undefined;
-  const pendingSpecChanges = channelValues.pendingSpecChanges as SpecPlan[] | undefined;
-  const consolidationThreshold = channelValues.consolidationThreshold as number | undefined;
-  const consolidationCharLimit = channelValues.consolidationCharLimit as number | undefined;
-
-  console.log(
-    "[getCachedDesignSpecification] Found cached spec:",
-    currentGameSpec ? "yes" : "no",
-    "title:",
-    title || "no title",
-    "pending changes:",
-    pendingSpecChanges?.length || 0
-  );
-
-  // If we have a cached spec, return it with pending changes
-  // if (currentGameSpec && currentGameSpec.designSpecification) {
-    return {
-      specification: currentGameSpec?.designSpecification ? currentGameSpec : undefined,
-      title: title || "Untitled Game",
-      specNarratives,
-      // Convert SpecPlan[] to string[] (extract changes field)
-      pendingSpecChanges: pendingSpecChanges && pendingSpecChanges.length > 0
-        ? pendingSpecChanges.map(plan => plan.changes)
-        : undefined,
-      consolidationThreshold,
-      consolidationCharLimit,
-    };
-  // }
-
-  // No cached spec available
-  // console.log("[getCachedDesignSpecification] No cached specification found");
-  // return undefined;
+  return getDesignFromCheckpoint(latestCheckpoint.checkpoint);
 }
 
 /**
@@ -325,10 +257,14 @@ export async function getCachedDesignSpecification(
  * @param version - The specific version number to retrieve
  * @returns The specification with matching version, or undefined if not found
  */
-export async function getDesignSpecificationByVersion(
+export async function getDesignByVersion(
   conversationId: string,
   version: number
-): Promise<(GameDesignSpecification & { title: string }) | undefined> {
+): Promise<(DesignState | undefined)> {
+  // Check if conversation exists
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
   // Check if conversation exists
   if (!(await isActiveConversation(conversationId))) {
     throw new Error(`Conversation ${conversationId} not found`);
@@ -363,10 +299,7 @@ export async function getDesignSpecificationByVersion(
         title || "no title"
       );
 
-      return {
-        ...currentGameSpec,
-        title: title || "Untitled Game",
-      };
+      return getDesignFromCheckpoint(checkpoint.checkpoint);
     }
   }
 
@@ -378,17 +311,6 @@ export async function getDesignSpecificationByVersion(
     conversationId
   );
   return undefined;
-}
-
-// Function to generate a new specification (creates checkpoints)
-export async function generateNewDesignSpecification(
-  conversationId: string
-): Promise<(GameDesignSpecification & { title: string }) | undefined> {
-  console.log(
-    "[generateNewDesignSpecification] Generating new specification for:",
-    conversationId
-  );
-  return await getFullDesignSpecification(conversationId);
 }
 
 export async function getConversationHistory(
@@ -574,6 +496,44 @@ export async function isActiveConversation(
   return _isActiveConversation(graphType, conversationId);
 }
 
+async function getDesignFromCheckpoint(
+  checkpoint: Checkpoint
+): Promise<DesignState | undefined> {
+  // Extract state from the checkpoint
+  const channelValues = checkpoint.channel_values as any;
+  const currentGameSpec = channelValues.currentSpec;
+  const title = channelValues.title;
+  const specNarratives = channelValues.specNarratives as Record<string, string> | undefined;
+  const pendingSpecChanges = channelValues.pendingSpecChanges as SpecPlan[] | undefined;
+  const consolidationThreshold = channelValues.consolidationThreshold as number | undefined;
+  const consolidationCharLimit = channelValues.consolidationCharLimit as number | undefined;
+
+  console.log(
+    "[getCachedDesignSpecification] Found cached spec:",
+    currentGameSpec ? "yes" : "no",
+    "title:",
+    title || "no title",
+    "pending changes:",
+    pendingSpecChanges?.length || 0
+  );
+
+  // If we have a cached spec, return it with pending changes
+  // if (currentGameSpec && currentGameSpec.designSpecification) {
+    return {
+      specification: currentGameSpec?.designSpecification ? currentGameSpec : undefined,
+      title: title || "Untitled Game",
+      specNarratives,
+      // Convert SpecPlan[] to string[] (extract changes field)
+      pendingSpecChanges: pendingSpecChanges && pendingSpecChanges.length > 0
+        ? pendingSpecChanges.map(plan => plan.changes)
+        : undefined,
+      consolidationThreshold,
+      consolidationCharLimit,
+    };
+  // }
+}
+
+
 async function createDesignGraph(
   conversationId: string
 ): Promise<
@@ -668,6 +628,7 @@ async function _processMessage(
     specification: updatedSpec,
     specNarratives: responseNarratives,
     updatedTitle: lastTitle,
+    title: lastTitle,
     systemPromptVersion: lastPromptVersion,
     specDiff: specDiffSummary,
 
@@ -682,9 +643,4 @@ async function _processMessage(
       ? responseConsolidationCharLimit 
       : undefined,
   };
-}
-
-function _extractGameTitle(content: string): string {
-  const titleMatch = content.match(gameTitleRegex);
-  return titleMatch ? titleMatch[1].trim() : "";
 }

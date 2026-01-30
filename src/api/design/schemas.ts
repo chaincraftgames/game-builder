@@ -1,5 +1,3 @@
-import { CONSOLIDATION_DEFAULTS } from "#chaincraft/ai/design/game-design-state.js";
-import { SpecPlanSchema } from "#chaincraft/ai/design/schemas.js";
 import { z } from "zod";
 
 // Player count schema
@@ -109,22 +107,6 @@ export const GetConversationHistoryResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
-// Get conversation metadata schemas
-
-export const PublishGameRequestSchema = z.object({
-  conversationId: z.string().min(1),
-  gameTitle: z.string().min(1),
-  version: z.number().min(1).default(1),
-  imageUrl: z.string().optional(),
-  userId: z.string().min(1),
-});
-
-export const PublishGameResponseSchema = z.object({
-  ipfsHash: z.string(),
-  gameTitle: z.string(),
-  version: z.number(),
-});
-
 // Type exports
 export type PlayerCount = z.infer<typeof PlayerCountSchema>;
 export type GameSpecification = z.infer<typeof GameSpecificationSchema>;
@@ -151,5 +133,3 @@ export type GetConversationHistoryResponse = z.infer<
   typeof GetConversationHistoryResponseSchema
 >;
 export type Message = z.infer<typeof MessageSchema>;
-export type PublishGameRequest = z.infer<typeof PublishGameRequestSchema>;
-export type PublishGameResponse = z.infer<typeof PublishGameResponseSchema>;

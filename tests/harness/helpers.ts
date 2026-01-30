@@ -38,6 +38,47 @@ export function createGameId(testName?: string): string {
 }
 
 /**
+ * Extract narrative markers and content from a game specification.
+ * 
+ * Extracts both:
+ * 1. Expanded narratives: !___ NARRATIVE_START:KEY ___! ... !___ NARRATIVE_END:KEY ___!
+ * 2. Inline narratives: <!-- NARRATIVE:KEY -->...content...<!-- END NARRATIVE:KEY -->
+ * 
+ * @param spec - The game specification markdown
+ * @returns Record mapping marker keys to narrative content
+ */
+export function extractSpecNarratives(spec: string): Record<string, string> {
+  const narratives: Record<string, string> = {};
+  
+  // Pattern 1: Expanded narratives (from design workflow)
+  // !___ NARRATIVE_START:KEY ___!
+  // ...content...
+  // !___ NARRATIVE_END:KEY ___!
+  const expandedPattern = /!___ NARRATIVE_START:(\w+) ___!([\s\S]*?)!___ NARRATIVE_END:\1 ___!/g;
+  let match;
+  
+  while ((match = expandedPattern.exec(spec)) !== null) {
+    const key = match[1];
+    const content = match[2].trim();
+    narratives[key] = content;
+  }
+  
+  // Pattern 2: Inline narratives (from injected specs)
+  // <!-- NARRATIVE:KEY -->
+  // ...content...
+  // <!-- END NARRATIVE:KEY -->
+  const inlinePattern = /<!-- NARRATIVE:(\w+) -->([\s\S]*?)<!-- END NARRATIVE:\1 -->/g;
+  
+  while ((match = inlinePattern.exec(spec)) !== null) {
+    const key = match[1];
+    const content = match[2].trim();
+    narratives[key] = content;
+  }
+  
+  return narratives;
+}
+
+/**
  * Inject pre-generated artifacts into checkpoint storage.
  * This allows tests to bypass spec processing and use known artifact sets.
  * 

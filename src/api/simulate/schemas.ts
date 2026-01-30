@@ -40,6 +40,7 @@ export const CreateSimulationRequestSchema = z.object({
   gameSpecificationVersion: z.number().min(1).optional(), // Optional - if omitted, uses latest version from design workflow
   gameSpecification: z.string().min(1).optional(), // Optional override - if not provided, retrieves from design workflow
   gameId: z.string().min(1).optional(), // Optional - game ID (conversationId) to fetch spec from design workflow. If not provided, uses sessionId (backward compatibility)
+  atomicArtifactRegen: z.boolean().optional(), // Optional - whether to require atomic artifact regen (default true)
 });
 
 export const CreateSimulationResponseSchema = z.object({
@@ -73,16 +74,6 @@ export const GetSimulationStateRequestSchema = z.object({
 
 export const GetSimulationStateResponseSchema = SimResponseSchema;
 
-// Update simulation schemas
-export const UpdateSimulationRequestSchema = z.object({
-  gameId: z.string().min(1),
-  gameSpecification: z.string().min(1),
-});
-
-export const UpdateSimulationResponseSchema = z.object({
-  success: z.boolean(),
-});
-
 // Type exports
 export type RuntimePlayerState = z.infer<typeof RuntimePlayerStateSchema>;
 export type PlayerStates = z.infer<typeof PlayerStatesSchema>;
@@ -106,10 +97,4 @@ export type GetSimulationStateRequest = z.infer<
 >;
 export type GetSimulationStateResponse = z.infer<
   typeof GetSimulationStateResponseSchema
->;
-export type UpdateSimulationRequest = z.infer<
-  typeof UpdateSimulationRequestSchema
->;
-export type UpdateSimulationResponse = z.infer<
-  typeof UpdateSimulationResponseSchema
 >;

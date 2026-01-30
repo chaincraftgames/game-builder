@@ -20,6 +20,7 @@ import {
 import {
   continueDesignConversation,
   DesignResponse,
+  DesignState,
   generateImage,
   isActiveConversation,
 } from "#chaincraft/ai/design/design-workflow.js";

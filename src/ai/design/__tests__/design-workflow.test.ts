@@ -1,7 +1,7 @@
 import { 
   continueDesignConversation, 
   generateImage,
-  getDesignSpecificationByVersion 
+  getDesignByVersion 
 } from "../design-workflow.js";
 
 let conversationId = `test-conversation-${Date.now()}`;
@@ -159,17 +159,21 @@ async function testVersionRetrieval() {
 
     // Test 1: Retrieve the final version
     console.log("\n--- TEST 1: Retrieve Specific Version ---");
-    const retrievedSpec = await getDesignSpecificationByVersion(
+    const retrievedDesign = await getDesignByVersion(
       conversationId,
       finalSpecVersion
-    );
+    )
 
-    if (!retrievedSpec) {
+    if (!retrievedDesign) {
       throw new Error(`Failed to retrieve version ${finalSpecVersion}`);
     }
 
+    const retrievedSpec = retrievedDesign.specification;
+    if (!retrievedSpec) {
+      throw new Error(`Retrieved design does not contain specification for version ${finalSpecVersion}`);
+    }
     console.log("✓ Retrieved spec version:", retrievedSpec.version);
-    console.log("✓ Title:", retrievedSpec.title);
+    console.log("✓ Title:", retrievedDesign.title);
     console.log("✓ Summary:", retrievedSpec.summary.substring(0, 100) + "...");
     console.log("✓ Spec length:", retrievedSpec.designSpecification.length, "characters");
 
@@ -182,7 +186,7 @@ async function testVersionRetrieval() {
     // Test 2: Try to retrieve non-existent version
     console.log("\n--- TEST 2: Non-existent Version Returns Undefined ---");
     const nonExistentVersion = 99999;
-    const missingSpec = await getDesignSpecificationByVersion(
+    const missingSpec = await getDesignByVersion(
       conversationId,
       nonExistentVersion
     );
@@ -197,14 +201,14 @@ async function testVersionRetrieval() {
 
     // Test 3: Retrieve earlier version if available (version 1)
     console.log("\n--- TEST 3: Retrieve Earlier Version ---");
-    const earlierSpec = await getDesignSpecificationByVersion(
+    const earlierDesign = await getDesignByVersion(
       conversationId,
       1
     );
-
+    const earlierSpec = earlierDesign?.specification;
     if (earlierSpec) {
       console.log("✓ Retrieved earlier spec version:", earlierSpec.version);
-      console.log("✓ Earlier spec title:", earlierSpec.title);
+      console.log("✓ Earlier spec title:", earlierDesign?.title);
       
       if (earlierSpec.version !== 1) {
         throw new Error(`Expected version 1, got ${earlierSpec.version}`);

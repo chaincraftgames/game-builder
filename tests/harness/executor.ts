@@ -7,9 +7,13 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+
+// ESM-safe __filename and __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import type { GameTest, Scenario, TestResult, FailurePhase } from "./types.js";
 import { createSimulation, initializeSimulation, processAction, getGameState } from "#chaincraft/ai/simulate/simulate-workflow.js";
-import { injectPreGeneratedArtifacts, type SpecArtifacts } from "./helpers.js";
+import { injectPreGeneratedArtifacts, type SpecArtifacts, extractSpecNarratives } from "./helpers.js";
 
 /**
  * Execute a single game test scenario
@@ -75,7 +79,26 @@ export async function executeGameTest(
     } else {
       // Step 1: Generate artifacts from spec (or reuse if gameId was provided)
       console.log(`[${test.name}] ${gameId ? 'Using existing' : 'Generating'} artifacts...`);
-      const artifacts = await generateArtifacts(test.spec, sessionId, testGameId);
+      
+      // Try to load narratives JSON file if test specifies one
+      let specNarrativesOverride: Record<string, string> | undefined;
+      if (test.narrativesFile) {
+        const specDir = testFileDir || __dirname;
+        const narrativesPath = resolve(specDir, test.narrativesFile);
+        
+        try {
+          const narrativesJson = readFileSync(narrativesPath, 'utf-8');
+          specNarrativesOverride = JSON.parse(narrativesJson);
+          console.log(`[${test.name}] Loaded narratives from: ${test.narrativesFile}`);
+        } catch (error) {
+          const msg = `[${test.name}] Failed to load narratives from ${test.narrativesFile}: ${error instanceof Error ? error.message : String(error)}`;
+          console.error(msg);
+          // Fail loudly when a narratives file is explicitly requested so tests don't silently continue
+          throw new Error(msg);
+        }
+      }
+      
+      const artifacts = await generateArtifacts(test.spec, sessionId, testGameId, specNarrativesOverride);
       result.artifactsGenerated = true;
       
       // Step 2: Validate artifacts
@@ -166,11 +189,26 @@ export async function executeGameTest(
 /**
  * Generate artifacts from game specification
  */
-async function generateArtifacts(spec: string, sessionId: string, gameId?: string): Promise<any> {
+async function generateArtifacts(
+  spec: string, 
+  sessionId: string, 
+  gameId?: string,
+  specNarrativesOverride?: Record<string, string>
+): Promise<any> {
+  // Use provided narrative override or extract from spec
+  let specNarratives = specNarrativesOverride;
+  
+  if (!specNarratives) {
+    specNarratives = extractSpecNarratives(spec);
+  }
+  
+  // If narratives present, we pass them through to the simulation; no debug log.
+  void specNarratives;
+  
   // Use createSimulation which calls spec-processing-graph
-  // Pass spec directly (no gameId since we're providing the spec, not fetching from design workflow)
-  // Signature: createSimulation(sessionId, gameId?, version?, spec?)
-  const result = await createSimulation(sessionId, gameId, 1, spec);
+  // Pass spec directly with extracted or overridden narratives
+  // Signature: createSimulation(sessionId, gameId?, version?, spec?, preGeneratedArtifacts?, specNarrativesOverride?)
+  const result = await createSimulation(sessionId, gameId, 1, spec, undefined, specNarratives);
   return result;
 }
 
