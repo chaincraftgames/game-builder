@@ -176,7 +176,7 @@ describe("Extract Schema Subgraph", () => {
     Array.from(fieldPaths).forEach(path => {
       console.log(`  - ${path}`);
     });
-  }, 60000); // Increase timeout for LLM call
+  }, 60000); // Timeout reduced since executor was removed (only planner LLM call now)
 
   it("should add storage field for dice roll randomness", async () => {
     console.log("\n=== Testing RNG Storage Field Detection ===");

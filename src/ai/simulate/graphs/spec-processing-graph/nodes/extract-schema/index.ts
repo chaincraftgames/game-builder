@@ -69,11 +69,18 @@ export const schemaExtractionConfig: NodeConfig = {
     // Extract fields from planner output
     const fields = extractPlannerFields(plannerOutput);
     
-    // Extract natural summary from planner output
+    // Extract natural summary from planner output (handles both quoted and unquoted)
     let gameRules = "";
-    const summaryMatch = plannerOutput.match(/Natural summary:\s*"([^"]+)"/i);
+    // Try quoted format first: Natural summary: "..."
+    let summaryMatch = plannerOutput.match(/Natural summary:\s*"([^"]+)"/i);
     if (summaryMatch) {
       gameRules = summaryMatch[1];
+    } else {
+      // Try unquoted format: Natural summary: text... (until Fields: or end)
+      summaryMatch = plannerOutput.match(/Natural summary:\s*([^\n]+(?:\n(?!Fields:)[^\n]+)*)/i);
+      if (summaryMatch) {
+        gameRules = summaryMatch[1].trim();
+      }
     }
 
     // Return partial state to be merged

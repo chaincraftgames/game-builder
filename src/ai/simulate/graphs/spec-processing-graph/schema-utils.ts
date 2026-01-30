@@ -7,18 +7,7 @@
  */
 
 import { RouterContextSchema } from '#chaincraft/ai/simulate/logic/jsonlogic.js';
-
-/**
- * Planner field definition from extract-schema planner output
- */
-export interface PlannerField {
-  name: string;
-  type: string;
-  path: 'game' | 'player';
-  source: string;
-  purpose: string;
-  constraints?: string;
-}
+import type { PlannerField } from './nodes/extract-schema/schema.js';
 
 /**
  * Extract all field paths from planner field definitions or JSON Schema.
@@ -34,7 +23,7 @@ export function extractSchemaFields(schema: any): Set<string> {
   
   // Handle planner format (array of field definitions)
   if (Array.isArray(schema)) {
-    for (const field of schema) {
+    for (const field of schema as PlannerField[]) {
       if (field.name && field.path) {
         // Convert planner format to field path
         // "name": "score", "path": "player" -> "players.score"
