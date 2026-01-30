@@ -46,7 +46,7 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
     return { valid: false, issues };
   }
   
-  // Parse schema if string
+  // Parse schema if string (supports both planner format and legacy JSON Schema)
   let schema: any;
   try {
     schema = typeof state.stateSchema === 'string'

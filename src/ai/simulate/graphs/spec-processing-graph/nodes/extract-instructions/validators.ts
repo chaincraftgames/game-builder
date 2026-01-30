@@ -593,13 +593,13 @@ export async function validateArtifactStructure(
     ? JSON.parse(executionOutput)
     : executionOutput;
 
-  // Extract schema fields
+  // Extract schema fields (supports both planner format and legacy JSON Schema)
   let schemaFields: Set<string> | undefined;
   const schema = typeof state.stateSchema === 'string'
     ? JSON.parse(state.stateSchema)
     : state.stateSchema;
     
-  if (schema && schema.type === 'object' && schema.properties) {
+  if (schema) {
     schemaFields = extractSchemaFields(schema);
   }
 

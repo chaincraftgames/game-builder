@@ -1,22 +1,22 @@
 /**
  * Schema Extraction Configuration
  *
- * Exports node configuration for schema extraction with planner/executor pattern
+ * Exports node configuration for schema extraction with planner-only pattern.
+ * 
+ * SIMPLIFIED APPROACH: We no longer convert the planner's custom format to JSON Schema
+ * since state updates are deterministic (via stateDelta operations) and we never output
+ * full state objects at runtime. The planner's lightweight format is sufficient for
+ * field validation purposes.
  */
 
 import {
   setupSpecSchemaModel,
 } from "#chaincraft/ai/model-config.js";
 import { schemaPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/planner.js";
-import { schemaExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/executor.js";
 import {
   validatePlanCompleteness,
   validatePlanFieldCoverage,
-  validateJsonParseable,
-  validateSchemaStructure,
-  validateRequiredFields,
-  validateFieldTypes,
-  validatePlannerFieldsInSchema,
+  extractPlannerFields,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/validators.js";
 import {
   getFromStore,
@@ -32,21 +32,12 @@ export const schemaExtractionConfig: NodeConfig = {
     validators: [validatePlanCompleteness, validatePlanFieldCoverage],
   },
 
-  executor: {
-    node: schemaExecutorNode,
-    model: await setupSpecSchemaModel(),
-    validators: [
-      validateJsonParseable,
-      validateSchemaStructure,
-      validateRequiredFields,
-      validateFieldTypes,
-      validatePlannerFieldsInSchema,
-    ],
-  },
+  // No executor needed - planner output is sufficient
+  executor: undefined,
 
   maxAttempts: {
     plan: 1,
-    execution: 1,
+    execution: 0, // No execution phase
   },
 
   commit: async (store, state, threadId) => {
@@ -56,36 +47,41 @@ export const schemaExtractionConfig: NodeConfig = {
       );
     }
 
-    // Retrieve execution output (getFromStore already unwraps .value)
-    let executionOutput;
+    // Retrieve planner output directly (no executor conversion)
+    let plannerOutput;
     try {
-      executionOutput = await getFromStore(
+      plannerOutput = await getFromStore(
         store,
-        ["schema", "execution", "output"],
+        ["schema", "plan", "output"],
         threadId
       );
     } catch (error) {
-      // Executor never ran (planner failed validation), return empty updates
-      // Validation errors will be added by commit node
+      // Planner never ran or failed validation, return empty updates
       return {};
     }
 
-    console.log("[commit] executionOutput type:", typeof executionOutput);
+    console.log("[commit] plannerOutput type:", typeof plannerOutput);
     console.log(
-      "[commit] executionOutput:",
-      JSON.stringify(executionOutput).substring(0, 200)
+      "[commit] plannerOutput:",
+      JSON.stringify(plannerOutput).substring(0, 200)
     );
 
-    const response =
-      typeof executionOutput === "string"
-        ? JSON.parse(executionOutput)
-        : executionOutput;
+    // Extract fields from planner output
+    const fields = extractPlannerFields(plannerOutput);
+    
+    // Extract natural summary from planner output
+    let gameRules = "";
+    const summaryMatch = plannerOutput.match(/Natural summary:\s*"([^"]+)"/i);
+    if (summaryMatch) {
+      gameRules = summaryMatch[1];
+    }
 
     // Return partial state to be merged
+    // stateSchema now stores the planner fields array instead of JSON Schema
     return {
-      gameRules: response.gameRules,
-      stateSchema: JSON.stringify(response.stateSchema),
-      exampleState: JSON.stringify(response.state),
+      gameRules: gameRules,
+      stateSchema: JSON.stringify(fields),
+      exampleState: "", // No longer needed since we don't generate full state examples
     };
   },
 };
