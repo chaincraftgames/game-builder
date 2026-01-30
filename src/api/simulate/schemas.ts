@@ -40,6 +40,7 @@ export const CreateSimulationRequestSchema = z.object({
   gameSpecificationVersion: z.number().min(1).optional(), // Optional - if omitted, uses latest version from design workflow
   gameSpecification: z.string().min(1).optional(), // Optional override - if not provided, retrieves from design workflow
   gameId: z.string().min(1).optional(), // Optional - game ID (conversationId) to fetch spec from design workflow. If not provided, uses sessionId (backward compatibility)
+  atomicArtifactRegen: z.boolean().optional(), // Optional - whether to require atomic artifact regen (default true)
 });
 
 export const CreateSimulationResponseSchema = z.object({

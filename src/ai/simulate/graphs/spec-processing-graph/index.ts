@@ -53,7 +53,31 @@ export async function createSpecProcessingGraph(
 
   // Define flow with validation error checks
   // Route START directly to schema extraction
-  workflow.addEdge(START, "extract_schema" as any);
+  // Decide where to start based on any existing artifacts and the atomic regen flag.
+  // If schema is missing -> schema. If transitions or instructions missing and
+  // `atomicArtifactRegen` is true -> go back to schema to regenerate whole set.
+  // Otherwise route to the missing subgraph directly.
+  workflow.addConditionalEdges(
+    START,
+    (state: any) => {
+      const atomic = !!state.atomicArtifactRegen;
+      const hasSchema = state.stateSchema && state.stateSchema.length > 0;
+      const hasTransitions = state.stateTransitions && state.stateTransitions.length > 0;
+      const hasPlayerPhaseInstructions = state.playerPhaseInstructions && Object.keys(state.playerPhaseInstructions || {}).length > 0;
+      const hasTransitionInstructions = state.transitionInstructions && Object.keys(state.transitionInstructions || {}).length > 0;
+
+      if (!hasSchema) return "schema";
+      if (!hasTransitions) return atomic ? "schema" : "transitions";
+      if (!hasPlayerPhaseInstructions || !hasTransitionInstructions) return atomic ? "schema" : "instructions";
+      return "end";
+    },
+    {
+      schema: "extract_schema" as any,
+      transitions: "extract_transitions" as any,
+      instructions: "extract_instructions" as any,
+      end: END,
+    }
+  );
   
   // After schema: check for validation errors before continuing
   workflow.addConditionalEdges(

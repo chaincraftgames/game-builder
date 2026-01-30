@@ -1,5 +1,4 @@
 import { ThreadChannel, Message, AttachmentBuilder } from "discord.js";
-import { getFullDesignSpecification } from "#chaincraft/ai/design/design-workflow.js";
 import { GameDesignSpecification } from "#chaincraft/ai/design/game-design-state.js";
 
 const specificationMessageRegex = /^Specification Version: (\d+)/;
@@ -101,15 +100,15 @@ async function updateSpecification(
     console.debug(
       "[specification-manager] Getting updated specification from design agent."
     );
-    const specification = await getFullDesignSpecification(thread.id);
-    if (specification) {
-      // Cache the specification
-      const message = await setSpecificationForThread(thread, specification);
-      if (message) {
-        const version = getSpecificationVersion(message);
-        return { specification, version };
-      }
-    }
+    // const specification = await getFullDesignSpecification(thread.id);
+    // if (specification) {
+    //   // Cache the specification
+    //   const message = await setSpecificationForThread(thread, specification);
+    //   if (message) {
+    //     const version = getSpecificationVersion(message);
+    //     return { specification, version };
+    //   }
+    // }
   } catch (error) {
     console.error("Error fetching specification from AI:", error);
   }

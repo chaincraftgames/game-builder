@@ -22,7 +22,7 @@ import {
 
 export async function handleCreateSimulation(
   request: FastifyRequest<{ Body: CreateSimulationRequest }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): Promise<CreateSimulationResponse> {
   const result = CreateSimulationRequestSchema.safeParse(request.body);
 
@@ -32,13 +32,22 @@ export async function handleCreateSimulation(
   }
 
   try {
-    const { sessionId, gameSpecificationVersion, gameSpecification, gameId } =
-      result.data;
+    const {
+      sessionId,
+      gameSpecificationVersion,
+      gameSpecification,
+      gameId,
+      atomicArtifactRegen,
+    } = result.data;
+
     const response = await createSimulation(
       sessionId,
       gameId,
       gameSpecificationVersion,
-      gameSpecification
+      {
+        overrideSpecification: gameSpecification,
+        atomicArtifactRegen,
+      },
     );
 
     return {
@@ -53,7 +62,7 @@ export async function handleCreateSimulation(
 
 export async function handleInitializeSimulation(
   request: FastifyRequest<{ Body: InitializeSimulationRequest }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): Promise<InitializeSimulationResponse> {
   const result = InitializeSimulationRequestSchema.safeParse(request.body);
 
@@ -85,7 +94,7 @@ export async function handleInitializeSimulation(
 
 export async function handleProcessAction(
   request: FastifyRequest<{ Body: ProcessActionRequest }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): Promise<ProcessActionResponse> {
   const result = ProcessActionRequestSchema.safeParse(request.body);
 
@@ -119,7 +128,7 @@ export async function handleProcessAction(
 
 export async function handleGetSimulationState(
   request: FastifyRequest<{ Body: GetSimulationStateRequest }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): Promise<GetSimulationStateResponse> {
   const result = GetSimulationStateRequestSchema.safeParse(request.body);
 
