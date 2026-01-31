@@ -143,12 +143,25 @@ Rules & Guidance:
      * Multiple values: Use separate operations to different paths or append to array
    - Router will handle RNG execution before passing instructions to LLM
 
-6. Required State Fields:
+6. Setting Values for All Players:
+   - Use "setForAllPlayers" operation when setting the same value for all players
+   - This is especially useful for:
+     * Initializing player state at game start
+     * Resetting player states after a round
+     * Setting flags/counters to the same value for all players
+   - Examples:
+     * Initialize scores: {{ "op": "setForAllPlayers", "field": "score", "value": 0 }}
+     * Set action required: {{ "op": "setForAllPlayers", "field": "actionRequired", "value": true }}
+     * Clear selections: {{ "op": "setForAllPlayers", "field": "currentChoice", "value": null }}
+   - The operation automatically expands to set the value for each player
+   - Preferred over generating separate set operations for player1, player2, etc.
+
+7. Required State Fields:
    - List dot-notation paths the LLM will need to read
    - These are for DOCUMENTATION only (full state always provided at runtime)
    - Be thorough but don't overthink it
 
-7. Messaging:
+8. Messaging:
    - Nearly all actions/transitions need messages
    - Private: player-specific confirmations, secret info
    - Public: announcements all players see
@@ -505,18 +518,21 @@ Do NOT assume schema defaults - runtime requires explicit set operations.
 - If ANY precondition checks any counter or flag → initialize it to appropriate starting value in init
 
 **For ALL players** (when planner says "initialize player scores" or "set actionRequired for all players"):
-Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all player IDs in the game):
+Use the **setForAllPlayers** operation for convenience when setting the same value for all players:
+{{ "op": "setForAllPlayers", "field": "score", "value": 0 }}
+{{ "op": "setForAllPlayers", "field": "actionRequired", "value": true }}
+{{ "op": "setForAllPlayers", "field": "illegalActionCount", "value": 0 }}
+
+This is preferred over generating separate operations for each player:
 {{ "op": "set", "path": "players.{{{{player1Id}}}}.score", "value": 0 }}
 {{ "op": "set", "path": "players.{{{{player2Id}}}}.score", "value": 0 }}
-{{ "op": "set", "path": "players.{{{{player1Id}}}}.actionRequired", "value": true }}
-{{ "op": "set", "path": "players.{{{{player2Id}}}}.actionRequired", "value": true }}
 
 **Common initializations** planner will request:
-- Player scores/counters → {{ "op": "set", "path": "players.{{{{playerNId}}}}.score", "value": 0 }}
-- Action flags → {{ "op": "set", "path": "players.{{{{playerNId}}}}.actionRequired", "value": true }}
-- Clear fields → {{ "op": "set", "path": "players.{{{{playerNId}}}}.currentChoice", "value": null }}
+- Player scores/counters → {{ "op": "setForAllPlayers", "field": "score", "value": 0 }}
+- Action flags → {{ "op": "setForAllPlayers", "field": "actionRequired", "value": true }}
+- Clear fields → {{ "op": "setForAllPlayers", "field": "currentChoice", "value": null }}
 - Game counters → {{ "op": "set", "path": "game.roundNumber", "value": 1 }}
-- Illegal action tracking → {{ "op": "set", "path": "players.{{{{playerNId}}}}.illegalActionCount", "value": 0 }}
+- Illegal action tracking → {{ "op": "setForAllPlayers", "field": "illegalActionCount", "value": 0 }}
 
 ⚠️ Operations like "increment" WILL FAIL if field is undefined - must initialize first!
 
@@ -597,10 +613,28 @@ Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all
   "stateDelta": [
     {{ "op": "rng", "path": "game.oracleMood", "choices": ["calm", "irritable", "cryptic"], "probabilities": [0.33, 0.33, 0.34] }},
     {{ "op": "set", "path": "game.phase", "value": "greeting" }},
-    {{ "op": "set", "path": "players.{{{{playerId}}}}.trustLevel", "value": 0 }}
+    {{ "op": "setForAllPlayers", "field": "trustLevel", "value": 0 }}
   ],
   "messages": {{
     "public": {{ "template": "You stand before the oracle. The air is thick with ancient power." }}
+  }}
+}}
+
+# Example Transition With setForAllPlayers (Initialization)
+
+{{
+  "id": "setup-round",
+  "transitionName": "Setup Round",
+  "description": "Initialize new round and reset player states",
+  "priority": 1,
+  "stateDelta": [
+    {{ "op": "increment", "path": "game.roundNumber", "value": 1 }},
+    {{ "op": "setForAllPlayers", "field": "currentChoice", "value": null }},
+    {{ "op": "setForAllPlayers", "field": "actionRequired", "value": true }},
+    {{ "op": "set", "path": "game.currentPhase", "value": "selection" }}
+  ],
+  "messages": {{
+    "public": {{ "template": "Round {{{{game.roundNumber}}}} begins! Make your choice." }}
   }}
 }}
 
