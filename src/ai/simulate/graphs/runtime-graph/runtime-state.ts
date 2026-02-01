@@ -94,4 +94,9 @@ export const RuntimeState = Annotation.Root({
     reducer: (_, y) => y,
     default: () => "",
   }),
+
+  winningPlayers: Annotation<string[]>({
+    reducer: (x, y) => [...new Set([...x, ...y])],
+    default: () => [],
+  }),
 });

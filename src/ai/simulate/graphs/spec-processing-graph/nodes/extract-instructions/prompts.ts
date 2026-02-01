@@ -123,6 +123,22 @@ Rules & Guidance:
    - Template variables:
      * What values must LLM compute? (winnerId, score changes, event outcomes)
      * What state values are needed in messages? (player names, choices, results)
+   - **⚠️ CRITICAL - Game Completion Fields (Required for ALL games):**
+     * **game.gameEnded** (boolean): At least ONE transition must set this to true
+       - Signals the game has reached a terminal state
+       - Example stateChange: "set game.gameEnded to true"
+       - Typically set in transitions that move to the "finished" phase
+     * **players.{{{{playerId}}}}.isGameWinner** (boolean): Set to true for winning player(s)
+       - Set this boolean flag for each winning player before game ends
+       - Runtime will automatically compute game.winningPlayers from these flags
+       - Example stateChanges:
+         * Single winner: "set winning player's isGameWinner to true"
+         * Tie/multiple winners: "set both/all winning players' isGameWinner to true"
+         * No winner/draw: "leave all isGameWinner flags false (default)"
+       - Can be set before gameEnded (e.g., player meets win condition mid-game)
+       - MUST be set on all paths leading to the "finished" phase (except no-winner scenarios)
+       - ⚠️ Validation will fail if any path to "finished" doesn't set isGameWinner appropriately
+     * If game has multiple ending scenarios, EACH ending transition must handle both fields
 
 4. Mechanics Descriptions (Key Guidance):
    - Keep rules ordered and unambiguous
@@ -143,12 +159,7 @@ Rules & Guidance:
      * Multiple values: Use separate operations to different paths or append to array
    - Router will handle RNG execution before passing instructions to LLM
 
-6. Required State Fields:
-   - List dot-notation paths the LLM will need to read
-   - These are for DOCUMENTATION only (full state always provided at runtime)
-   - Be thorough but don't overthink it
-
-7. Messaging:
+6. Messaging:
    - Nearly all actions/transitions need messages
    - Private: player-specific confirmations, secret info
    - Public: announcements all players see
@@ -172,9 +183,7 @@ Example Player Action Hint:
     "needsPublicMessage": true,
     "publicMessagePurpose": "Announce player has submitted (without revealing choice)"
   }},
-  "templateVariables": ["playerId", "input.choice", "playerName"],
-  "requiredInputFields": ["game.phase", "players.*.choice"],
-  "requiredOutputFields": ["players.{{playerId}}.choice", "players.{{playerId}}.actionRequired"]
+  "templateVariables": ["playerId", "input.choice", "playerName"]
 }}
 
 Example Automatic Transition Hint (with mechanics):
@@ -201,9 +210,7 @@ Example Automatic Transition Hint (with mechanics):
     "publicMessagePurpose": "Reveal both choices and announce winner",
     "needsPrivateMessages": false
   }},
-  "templateVariables": ["winnerId", "winnerName", "p1Choice", "p2Choice", "outcome"],
-  "requiredInputFields": ["players.p1.choice", "players.p2.choice", "players.*.name", "game.round"],
-  "requiredOutputFields": ["players.*.score", "game.currentPhase", "game.history"]
+  "templateVariables": ["winnerId", "winnerName", "p1Choice", "p2Choice", "outcome"]
 }}
 
 Return EXACTLY one JSON object matching the InstructionsPlanningResponseSchema.
@@ -224,21 +231,9 @@ Include:
 # Narrative Markers Available
 {narrativeMarkersSection}
 
-**Using Narrative Markers:**
-If narrative markers are available, you can reference them in instruction guidance 
-using the format: !___ NARRATIVE:MARKER_NAME ___!
-
-When you include a marker reference in mechanicsDescription or other guidance fields,
-the marker will be expanded at runtime to provide the full narrative guidance to the LLM.
-
-Use narrative markers when:
-- The game has atmospheric or thematic descriptions that should influence narrative generation
-- Instructions need to guide the LLM on tone, style, or narrative continuity
-- The game spec includes extensive world-building or narrative context
-
-Example: "Generate reveal description following !___ NARRATIVE:REVEAL_ATMOSPHERE ___!"
-
-Do NOT reference narrative markers if the game has no narrative content or is purely mechanical.
+**Narrative Markers:**
+Reference available markers using !___ NARRATIVE:MARKER_NAME ___! in mechanicsDescription.
+Expanded at runtime for atmospheric/thematic guidance. Omit for purely mechanical games.
 !___ END-CACHE ___!
 
 !___ CACHE:artifacts ___!
@@ -249,15 +244,6 @@ Do NOT reference narrative markers if the game has no narrative content or is pu
 # ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
 
 {transitionIdsList}
-
-# CRITICAL ID MATCHING REQUIREMENTS
-
-Your output MUST use ONLY the phase names and transition IDs listed above.
-- Copy them CHARACTER-FOR-CHARACTER (including capitalization, underscores, hyphens)
-- DO NOT create variations like "choice" instead of "choicePhase"
-- DO NOT create variations like "both-submitted" instead of "both_players_submitted"
-- Your phaseInstructions[].phase field must EXACTLY match a phase name from the list above
-- Your automaticTransitions[].id field must EXACTLY match a transition ID from the list above
 
 # Transitions Artifact
 <transitions>
@@ -340,12 +326,9 @@ This is simpler and more reliable than using intermediate fields with template e
 {{ "op": "rng", "path": "game.options[1]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.options[2]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
 
-Other RNG examples:
+Other examples:
 {{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
-{{ "op": "rng", "path": "game.value", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
-
-{{ "op": "rng", "path": "game.randomValue2", "choices": ["A","B","C"], "probabilities": [0.5,0.3,0.2] }}
 
 **Template Variables in Paths**: Use {{{{variableName}}}} for runtime values:
 {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
@@ -424,34 +407,20 @@ When planner hints include mechanicsDescription, format as structured guidance:
 
 ## 4. Message Templates
 
-**⚠️ CRITICAL: DO NOT use stateDelta operations to set message fields!**
+**⚠️ CRITICAL: DO NOT use stateDelta to set message fields!** Runtime auto-populates from messages section.
 
-Use the \`messages\` section to generate player communications:
-- **messages.private**: Array of private messages to specific players
-- **messages.public**: Single public message visible to all players
-
-**DO NOT** use stateDelta to set \`game.publicMessage\` or \`players.*.privateMessage\`.
-The runtime automatically populates these state fields from your messages section.
-
-**Messages structure** (part of instruction output):
+**Structure:**
 {{
-  "stateDelta": [
-    // State changes here - NO message operations
-  ],
+  "stateDelta": [ /* NO message operations here */ ],
   "messages": {{
-    "private": [
-      {{ "to": "{{{{playerId}}}}", "template": "You submitted {{{{input.choice}}}} for round {{{{game.round}}}}" }},
-      {{ "to": "{{{{opponentId}}}}", "template": "{{{{playerName}}}} is waiting for you" }}
-    ],
-    "public": {{ "template": "{{{{winnerName}}}} wins round {{{{game.round}}}}! Score: {{{{p1Name}}}} {{{{p1Score}}}}, {{{{p2Name}}}} {{{{p2Score}}}}" }}
+    "private": [{{ "to": "{{{{playerId}}}}", "template": "You submitted {{{{input.choice}}}}" }}],
+    "public": {{ "template": "{{{{winnerName}}}} wins!" }}
   }}
 }}
 
-**Key points:**
-- \`private\`: Array of message objects, each with \`to\` (player ID template) and \`template\` (message text)
-- \`public\`: Single message object with just \`template\` (goes to all players)
-- Both private and public are optional
-- Use {{{{variables}}}} in both \`to\` and \`template\` fields
+- \`private\`: Array with \`to\` (player ID) and \`template\` (text)
+- \`public\`: Object with \`template\` only (all players)
+- Both optional, use {{{{variables}}}} in templates
 
 ## 5. Template Variable Patterns
 
@@ -485,6 +454,37 @@ Common variable patterns:
 - Increment on validation failures
 - Initialize to 0 in initialization transitions
 - Example: {{ "op": "increment", "path": "players.{{{{playerId}}}}.illegalActionCount", "value": 1 }}
+
+**Game Completion Fields (CRITICAL - Required for ALL games)**:
+
+**game.gameEnded** (boolean) - REQUIRED in transitions that end the game:
+- ⚠️ CRITICAL: At least ONE transition must set game.gameEnded to true
+- This signals the game has reached a terminal state and should not continue
+- Set in transitions that move to the "finished" phase or when game ends
+- Example: {{ "op": "set", "path": "game.gameEnded", "value": true }}
+- Missing this will cause validation failure: "No transition sets game.gameEnded=true"
+
+**players.{{{{playerId}}}}.isGameWinner** (boolean) - Set to true for winning player(s):
+- ⚠️ CRITICAL: MUST be set on ALL paths to the "finished" phase (except no-winner scenarios)
+- Set to true for each player who won the game
+- Leave as false (default) for players who didn't win or in draw scenarios
+- Runtime automatically computes game.winningPlayers array from these flags
+- Can be set in same transition as gameEnded OR in an earlier transition
+- Examples:
+  * Single winner: {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }}
+  * Multiple winners (tie): Two ops - {{ "op": "set", "path": "players.{{{{player1Id}}}}.isGameWinner", "value": true }} and {{ "op": "set", "path": "players.{{{{player2Id}}}}.isGameWinner", "value": true }}
+  * No winner (draw/abandoned): No operations needed - all flags remain false
+- Missing this will cause validation failure: "Path [phases] does not set isGameWinner"
+- If game has multiple ending scenarios, EACH ending transition must set isGameWinner appropriately
+
+**Example: Complete game-ending transition stateDelta (sets BOTH required fields)**:
+{{
+  "stateDelta": [
+    {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
+    {{ "op": "set", "path": "game.gameEnded", "value": true }},
+    {{ "op": "set", "path": "game.publicMessage", "value": "Game Over! {{{{winnerName}}}} wins!" }}
+  ]
+}}
 
 **State cleanup**: If planner hints indicate fields should be cleared/reset 
 (e.g., "clear both players' choice fields"), use delete ops or set to null as specified
@@ -603,24 +603,6 @@ Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all
     "public": {{ "template": "You stand before the oracle. The air is thick with ancient power." }}
   }}
 }}
-
-# Example Transition With Multiple RNG Operations
-
-{{
-  "id": "setup-game",
-  "transitionName": "Setup Game",
-  "description": "Initialize game with multiple random selections",
-  "priority": 1,
-  "stateDelta": [
-    {{ "op": "rng", "path": "game.startingPosition", "choices": ["north","south","east","west"], "probabilities": [0.25,0.25,0.25,0.25] }},
-    {{ "op": "rng", "path": "game.weatherCondition", "choices": ["sunny","rainy","stormy"], "probabilities": [0.5,0.3,0.2] }},
-    {{ "op": "rng", "path": "game.difficulty", "choices": [1,2,3], "probabilities": [0.2,0.5,0.3] }},
-    {{ "op": "set", "path": "game.phase", "value": "active" }}
-  ],
-  "messages": {{
-    "public": {{ "template": "Game initialized with starting position {{{{game.startingPosition}}}} under {{{{game.weatherCondition}}}} conditions." }}
-  }}
-}}
 !___ END-CACHE ___!
 
 !___ CACHE:design-executor ___!
@@ -630,32 +612,9 @@ Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all
 # Narrative Markers Available
 {narrativeMarkersSection}
 
-**Preserving Narrative Markers:**
-If planner hints include narrative marker references (format: !___ NARRATIVE:MARKER_NAME ___!), 
-preserve them in the mechanicsGuidance.rules array or similar guidance fields.
-
-Example:
-{{
-  "mechanicsGuidance": {{
-    "rules": [
-      "Generate reveal description following !___ NARRATIVE:REVEAL_ATMOSPHERE ___!",
-      "Rock beats scissors",
-      "Scissors beats paper"
-    ],
-    "computation": "Compare choices, determine winner, generate dramatic reveal"
-  }}
-}}
-
-The runtime will expand !___ NARRATIVE:MARKER_NAME ___! to the full narrative content before invoking the LLM.
-
-**When to include narrative guidance:**
-- Instructions that generate messages with narrative content
-- Instructions that set state fields to generated descriptions  
-- Transitions involving reveals, events, or story moments
-
-**When NOT to include:**
-- Purely mechanical operations (increment score, set flags)
-- Simple confirmations without narrative flavor
+**Narrative Markers:**
+If planner hints include !___ NARRATIVE:MARKER_NAME ___! references, preserve them in mechanicsGuidance.
+Runtime expands them before LLM invocation. Use for narrative/atmospheric content, not mechanical operations.
 !___ END-CACHE ___!
 
 !___ CACHE:artifacts-executor ___!

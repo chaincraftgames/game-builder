@@ -37,6 +37,12 @@ c) would break the game or violate fairness without this specific private messag
     .describe(
       "If true, the game cannot proceed to the next turn or phase until this player takes an action."
     ),
+  isGameWinner: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Whether this player has won the game. Set to true when player meets victory conditions. Used to compute game.winningPlayers array."
+    ),
 });
 
 export const baseGameStateSchema = z.object({
@@ -72,6 +78,11 @@ export const baseGameStateSchema = z.object({
         .string()
         .optional()
         .describe("Public game state, instructions, etc... to all players"),
+      winningPlayers: z
+        .array(z.string())
+        .describe(
+          "Array of player IDs who have won the game (empty if no winners yet)"
+        ),
     })
     .describe(`Game-level state containing all shared game progress fields`),
   players: z

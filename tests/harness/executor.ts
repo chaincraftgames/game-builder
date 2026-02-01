@@ -154,8 +154,11 @@ export async function executeGameTest(
     result.simulationCompleted = true;
     result.finalState = { playerStates: finalPlayerStates, gameEnded, gameState: finalGameState };
     
+    // Extract winningPlayers from game state
+    const winningPlayers = finalGameState?.game?.winningPlayers;
+    
     // Step 5: Validate expected outcome
-    const outcomeValid = validateOutcome(gameEnded, scenario.expectedOutcome);
+    const outcomeValid = validateOutcome(gameEnded, winningPlayers, scenario.expectedOutcome);
     if (!outcomeValid.valid) {
       result.simulationError = outcomeValid.error;
       result.duration = Date.now() - startTime;
@@ -206,9 +209,11 @@ async function generateArtifacts(
   void specNarratives;
   
   // Use createSimulation which calls spec-processing-graph
-  // Pass spec directly with extracted or overridden narratives
-  // Signature: createSimulation(sessionId, gameId?, version?, spec?, preGeneratedArtifacts?, specNarrativesOverride?)
-  const result = await createSimulation(sessionId, gameId, 1, spec, undefined, specNarratives);
+  // Pass spec as overrideSpecification and narratives in options
+  const result = await createSimulation(sessionId, gameId, 1, {
+    overrideSpecification: spec,
+    specNarrativesOverride: specNarratives
+  });
   return result;
 }
 
@@ -227,12 +232,67 @@ function isLastAction(action: any, scenario: Scenario): boolean {
   return scenario.playerActions[scenario.playerActions.length - 1] === action;
 }
 
-function validateOutcome(gameEnded: boolean, expected: any): { valid: boolean; error?: string } {
+function validateOutcome(
+  gameEnded: boolean, 
+  winningPlayers: string[] | undefined,
+  expected: any
+): { valid: boolean; error?: string } {
+  // Check gameEnded matches expectation
   if (expected.gameEnded !== undefined && gameEnded !== expected.gameEnded) {
     return {
       valid: false,
       error: `Expected gameEnded=${expected.gameEnded}, got ${gameEnded}`
     };
+  }
+  
+  // CRITICAL: If game ended, winningPlayers MUST be defined
+  if (gameEnded && winningPlayers === undefined) {
+    return {
+      valid: false,
+      error: `Game ended but winningPlayers is undefined. Every completed game must set winningPlayers (use empty array for draw/no winner).`
+    };
+  }
+  
+  // If expected winningPlayers specified, validate them
+  if (expected.winningPlayers !== undefined) {
+    if (!winningPlayers) {
+      return {
+        valid: false,
+        error: `Expected winningPlayers=${JSON.stringify(expected.winningPlayers)}, but winningPlayers is undefined`
+      };
+    }
+    
+    // Sort both arrays for comparison (order shouldn't matter for winners)
+    const expectedSorted = [...expected.winningPlayers].sort();
+    const actualSorted = [...winningPlayers].sort();
+    
+    if (JSON.stringify(expectedSorted) !== JSON.stringify(actualSorted)) {
+      return {
+        valid: false,
+        error: `Expected winningPlayers=${JSON.stringify(expected.winningPlayers)}, got ${JSON.stringify(winningPlayers)}`
+      };
+    }
+  }
+  
+  // Backward compatibility: check deprecated winner field
+  if (expected.winner !== undefined && winningPlayers) {
+    if (expected.winner === null) {
+      // Expect no winner (empty array)
+      if (winningPlayers.length > 0) {
+        return {
+          valid: false,
+          error: `Expected no winner, but got winningPlayers=${JSON.stringify(winningPlayers)}`
+        };
+      }
+    } else {
+      // Expect specific winner
+      if (!winningPlayers.includes(expected.winner)) {
+        return {
+          valid: false,
+          error: `Expected winner=${expected.winner}, but winningPlayers=${JSON.stringify(winningPlayers)}`
+        };
+      }
+    }
   }
   
   return { valid: true };

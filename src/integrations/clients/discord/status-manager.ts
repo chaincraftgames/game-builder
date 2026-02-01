@@ -194,7 +194,8 @@ export async function getStatus(
         playerStatuses[index] = {
           playerNumber: parseInt(playerNumber),
           assignedUserId: assignedUserId,
-          actionsAllowed: !actionButton.disabled
+          actionsAllowed: !actionButton.disabled,
+          isGameWinner: false
         };
       };
     } catch (error) {
@@ -382,5 +383,6 @@ function initPlayerStatus(playerCount: number): PlayerStatus[] {
     playerNumber: index + 1,
     actionsAllowed: false,
     pendingMessage: false,
+    isGameWinner: false,
   }));
 }

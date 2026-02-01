@@ -32,26 +32,28 @@ export async function runGameTestScenario(
   const scenario = gameTest.scenarios[scenarioIndex];
   
   // Use provided game ID (for reusing artifacts) or generate fresh one
-  const gameId = gameIdOverride || process.env.GAME_ID || createGameId(gameKey);
-  const usingExistingArtifacts = !!(gameIdOverride || process.env.GAME_ID);
+  // Only pass gameId to executeGameTest if we actually want to reuse artifacts
+  const gameIdForReuse = gameIdOverride || process.env.GAME_ID;
+  const displayGameId = gameIdForReuse || createGameId(gameKey);
+  const usingExistingArtifacts = !!gameIdForReuse;
   
   console.log(`\n=== Running: ${gameTest.name} - ${scenario.name} ===\n`);
-  console.log(`Game ID: ${gameId} ${usingExistingArtifacts ? '(reusing existing artifacts)' : '(generating fresh artifacts)'}`);
+  console.log(`Game ID: ${displayGameId} ${usingExistingArtifacts ? '(reusing existing artifacts)' : '(generating fresh artifacts)'}`);
   
   // Start capturing console output
   const consoleCapture = new ConsoleCapture();
   consoleCapture.start();
   
   try {
-    // Execute the test
-    const result = await executeGameTest(gameTest, scenario, gameId);
+    // Execute the test - only pass gameId if reusing artifacts
+    const result = await executeGameTest(gameTest, scenario, gameIdForReuse);
     
     // Log results
     logTestResult(gameTest.name, scenario.name, result);
     
     // Save results and logs to files
-    saveTestResult(gameKey, scenarioIndex, result, gameId);
-    consoleCapture.save(gameKey, scenarioIndex, gameId);
+    saveTestResult(gameKey, scenarioIndex, result, displayGameId);
+    consoleCapture.save(gameKey, scenarioIndex, displayGameId);
     
     return result;
   } finally {
@@ -75,6 +77,7 @@ export async function runAllGameScenarios(
   const results: TestResult[] = [];
   
   // Use same gameId for all scenarios to reuse artifacts
+  // Generate a shared gameId for all scenarios when generating fresh artifacts
   const gameId = gameIdOverride || process.env.GAME_ID || createGameId(gameKey);
   
   for (let i = 0; i < gameTest.scenarios.length; i++) {

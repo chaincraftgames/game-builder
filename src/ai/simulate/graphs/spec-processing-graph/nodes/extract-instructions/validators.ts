@@ -13,12 +13,14 @@ import {
 import {
   InstructionsArtifact,
   InstructionsArtifactSchema,
+  TransitionsArtifact,
 } from "#chaincraft/ai/simulate/schema.js";
 import { 
   extractSchemaFields, 
   isValidFieldReference, 
   extractFieldReferences 
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js";
+import { getOrBuildGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/transition-graph.js";
 
 /**
  * Validate planner output for completeness
@@ -926,3 +928,170 @@ export function validateInitialStatePreconditions(
 
   return errors;
 }
+
+/**
+ * Validate that game can properly end with winners declared
+ * 
+ * Checks:
+ * 1. At least one transition sets game.gameEnded = true
+ * 2. At least one transition sets players.*.isGameWinner = true
+ * 3. At least one terminal path sets isGameWinner (warns if none do)
+ */
+export async function validateGameCompletion(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  try {
+    // Get execution output from store (Instructions artifact)
+    const executionOutput = await getFromStore(
+      store,
+      ["instructions", "execution", "output"],
+      threadId
+    );
+    
+    if (!executionOutput) {
+      return ["Execution output is missing - cannot validate game completion"];
+    }
+    
+    const instructionsArtifact: InstructionsArtifact = typeof executionOutput === 'string' 
+      ? JSON.parse(executionOutput)
+      : executionOutput;
+    
+    // Get transitions artifact from state (needed for path analysis)
+    const transitionsJson = state.stateTransitions;
+    if (!transitionsJson) {
+      errors.push("Transitions artifact not found in state");
+      return errors;
+    }
+    
+    const transitionsArtifact: TransitionsArtifact = JSON.parse(transitionsJson);
+    
+    // Build or retrieve cached graph
+    const graph = getOrBuildGraph(threadId, transitionsArtifact, instructionsArtifact);
+    
+    // Check 1: At least one transition must set gameEnded
+    const gameEndedSetters = graph.findFieldSetters('game.gameEnded');
+    
+    if (gameEndedSetters.length === 0) {
+      errors.push(
+        'No transition sets game.gameEnded=true. At least one transition must explicitly end the game. ' +
+        'Without this, the game cannot terminate properly.'
+      );
+    }
+    
+    // Check 2: At least one transition must set isGameWinner for players
+    const isGameWinnerSetters = graph.findFieldSetters('players.*.isGameWinner');
+    
+    if (isGameWinnerSetters.length === 0) {
+      errors.push(
+        'No transition sets players.*.isGameWinner. At least one transition must mark winning players. ' +
+        'Set isGameWinner=true for each winning player before or when the game ends. ' +
+        'Runtime will automatically compute game.winningPlayers from these flags.'
+      );
+    }
+    
+    // Check 3: All terminal paths set isGameWinner somewhere along the path
+    // Note: We don't require isGameWinner to be set for draw/no-winner scenarios
+    const terminalPaths = graph.getTerminalPaths();
+    
+    if (terminalPaths.length === 0) {
+      // This is a structural issue, should be caught by phase connectivity validation
+      errors.push('No paths from init to "finished" phase found. Game cannot end.');
+    } else {
+      // Check if ANY path sets isGameWinner (at least one winning scenario)
+      let hasWinningPath = false;
+      for (const path of terminalPaths) {
+        if (graph.pathSetsField(path, 'players.*.isGameWinner')) {
+          hasWinningPath = true;
+          break;
+        }
+      }
+      
+      // Warn if no paths set isGameWinner (might be intentional for draw-only games)
+      if (!hasWinningPath) {
+        errors.push(
+          'No path to "finished" sets players.*.isGameWinner. ' +
+          'If your game has winners, at least one ending path must set isGameWinner=true for winning players. ' +
+          'If this is a draw-only game (no winners), you can ignore this warning.'
+        );
+      }
+    }
+    
+  } catch (error) {
+    errors.push(`Error validating game completion: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  
+  return errors;
+}
+
+/**
+ * Validate phase connectivity and structural soundness
+ * 
+ * Checks:
+ * 1. "finished" phase exists (required terminal phase)
+ * 2. All defined phases are reachable from init
+ * 3. "finished" phase is reachable from init
+ */
+export async function validatePhaseConnectivity(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+  
+  try {
+    // Load transitions from state (stored as JSON string)
+    const transitionsJson = state.stateTransitions;
+    
+    if (!transitionsJson) {
+      errors.push("Transitions artifact not found in state");
+      return errors;
+    }
+    
+    const transitionsArtifact: TransitionsArtifact = JSON.parse(transitionsJson);
+    
+    // Build graph (instructions not needed for structural validation)
+    const graph = getOrBuildGraph(threadId, transitionsArtifact);
+    
+    // Check 1: "finished" phase exists (validated elsewhere but double-check)
+    const terminalPhase = graph.getTerminalPhase();
+    const allPhases = new Set(transitionsArtifact.phases);
+    
+    if (!allPhases.has(terminalPhase)) {
+      errors.push(
+        `Terminal phase '${terminalPhase}' not found in phases array. ` +
+        `This is required by convention.`
+      );
+      return errors;
+    }
+    
+    // Check 2: All defined phases are reachable from init
+    const reachablePhases = graph.getReachablePhasesFromInit();
+    
+    for (const phase of allPhases) {
+      if (!reachablePhases.has(phase)) {
+        errors.push(
+          `Phase '${phase}' is unreachable from init phase. ` +
+          `This phase will never execute and should be removed or connected to the game flow.`
+        );
+      }
+    }
+    
+    // Check 3: "finished" phase is reachable
+    if (!reachablePhases.has(terminalPhase)) {
+      errors.push(
+        `Terminal phase '${terminalPhase}' is unreachable from init. ` +
+        `Game cannot properly end because the terminal phase cannot be reached.`
+      );
+    }
+    
+  } catch (error) {
+    errors.push(`Error validating phase connectivity: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  
+  return errors;
+}
+

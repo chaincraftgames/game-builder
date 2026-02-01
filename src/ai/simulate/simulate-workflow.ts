@@ -74,6 +74,7 @@ export interface RuntimePlayerState {
   privateMessage?: string;
   actionsAllowed?: boolean | null; // Optional, defaults to actionRequired
   actionRequired: boolean;
+  isGameWinner: boolean;
 }
 
 /**
@@ -155,7 +156,7 @@ async function getCachedSpecArtifacts(
   };
 }
 
-export type SimResponse = {
+export interface SimResponse {
   publicMessage?: string;
   playerStates: PlayerStates;
   gameEnded: boolean;
@@ -169,6 +170,7 @@ export type SimResponse = {
     errorContext?: any;
     timestamp: string;
   };
+  winningPlayers?: string[];
 };
 
 type PlayerCount = {
@@ -201,6 +203,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
       publicMessage: undefined,
       playerStates: new Map(),
       gameEnded: false,
+      winningPlayers: undefined,
       gameError: undefined,
     };
   }
@@ -221,6 +224,11 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   const gameEnded = game?.gameEnded ?? false;
   const gameError = game?.gameError || undefined;
   const playerStates: PlayerStates = new Map();
+  
+  // winningPlayers is computed deterministically in execute-changes node
+  const winningPlayers = game?.winningPlayers && game.winningPlayers.length > 0 
+    ? game.winningPlayers 
+    : undefined;
 
   for (const playerId in players) {
     const rawPrivateMessage = players[playerId].privateMessage;
@@ -241,6 +249,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
         actionsAllowed !== undefined && actionsAllowed !== null
           ? actionsAllowed
           : actionRequired, // Default to actionRequired if not explicitly set
+      isGameWinner: players[playerId].isGameWinner ?? false,
     };
 
     playerStates.set(playerId, playerState);
@@ -250,6 +259,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
     publicMessage,
     playerStates,
     gameEnded,
+    winningPlayers,
     gameError,
   };
 }
