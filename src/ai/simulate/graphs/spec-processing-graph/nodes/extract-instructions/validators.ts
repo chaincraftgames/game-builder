@@ -246,7 +246,7 @@ function validateStateDelta(
   warnings: string[],
   schemaFields?: Set<string>
 ): void {
-  const validOps = ['set', 'increment', 'append', 'delete', 'transfer', 'merge', 'rng'];
+  const validOps = ['set', 'increment', 'append', 'delete', 'transfer', 'merge', 'rng', 'setForAllPlayers'];
   
   for (let i = 0; i < stateDelta.length; i++) {
     const op = stateDelta[i];
@@ -272,6 +272,15 @@ function validateStateDelta(
         }
         if (op.value === undefined) {
           errors.push(`${context}: stateDelta[${i}] op '${op.op}' missing 'value' field`);
+        }
+        break;
+        
+      case 'setForAllPlayers':
+        if (!op.field) {
+          errors.push(`${context}: stateDelta[${i}] op 'setForAllPlayers' missing 'field' field`);
+        }
+        if (op.value === undefined) {
+          errors.push(`${context}: stateDelta[${i}] op 'setForAllPlayers' missing 'value' field`);
         }
         break;
         
@@ -314,7 +323,7 @@ function validateStateDelta(
     }
     
     // Validate that array values don't contain template variables
-    if ((op.op === 'set' || op.op === 'append') && op.value !== undefined) {
+    if ((op.op === 'set' || op.op === 'append' || op.op === 'setForAllPlayers') && op.value !== undefined) {
       if (Array.isArray(op.value)) {
         const hasTemplates = JSON.stringify(op.value).includes('{{');
         if (hasTemplates) {
