@@ -1,26 +1,54 @@
 /**
  * Schema Utilities for Spec Processing
  * 
- * Shared utilities for extracting and validating field references against JSON Schema.
+ * Shared utilities for extracting and validating field references against schema.
  * Used by multiple nodes (validate-transitions, extract-instructions) to ensure
  * consistency in field validation.
  */
 
 import { RouterContextSchema } from '#chaincraft/ai/simulate/logic/jsonlogic.js';
+import type { PlannerField } from './nodes/extract-schema/schema.js';
 
 /**
- * Extract all field paths from a JSON Schema.
- * Handles:
- * - Object properties (fixed fields)
- * - Array items (items.properties)
- * - Record/map structures (additionalProperties)
+ * Extract all field paths from planner field definitions or JSON Schema.
+ * Supports both:
+ * 1. Planner format: Array of {name, path, type, ...} objects
+ * 2. Legacy JSON Schema format (for backward compatibility during migration)
  * 
- * @param schema - JSON Schema object
+ * @param schema - Planner field array or JSON Schema object
  * @returns Set of dot-notation field paths (e.g., "game.currentPhase", "players.score")
  */
 export function extractSchemaFields(schema: any): Set<string> {
   const fields = new Set<string>();
   
+  // Handle planner format (array of field definitions)
+  if (Array.isArray(schema)) {
+    for (const field of schema as PlannerField[]) {
+      if (field.name && field.path) {
+        // Convert planner format to field path
+        // "name": "score", "path": "player" -> "players.score"
+        // "name": "round", "path": "game" -> "game.round"
+        // "name": "players.*.score" -> "players.score" (already in dot notation)
+        let fieldPath = field.name;
+        
+        // If field name doesn't already include the path prefix, add it
+        if (field.path === 'game' && !fieldPath.startsWith('game.')) {
+          fieldPath = `game.${fieldPath}`;
+        } else if (field.path === 'player') {
+          // Normalize player paths: remove wildcards if present
+          fieldPath = fieldPath.replace(/^players\.\*\./, 'players.');
+          if (!fieldPath.startsWith('players.')) {
+            fieldPath = `players.${fieldPath}`;
+          }
+        }
+        
+        fields.add(fieldPath);
+      }
+    }
+    return fields;
+  }
+  
+  // Handle JSON Schema format (legacy support)
   function traverse(obj: any, path: string = '') {
     if (obj?.properties) {
       for (const [key, value] of Object.entries(obj.properties)) {

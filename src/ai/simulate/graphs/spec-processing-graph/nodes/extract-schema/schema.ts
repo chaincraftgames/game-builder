@@ -5,7 +5,11 @@ import z from "zod";
  */
 export interface PlannerField {
   name: string;
-  path: string;
+  type: string;
+  path: 'game' | 'player';
+  source: string;
+  purpose: string;
+  constraints?: string;
 }
 
 /**

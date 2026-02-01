@@ -153,13 +153,14 @@ export function createCommitNode(
  * Create an extraction subgraph with planner/validator/executor/committer pattern
  *
  * Flow:
- * START → plan → plan_validate → [retry/continue] → execute → execute_validate → [retry/commit] → commit → END
+ * - With executor: START → plan → plan_validate → [retry/continue] → execute → execute_validate → [retry/commit] → commit → END
+ * - Without executor: START → plan → plan_validate → [retry/commit] → commit → END
  */
 export function createExtractionSubgraph(nodeConfig: NodeConfig) {
   const { namespace, planner, executor, maxAttempts, commit } = nodeConfig;
   const graph = new StateGraph(SpecProcessingState);
 
-  // Create all nodes
+  // Create planner nodes (always required)
   const plannerNode = planner.node(planner.model);
   const planValidatorNode = createValidatorNode(
     namespace,
@@ -167,20 +168,27 @@ export function createExtractionSubgraph(nodeConfig: NodeConfig) {
     planner.validators
   );
 
-  const executorNode = executor.node(executor.model);
-  const executorValidatorNode = createValidatorNode(
-    namespace,
-    "execution",
-    executor.validators
-  );
+  // Create executor nodes (optional)
+  let executorNode: any = undefined;
+  let executorValidatorNode: any = undefined;
+  if (executor) {
+    executorNode = executor.node(executor.model);
+    executorValidatorNode = createValidatorNode(
+      namespace,
+      "execution",
+      executor.validators
+    );
+  }
 
   const committerNode = createCommitNode(namespace, commit);
 
   // Add nodes to graph
   graph.addNode(`${namespace}_plan`, plannerNode);
   graph.addNode(`${namespace}_plan_validate`, planValidatorNode);
-  graph.addNode(`${namespace}_execute`, executorNode);
-  graph.addNode(`${namespace}_execute_validate`, executorValidatorNode);
+  if (executor) {
+    graph.addNode(`${namespace}_execute`, executorNode);
+    graph.addNode(`${namespace}_execute_validate`, executorValidatorNode);
+  }
   graph.addNode(`${namespace}_commit`, committerNode);
 
   // Define edges
@@ -191,98 +199,148 @@ export function createExtractionSubgraph(nodeConfig: NodeConfig) {
   );
 
   // Conditional edge after plan validation
-  graph.addConditionalEdges(
-    `${namespace}_plan_validate` as any,
-    async (_state, config) => {
-      const store = (config as GraphConfigWithStore)?.store;
-      const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
+  if (executor) {
+    // With executor: plan_validate → [retry/continue/commit]
+    graph.addConditionalEdges(
+      `${namespace}_plan_validate` as any,
+      async (_state, config) => {
+        const store = (config as GraphConfigWithStore)?.store;
+        const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
 
-      // Check validation errors from store
-      let errors: string[] = [];
-      try {
-        errors = await getFromStore(
-          store,
-          [namespace, "plan", ValidationErrorsKey],
-          threadId
-        ) || [];
-      } catch {
-        // No errors found, which means validation passed
-      }
-      if (!errors || errors.length === 0) {
-        return "continue"; // Validation passed
-      }
+        // Check validation errors from store
+        let errors: string[] = [];
+        try {
+          errors = await getFromStore(
+            store,
+            [namespace, "plan", ValidationErrorsKey],
+            threadId
+          ) || [];
+        } catch {
+          // No errors found, which means validation passed
+        }
+        if (!errors || errors.length === 0) {
+          return "continue"; // Validation passed, go to executor
+        }
 
-      // Check attempt count
-      let attempts = 0;
-      try {
-        attempts = await getFromStore(
-          store,
-          [namespace, "plan", "attempts"],
-          threadId
-        ) || 0;
-      } catch {
-        // No attempt count found, default to 0
-      }
-      if (attempts >= maxAttempts.plan) {
-        return "commit"; // Max attempts reached, commit errors to state
-      }
+        // Check attempt count
+        let attempts = 0;
+        try {
+          attempts = await getFromStore(
+            store,
+            [namespace, "plan", "attempts"],
+            threadId
+          ) || 0;
+        } catch {
+          // No attempt count found, default to 0
+        }
+        if (attempts >= maxAttempts.plan) {
+          return "commit"; // Max attempts reached, commit errors to state
+        }
 
-      return "retry"; // Retry planner
-    },
-    {
-      continue: `${namespace}_execute` as any,
-      retry: `${namespace}_plan` as any,
-      commit: `${namespace}_commit` as any,
-    }
-  );
-
-  graph.addEdge(
-    `${namespace}_execute` as any,
-    `${namespace}_execute_validate` as any
-  );
-
-  // Conditional edge after execution validation
-  graph.addConditionalEdges(
-    `${namespace}_execute_validate` as any,
-    async (_state, config) => {
-      const store = (config as GraphConfigWithStore)?.store;
-      const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
-
-      let errors: string[] = [];
-      try {
-        errors = await getFromStore(
-          store,
-          [namespace, "execution", ValidationErrorsKey],
-          threadId
-        ) || [];
-      } catch {
-        // No errors found, which means validation passed
+        return "retry"; // Retry planner
+      },
+      {
+        continue: `${namespace}_execute` as any,
+        retry: `${namespace}_plan` as any,
+        commit: `${namespace}_commit` as any,
       }
-      if (!errors || errors.length === 0) {
-        return "commit"; // Validation passed
-      }
+    );
+  } else {
+    // Without executor: plan_validate → [retry/commit]
+    graph.addConditionalEdges(
+      `${namespace}_plan_validate` as any,
+      async (_state, config) => {
+        const store = (config as GraphConfigWithStore)?.store;
+        const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
 
-      let attempts = 0;
-      try {
-        attempts = await getFromStore(
-          store,
-          [namespace, "execution", "attempts"],
-          threadId
-        ) || 0;
-      } catch {
-        // No attempt count found, default to 0
-      }
-      if (attempts >= maxAttempts.execution) {
-        return "commit"; // Max attempts reached, commit errors to state
-      }
+        // Check validation errors from store
+        let errors: string[] = [];
+        try {
+          errors = await getFromStore(
+            store,
+            [namespace, "plan", ValidationErrorsKey],
+            threadId
+          ) || [];
+        } catch {
+          // No errors found, which means validation passed
+        }
+        if (!errors || errors.length === 0) {
+          return "commit"; // Validation passed, go directly to commit
+        }
 
-      return "retry";
-    },
-    {
-      commit: `${namespace}_commit` as any,
-      retry: `${namespace}_execute` as any,
-    }
-  );
+        // Check attempt count
+        let attempts = 0;
+        try {
+          attempts = await getFromStore(
+            store,
+            [namespace, "plan", "attempts"],
+            threadId
+          ) || 0;
+        } catch {
+          // No attempt count found, default to 0
+        }
+        if (attempts >= maxAttempts.plan) {
+          return "commit"; // Max attempts reached, commit errors to state
+        }
+
+        return "retry"; // Retry planner
+      },
+      {
+        retry: `${namespace}_plan` as any,
+        commit: `${namespace}_commit` as any,
+      }
+    );
+  }
+
+  if (executor) {
+    graph.addEdge(
+      `${namespace}_execute` as any,
+      `${namespace}_execute_validate` as any
+    );
+
+    // Conditional edge after execution validation
+    graph.addConditionalEdges(
+      `${namespace}_execute_validate` as any,
+      async (_state, config) => {
+        const store = (config as GraphConfigWithStore)?.store;
+        const threadId = ((config as GraphConfigWithStore)?.configurable?.thread_id as string | undefined) || "default";
+
+        let errors: string[] = [];
+        try {
+          errors = await getFromStore(
+            store,
+            [namespace, "execution", ValidationErrorsKey],
+            threadId
+          ) || [];
+        } catch {
+          // No errors found, which means validation passed
+        }
+        if (!errors || errors.length === 0) {
+          return "commit"; // Validation passed
+        }
+
+        let attempts = 0;
+        try {
+          attempts = await getFromStore(
+            store,
+            [namespace, "execution", "attempts"],
+            threadId
+          ) || 0;
+        } catch {
+          // No attempt count found, default to 0
+        }
+        if (attempts >= maxAttempts.execution) {
+          return "commit"; // Max attempts reached, commit errors to state
+        }
+
+        return "retry";
+      },
+      {
+        commit: `${namespace}_commit` as any,
+        retry: `${namespace}_execute` as any,
+      }
+    );
+  }
 
   graph.addEdge(`${namespace}_commit` as any, END);
 
