@@ -66,7 +66,9 @@ export async function executeGameTest(
         console.log(`[${test.name}] Pre-generated artifacts loaded successfully`);
         
         // Pass artifacts directly to createSimulation
-        await createSimulation(sessionId, testGameId, 1, undefined, artifacts);
+        await createSimulation(sessionId, testGameId, 1, {
+          preGeneratedArtifacts: artifacts
+        });
         result.artifactsGenerated = true;
         
       } catch (error) {
@@ -207,8 +209,11 @@ async function generateArtifacts(
   
   // Use createSimulation which calls spec-processing-graph
   // Pass spec directly with extracted or overridden narratives
-  // Signature: createSimulation(sessionId, gameId?, version?, spec?, preGeneratedArtifacts?, specNarrativesOverride?)
-  const result = await createSimulation(sessionId, gameId, 1, spec, undefined, specNarratives);
+  // Signature: createSimulation(sessionId, gameId?, version?, options?)
+  const result = await createSimulation(sessionId, gameId, 1, {
+    overrideSpecification: spec,
+    specNarrativesOverride: specNarratives
+  });
   return result;
 }
 

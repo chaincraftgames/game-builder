@@ -513,9 +513,15 @@ export async function validateActionRequiredSet(
       }
 
       const hasActionRequiredOp = action.stateDelta.some((op: any) => {
-        return op.path && 
-               typeof op.path === 'string' && 
-               (op.path.includes('.actionRequired') || op.path.endsWith('actionRequired'));
+        // Check for operations with path (set, increment, etc.)
+        if (op.path && typeof op.path === 'string') {
+          return op.path.includes('.actionRequired') || op.path.endsWith('actionRequired');
+        }
+        // Check for setForAllPlayers operations with field
+        if (op.op === 'setForAllPlayers' && op.field === 'actionRequired') {
+          return true;
+        }
+        return false;
       });
       
       if (!hasActionRequiredOp) {

@@ -13,6 +13,7 @@ import { schemaExtractionConfig } from "../index.js";
 import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
 import { buildStateSchema } from "#chaincraft/ai/simulate/schemaBuilder.js";
 import { deserializeSchema } from "#chaincraft/ai/simulate/schema.js";
+import { createArtifactCreationGraphConfig } from "#chaincraft/ai/graph-config.js";
 import { InMemoryStore } from "@langchain/langgraph";
 import { validatePlannerFieldsInSchema } from "../validators.js";
 
@@ -124,12 +125,12 @@ describe("Extract Schema Subgraph", () => {
       gameSpecification: RPS_SPEC,
     };
 
-    // Execute subgraph with InMemoryStore
+    // Execute subgraph with InMemoryStore and artifact creation callbacks
     console.log("Extracting schema from RPS specification...");
-    const result = await subgraph.invoke(inputState, {
-      store: new InMemoryStore(),
-      configurable: { thread_id: "test-thread-1" }
-    });
+    const result = await subgraph.invoke(
+      inputState,
+      createArtifactCreationGraphConfig("test-thread-1", new InMemoryStore())
+    );
 
     // Validate game rules
     expect(result.gameRules).toBeDefined();
@@ -291,10 +292,7 @@ A simple turn-based game where players face a monster.
     console.log("Extracting schema with dice roll randomness...");
     const result = await subgraph.invoke(
       { gameSpecification: DICE_ROLL_SPEC },
-      { 
-        store: new InMemoryStore(),
-        configurable: { thread_id: "test-thread-2" }
-      }
+      createArtifactCreationGraphConfig("test-thread-2", new InMemoryStore())
     );
 
     expect(result.stateSchema).toBeTruthy();

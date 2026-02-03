@@ -7,7 +7,8 @@ const modelCache = new Map<string, BaseChatModel>();
 
 export const getModel = async (
     modelName: string, 
-    maxTokens?: number
+    maxTokens?: number,
+    apiKey?: string
 ): Promise<BaseChatModel> => {
     // Create cache key that includes maxTokens
     const cacheKey = maxTokens ? `${modelName}:${maxTokens}` : modelName;
@@ -25,6 +26,7 @@ export const getModel = async (
                 model: modelName,
                 maxTokens: maxTokens || 8192, // Use provided or default to 8192
                 temperature: 1,
+                apiKey: apiKey,
             });
         } else {
             model = await initChatModel(modelName);
