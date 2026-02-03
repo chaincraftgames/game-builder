@@ -160,15 +160,7 @@ describe("Conversational Agent - Integration", () => {
   let model: any;
   let agent: any;
 
-  // Skip integration tests if no API key is configured
-  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-
   beforeAll(async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping integration tests - no API key configured");
-      return;
-    }
-
     try {
       model = await setupConversationalAgentModel();
       
@@ -185,10 +177,6 @@ describe("Conversational Agent - Integration", () => {
   });
 
   test("should handle initial game idea", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
     const state = createTestState({
       messages: [
         new HumanMessage("I want to create a deck-building game about space exploration")
@@ -214,11 +202,6 @@ describe("Conversational Agent - Integration", () => {
   }, 30000); // 30 second timeout
 
   test("should set spec flag when rules are defined", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want a card game"),
@@ -243,11 +226,6 @@ describe("Conversational Agent - Integration", () => {
   }, 30000);
 
   test("should set metadata flag when components are described", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want a game"),
@@ -270,11 +248,6 @@ describe("Conversational Agent - Integration", () => {
   }, 30000);
 
   test("should set both flags when appropriate", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want to make a card battle game"),
@@ -301,11 +274,6 @@ describe("Conversational Agent - Integration", () => {
   }, 30000);
 
   test("should handle explicit spec request", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want to make a trading game"),
@@ -331,11 +299,6 @@ describe("Conversational Agent - Integration", () => {
   }, 30000);
 
   test("should preserve conversation history", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want to make a game about trading"),
@@ -358,15 +321,7 @@ describe("Conversational Agent - Integration", () => {
 });
 
 describe("Conversational Agent - Edge Cases", () => {
-  // Skip if no API key
-  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-
   test("should handle constraint violations", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const model = await setupDesignModel();
     const agent = await createConversationalAgent(
       model,
@@ -392,11 +347,6 @@ describe("Conversational Agent - Edge Cases", () => {
   }, 30000);
 
   test("should disambiguate narrative section requests", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const model = await setupDesignModel();
     const agent = await createConversationalAgent(
       model,

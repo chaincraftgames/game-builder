@@ -427,6 +427,152 @@ describe("StateDelta Operations", () => {
     });
   });
 
+  describe("setForAllPlayers operation", () => {
+    it("should set a value for all players", () => {
+      const state = {
+        players: {
+          p1: { score: 5 },
+          p2: { score: 3 },
+          p3: { score: 8 },
+        },
+      };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "score", value: 0 },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(true);
+      expect(result.newState.players.p1.score).toBe(0);
+      expect(result.newState.players.p2.score).toBe(0);
+      expect(result.newState.players.p3.score).toBe(0);
+    });
+
+    it("should create new fields for all players", () => {
+      const state = {
+        players: {
+          p1: { name: "Alice" },
+          p2: { name: "Bob" },
+        },
+      };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "ready", value: false },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(true);
+      expect(result.newState.players.p1.ready).toBe(false);
+      expect(result.newState.players.p2.ready).toBe(false);
+      expect(result.newState.players.p1.name).toBe("Alice");
+      expect(result.newState.players.p2.name).toBe("Bob");
+    });
+
+    it("should work with null values", () => {
+      const state = {
+        players: {
+          p1: { currentChoice: "rock" },
+          p2: { currentChoice: "paper" },
+        },
+      };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "currentChoice", value: null },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(true);
+      expect(result.newState.players.p1.currentChoice).toBe(null);
+      expect(result.newState.players.p2.currentChoice).toBe(null);
+    });
+
+    it("should work with boolean values", () => {
+      const state = {
+        players: {
+          p1: { actionRequired: false },
+          p2: { actionRequired: false },
+        },
+      };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "actionRequired", value: true },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(true);
+      expect(result.newState.players.p1.actionRequired).toBe(true);
+      expect(result.newState.players.p2.actionRequired).toBe(true);
+    });
+
+    it("should fail if players object is missing", () => {
+      const state = { game: { phase: "playing" } };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "score", value: 0 },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(false);
+      expect(result.errors![0].error).toContain("'players' object");
+    });
+
+    it("should fail if players object is empty", () => {
+      const state = { players: {} };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "score", value: 0 },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(false);
+      expect(result.errors![0].error).toContain("No players found");
+    });
+
+    it("should work with nested field paths", () => {
+      const state = {
+        players: {
+          p1: { stats: { wins: 1 } },
+          p2: { stats: { wins: 2 } },
+        },
+      };
+      const deltas: StateDeltaOp[] = [
+        { op: "setForAllPlayers", field: "stats.wins", value: 0 },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(true);
+      expect(result.newState.players.p1.stats.wins).toBe(0);
+      expect(result.newState.players.p2.stats.wins).toBe(0);
+    });
+
+    it("should work in combination with other operations", () => {
+      const state = {
+        game: { round: 1 },
+        players: {
+          p1: { score: 5, ready: true },
+          p2: { score: 3, ready: true },
+        },
+      };
+      const deltas: StateDeltaOp[] = [
+        { op: "increment", path: "game.round", value: 1 },
+        { op: "setForAllPlayers", field: "ready", value: false },
+        { op: "setForAllPlayers", field: "currentMove", value: null },
+      ];
+
+      const result = applyStateDeltas(state, deltas);
+
+      expect(result.success).toBe(true);
+      expect(result.newState.game.round).toBe(2);
+      expect(result.newState.players.p1.ready).toBe(false);
+      expect(result.newState.players.p2.ready).toBe(false);
+      expect(result.newState.players.p1.currentMove).toBe(null);
+      expect(result.newState.players.p2.currentMove).toBe(null);
+      expect(result.newState.players.p1.score).toBe(5);
+      expect(result.newState.players.p2.score).toBe(3);
+    });
+  });
+
   describe("validation", () => {
     it("should validate correct delta schemas", () => {
       const deltas = [
