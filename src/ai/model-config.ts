@@ -283,17 +283,11 @@ export const setupModel = async (
       "Model name must be provided either through options or environment variables"
     );
   }
-  
-  // Log which API key is being used for this setup
-  console.log('[model-config] Setting up model:', {
-    phase: options.phaseLabel || 'CUSTOM',
-    modelName,
-    tracerProjectName,
-    hasApiKey: !!apiKey,
-    apiKeySuffix: '...' + apiKey?.slice(-7),
-  });
 
   const model = await getModel(modelName, options.maxTokens, apiKey);
+  
+  // Store phase label for invocation logging
+  const phaseLabel = options.phaseLabel || 'CUSTOM';
 
   // Create tracer callbacks based on configuration (created once, reused for all invocations)
   const callbacks = createTracerCallbacks(tracerProjectName);
@@ -304,6 +298,15 @@ export const setupModel = async (
     metadata?: Record<string, any>,
     schema?: any
   ): Promise<ModelResponse | any> => {
+    // Log invocation with API key info for debugging
+    console.log('[model-config] Invoking model:', {
+      phase: phaseLabel,
+      modelName,
+      agent: metadata?.agent,
+      hasApiKey: !!apiKey,
+      apiKeySuffix: '...' + apiKey?.slice(-7),
+    });
+    
     const messages = [new HumanMessage(prompt)];
     const opts = createInvokeOptions(callbacks, metadata);
 
@@ -319,8 +322,16 @@ export const setupModel = async (
     messages: BaseMessage[],
     metadata?: Record<string, any>,
     schema?: any
-  ): Promise<ModelResponse | any> => {
-    const opts = createInvokeOptions(callbacks, metadata);
+  ): Promise<ModelResponse | any> => {    // Log invocation with API key info for debugging
+    console.log('[model-config] Invoking model with messages:', {
+      phase: phaseLabel,
+      modelName,
+      agent: metadata?.agent,
+      messageCount: messages.length,
+      hasApiKey: !!apiKey,
+      apiKeySuffix: '...' + apiKey?.slice(-7),
+    });
+        const opts = createInvokeOptions(callbacks, metadata);
 
     if (schema) {
       return await invokeWithSchema(model, messages, opts, schema);
@@ -406,6 +417,7 @@ const createSetupFunction =
     tracerProjectName: string;
     maxTokens?: number;
     apiKey?: string;
+    phaseLabel?: string;
   }) =>
   async (options: ModelConfigOptions = {}): Promise<ModelWithOptions> => {
     const finalTracerProjectName = options.tracerProjectName || defaults.tracerProjectName;
@@ -414,6 +426,7 @@ const createSetupFunction =
       tracerProjectName: finalTracerProjectName,
       apiKey: options.apiKey || defaults.apiKey,
       maxTokens: options.maxTokens || defaults.maxTokens,
+      phaseLabel: options.phaseLabel || defaults.phaseLabel,
     });
   };
 
