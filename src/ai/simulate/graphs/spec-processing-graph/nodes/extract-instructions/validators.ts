@@ -875,9 +875,9 @@ export function validateInitialStatePreconditions(
   const phaseMetadata = transitions.phaseMetadata?.find((pm: any) => pm.phase === startingPhase);
   const requiresPlayerInput = phaseMetadata?.requiresPlayerInput ?? false;
 
-  // Check if players can actually act (at least one player has actionRequired=true)
+  // Check if players can actually act (at least one player has actionRequired truthy)
   const players = Object.values(mockState.players || {});
-  const anyPlayerCanAct = players.some((player: any) => player.actionRequired === true);
+  const anyPlayerCanAct = players.some((player: any) => !!player.actionRequired);
 
   // Deadlock conditions:
   // 1. Automatic phase (no player input) AND no transitions can fire
