@@ -81,7 +81,7 @@ Output only the narrative content (no markers, no preamble, no meta-commentary).
 
   const model = await setupModel({ 
     modelName: 'claude-sonnet-4-20250514',
-    maxTokens: 4000 
+    maxTokens: 4000
   });
 
   const response = await model.invokeWithSystemPrompt(

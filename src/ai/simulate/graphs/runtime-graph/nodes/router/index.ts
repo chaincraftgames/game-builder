@@ -305,7 +305,7 @@ function playerInputIsValid(
 ): boolean {
   // Basic validation: player is allowed to act
   // Uses helper to get effective actionsAllowed value (defaults to actionRequired if not set)
-  return getActionsAllowed(playerState) === true;
+  return !!getActionsAllowed(playerState);
 }
 
 /**

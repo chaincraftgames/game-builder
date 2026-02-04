@@ -51,6 +51,14 @@ describe("Game Test Harness", () => {
         }
       }, reliabilityIterations * 4 * 60 * 1000);
     }
+    if (!GAME || GAME === "absurd-armaments") {
+      it(`should run Absurd Armaments reliability test (${reliabilityIterations} iterations, scenario ${reliabilityScenario ?? 'all'})`, async () => {
+        const report = await runReliabilityTest("absurd-armaments", reliabilityScenario, reliabilityIterations);
+        if (report.successRate < 0.8) {
+          throw new Error(`Reliability too low: ${(report.successRate * 100).toFixed(1)}% (expected >= 80%)`);
+        }
+      }, reliabilityIterations * 4 * 60 * 1000);
+    }
   } else {
     if (!GAME || GAME === "rps") {
       it("should run RPS test - scenario 1", async () => {
@@ -67,6 +75,12 @@ describe("Game Test Harness", () => {
     if (!GAME || GAME === "wacky-weapons-router-bug") {
       it("should run Wacky Weapons Router Bug test - scenario 1", async () => {
         const result = await runGameTestScenario("wacky-weapons-router-bug", 0);
+        assertTestSuccess(result);
+      }, 4 * 60 * 1000);
+    }
+    if (!GAME || GAME === "absurd-armaments") {
+      it("should run Absurd Armaments test - scenario 1", async () => {
+        const result = await runGameTestScenario("absurd-armaments", 0);
         assertTestSuccess(result);
       }, 4 * 60 * 1000);
     }

@@ -78,15 +78,7 @@ describe("Execute Spec - Integration", () => {
   let model: any;
   let executeSpec: any;
 
-  // Skip integration tests if no API key is configured
-  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-
   beforeAll(async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping integration tests - no API key configured");
-      return;
-    }
-
     try {
       model = await setupSpecExecuteModel();
       executeSpec = createSpecExecute(model);
@@ -96,11 +88,6 @@ describe("Execute Spec - Integration", () => {
   });
 
   test("should generate initial spec from plan (Rock-Paper-Scissors)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const specPlan: SpecPlan = {
       summary: "A classic rock-paper-scissors game for 2 players",
       playerCount: { min: 2, max: 2 },
@@ -158,11 +145,6 @@ describe("Execute Spec - Integration", () => {
   }, 60000);
 
   test("should update existing spec from plan (Add Volcano)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const existingSpec: GameDesignSpecification = {
       summary: "A classic rock-paper-scissors game for 2 players",
       playerCount: { min: 2, max: 2 },
@@ -234,11 +216,6 @@ describe("Execute Spec - Integration", () => {
   }, 60000);
 
   test("should generate complex spec (Deck Builder)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const plan = `Based on the user's conversation, here is the complete specification plan for the deck-building game:
 
 **Game Overview & Win Condition**
@@ -310,11 +287,6 @@ Players convert influence into victory points by purchasing victory cards.`;
   }, 60000);
 
   test("should handle minimal plan (Coin Flip)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const specPlan: SpecPlan = {
       summary: "A simple 2-player coin flip guessing game",
       playerCount: { min: 2, max: 2 },
@@ -354,11 +326,6 @@ Players convert influence into victory points by purchasing victory cards.`;
   }, 60000);
 
   test("should apply complex update (Betting Coin Flip)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const existingSpec: GameDesignSpecification = {
       summary: "A simple coin flip guessing game",
       playerCount: { min: 2, max: 2 },
@@ -419,14 +386,7 @@ Players convert influence into victory points by purchasing victory cards.`;
 });
 
 describe("Execute Spec - Spec Quality (Manual Inspection)", () => {
-  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-
   test("spec should follow markdown structure", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const model = await setupSpecExecuteModel();
     const executeSpec = createSpecExecute(model);
 
@@ -465,11 +425,6 @@ describe("Execute Spec - Spec Quality (Manual Inspection)", () => {
   }, 60000);
 
   test("spec should preserve existing content when updating", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const model = await setupSpecExecuteModel();
     const executeSpec = createSpecExecute(model);
 
@@ -527,14 +482,8 @@ describe("Execute Spec - Spec Quality (Manual Inspection)", () => {
 describe("Execute Spec - Pending Changes Consolidation", () => {
   let model: any;
   let executeSpec: any;
-  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
 
   beforeAll(async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping pending changes tests - no API key configured");
-      return;
-    }
-
     try {
       model = await setupSpecExecuteModel();
       executeSpec = createSpecExecute(model);
@@ -544,11 +493,6 @@ describe("Execute Spec - Pending Changes Consolidation", () => {
   });
 
   test("should generate spec from single pending change", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const pendingChange: SpecPlan = {
       summary: "A simple coin flip game for 2 players",
       playerCount: { min: 2, max: 2 },
@@ -581,11 +525,6 @@ describe("Execute Spec - Pending Changes Consolidation", () => {
   }, 60000);
 
   test("should consolidate multiple pending changes", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const pendingChanges: SpecPlan[] = [
       {
         summary: "A dice rolling game",
@@ -632,11 +571,6 @@ describe("Execute Spec - Pending Changes Consolidation", () => {
   }, 60000);
 
   test("should prioritize later changes in conflicts", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const pendingChanges: SpecPlan[] = [
       {
         summary: "A betting coin flip game",
@@ -684,11 +618,6 @@ describe("Execute Spec - Pending Changes Consolidation", () => {
   }, 60000);
 
   test("should clear pending changes after consolidation", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const pendingChanges: SpecPlan[] = [
       {
         summary: "Card game",
@@ -724,11 +653,6 @@ describe("Execute Spec - Pending Changes Consolidation", () => {
   }, 60000);
 
   test("should generate narrative game with markers (Survival Horror)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const specPlan: SpecPlan = {
       summary: "A survival horror game where players make choices to escape a haunted mansion",
       playerCount: { min: 1, max: 4 },
@@ -784,11 +708,6 @@ The game requires extensive narrative generation for:
   }, 90000);
 
   test("should generate abstract game with minimal/no markers (Chess-like)", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const specPlan: SpecPlan = {
       summary: "An abstract strategy game with pieces on a grid, no theme",
       playerCount: { min: 2, max: 2 },
@@ -842,11 +761,6 @@ This is a mechanical game with no narrative elements - just pure rules and strat
   }, 90000);
 
   test("should update narrative game and preserve markers", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const existingSpec: GameDesignSpecification = {
       summary: "A survival horror game in a haunted mansion",
       playerCount: { min: 1, max: 4 },

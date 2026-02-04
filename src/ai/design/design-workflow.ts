@@ -7,6 +7,7 @@ import {
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
+import { createDesignGraphConfig } from "#chaincraft/ai/graph-config.js";
 import {
   GameDesignSpecification,
   GameDesignState,
@@ -94,7 +95,7 @@ export async function continueDesignConversation(
   registerConversationId(graphType, conversationId);
 
   const graph = await designGraphCache.getGraph(conversationId);
-  const config = { configurable: { thread_id: conversationId } };
+  const config = createDesignGraphConfig(conversationId);
 
   // Format initial game description with XML tags if provided
   const message = gameDescription
@@ -162,7 +163,7 @@ export async function generateImage(
 
     const imageUrl = await rawImageGenTool
       .invoke(rawImagePrompt.content, {
-        callbacks: modelWithOptions.invokeOptions.callbacks,
+        callbacks: modelWithOptions.getCallbacks(),
         metadata: {
           agent: "raw-image-generator",
           workflow: "design",
@@ -188,7 +189,7 @@ export async function generateImage(
     });
     const imageUrl = await imageGenTool
       .invoke(imageGenPrompt.content, {
-        callbacks: modelWithOptions.invokeOptions.callbacks,
+        callbacks: modelWithOptions.getCallbacks(),
         metadata: {
           agent: "cartridge-image-generator",
           workflow: "design",
@@ -221,7 +222,7 @@ export async function getCachedDesign(
 
   // Get the saver directly to access checkpoints
   const saver = await getSaver(conversationId, graphType);
-  const config = { configurable: { thread_id: conversationId } };
+  const config = createDesignGraphConfig(conversationId);
 
   console.log(
     "[getCachedDesign] Getting latest checkpoint for conversation:",
@@ -272,7 +273,7 @@ export async function getDesignByVersion(
 
   // Get the saver directly to access checkpoints
   const saver = await getSaver(conversationId, graphType);
-  const config = { configurable: { thread_id: conversationId } };
+  const config = createDesignGraphConfig(conversationId);
 
   console.log(
     "[getDesignSpecificationByVersion] Searching for version",
@@ -336,7 +337,7 @@ export async function getConversationHistory(
 
   // Get the saver directly to access checkpoints
   const saver = await getSaver(conversationId, graphType);
-  const config = { configurable: { thread_id: conversationId } };
+  const config = createDesignGraphConfig(conversationId);
 
   console.log(
     "[getConversationHistory] Getting latest checkpoint for conversation:",

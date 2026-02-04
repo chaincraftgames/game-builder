@@ -8,6 +8,10 @@ import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-pro
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import {
+  createArtifactCreationGraphConfig,
+  createSimulationGraphConfig,
+} from "#chaincraft/ai/graph-config.js";
+import {
   getDesignByVersion,
   getCachedDesign as getCachedDesign,
 } from "#chaincraft/ai/design/design-workflow.js";
@@ -90,13 +94,13 @@ export function getActionsAllowed(playerState: RuntimePlayerState): boolean {
     playerState.actionsAllowed !== null &&
     playerState.actionsAllowed !== undefined
   ) {
-    // Validate: if actionRequired is true, actionsAllowed cannot be false
+    // Validate: if actionRequired is truthy, actionsAllowed cannot be falsy
     if (
-      playerState.actionRequired === true &&
-      playerState.actionsAllowed === false
+      !!playerState.actionRequired &&
+      !playerState.actionsAllowed
     ) {
       console.warn(
-        "[getActionsAllowed] Invalid state: actionRequired is true but actionsAllowed is false. " +
+        "[getActionsAllowed] Invalid state: actionRequired is truthy but actionsAllowed is falsy. " +
           "Forcing actionsAllowed to true to match actionRequired.",
       );
       return true;
@@ -311,7 +315,7 @@ export async function createSimulation(
 
       // Store artifacts in runtime graph checkpoint using sessionId
       const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
-      const runtimeConfig = { configurable: { thread_id: sessionId } };
+      const runtimeConfig = createSimulationGraphConfig(sessionId);
 
       console.log(
         "[simulate] Storing pre-generated artifacts in runtime graph with sessionId:",
@@ -433,10 +437,10 @@ export async function createSimulation(
 
       // Get or create spec processing graph for this spec
       const specGraph = await specGraphCache.getGraph(specKey);
-      const specConfig = {
-        configurable: { thread_id: specKey },
-        store: new InMemoryStore(),
-      };
+      const specConfig = createArtifactCreationGraphConfig(
+        specKey,
+        new InMemoryStore()
+      );
 
       // Invoke spec graph - results saved to checkpoint automatically (cached by specKey)
       // Clear validation errors to prevent accumulation from previous failed runs
@@ -445,10 +449,10 @@ export async function createSimulation(
           gameSpecification: specToUse,
           specNarratives: narrativesToUse,
           atomicArtifactRegen: atomicArtifactRegen !== false, // Default to true
-          // Explicitly clear validation errors to start fresh
-          schemaValidationErrors: undefined,
-          transitionsValidationErrors: undefined,
-          instructionsValidationErrors: undefined,
+          // Explicitly clear validation errors to start fresh (null = explicit clear)
+          schemaValidationErrors: null,
+          transitionsValidationErrors: null,
+          instructionsValidationErrors: null,
         },
         specConfig,
       )) as SpecProcessingStateType;
@@ -505,7 +509,7 @@ export async function createSimulation(
     // Step 2: Store artifacts in runtime graph checkpoint using sessionId
     // Get cached runtime graph for this session
     const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
-    const runtimeConfig = { configurable: { thread_id: sessionId } };
+    const runtimeConfig = createSimulationGraphConfig(sessionId);
 
     console.log(
       "[simulate] Storing artifacts in runtime graph with sessionId:",
@@ -572,7 +576,7 @@ export async function initializeSimulation(
 
     // Get cached runtime graph with checkpointer
     const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
-    const config = { configurable: { thread_id: gameId } };
+    const config = createSimulationGraphConfig(gameId);
 
     // Log checkpoint state to verify artifacts are present
     const saver = await getSaver(gameId, getConfig("simulation-graph-type"));
@@ -634,7 +638,7 @@ export async function processAction(
 
       // Get cached runtime graph with checkpointer
       const runtimeGraph = await runtimeGraphCache.getGraph(gameId);
-      const config = { configurable: { thread_id: gameId } };
+      const config = createSimulationGraphConfig(gameId);
 
       // Invoke runtime graph with player action - all state loaded automatically from checkpoint
       const result = await runtimeGraph.invoke(

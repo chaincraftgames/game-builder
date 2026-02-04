@@ -43,12 +43,14 @@ export const rpsTest: GameTest = {
           passed: state.game?.gameEnded === true,
           message: "Game should end after all rounds"
         }),
-        (state) => ({
-          passed: state.game?.publicMessage?.toLowerCase().includes("game over") || 
-                  state.game?.publicMessage?.toLowerCase().includes("wins") ||
-                  state.game?.publicMessage?.toLowerCase().includes("winner"),
-          message: "Final message should indicate game completion"
-        })
+        (state) => {
+          const p1Score = state.players?.[player1Id]?.score;
+          const p2Score = state.players?.[player2Id]?.score;
+          return {
+            passed: p2Score !== undefined && p1Score !== undefined && p2Score > p1Score,
+            message: `Player2 should have higher score (player2: ${p2Score}, player1: ${p1Score})`
+          };
+        }
       ]
     },
     
@@ -74,12 +76,14 @@ export const rpsTest: GameTest = {
           passed: state.game?.gameEnded === true,
           message: "Game should end after all rounds"
         }),
-        (state) => ({
-          passed: state.game?.publicMessage?.toLowerCase().includes("tie") || 
-                  state.game?.publicMessage?.toLowerCase().includes("draw") ||
-                  state.game?.publicMessage?.toLowerCase().includes("game over"),
-          message: "Final message should indicate game completion or tie"
-        })
+        (state) => {
+          const p1Score = state.players?.[player1Id]?.score;
+          const p2Score = state.players?.[player2Id]?.score;
+          return {
+            passed: p1Score !== undefined && p2Score !== undefined && p1Score === p2Score,
+            message: `Both players should have equal scores in a tie (player1: ${p1Score}, player2: ${p2Score})`
+          };
+        }
       ]
     },
     
@@ -104,7 +108,15 @@ export const rpsTest: GameTest = {
         (state) => ({
           passed: state.game?.gameEnded === true,
           message: "Game should end after all rounds"
-        })
+        }),
+        (state) => {
+          const p1Score = state.players?.[player1Id]?.score;
+          const p2Score = state.players?.[player2Id]?.score;
+          return {
+            passed: p1Score !== undefined && p2Score !== undefined && p1Score === p2Score,
+            message: `Both players should have equal scores in a tie (player1: ${p1Score}, player2: ${p2Score})`
+          };
+        }
       ]
     },
     
@@ -129,7 +141,15 @@ export const rpsTest: GameTest = {
         (state) => ({
           passed: state.game?.gameEnded === true,
           message: "Game should end after all rounds"
-        })
+        }),
+        (state) => {
+          const p1Score = state.players?.[player1Id]?.score;
+          const p2Score = state.players?.[player2Id]?.score;
+          return {
+            passed: p1Score !== undefined && p2Score !== undefined && p1Score > p2Score,
+            message: `Player1 should have higher score (player1: ${p1Score}, player2: ${p2Score})`
+          };
+        }
       ]
     }
   ]

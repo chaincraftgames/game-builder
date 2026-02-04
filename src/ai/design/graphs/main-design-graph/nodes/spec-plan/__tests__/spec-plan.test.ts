@@ -108,15 +108,7 @@ describe("Plan Spec - Integration", () => {
   let model: any;
   let planSpec: any;
 
-  // Skip integration tests if no API key is configured
-  const hasApiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
-
   beforeAll(async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping integration tests - no API key configured");
-      return;
-    }
-
     try {
       model = await setupDesignModel();
       planSpec = createSpecPlan(model);
@@ -126,11 +118,6 @@ describe("Plan Spec - Integration", () => {
   });
 
   test("should generate initial spec plan from conversation", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want to create a rock-paper-scissors game"),
@@ -175,11 +162,6 @@ describe("Plan Spec - Integration", () => {
   }, 30000);
 
   test("should generate spec update plan from new conversation", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     // Simulate existing spec
     const existingSpec: GameDesignSpecification = {
       summary: "A classic rock-paper-scissors game for 2 players",
@@ -245,11 +227,6 @@ describe("Plan Spec - Integration", () => {
   }, 30000);
 
   test("should handle complex game with multiple mechanics", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("I want to create a deck-building game"),
@@ -284,11 +261,6 @@ describe("Plan Spec - Integration", () => {
   }, 30000);
 
   test("should handle minimal conversation", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const state = createTestState({
       messages: [
         new HumanMessage("Create a coin flip game - 2 players, whoever calls it right wins"),
@@ -315,11 +287,6 @@ describe("Plan Spec - Integration", () => {
   }, 30000);
 
   test("should reference current spec when updating", async () => {
-    if (!hasApiKey) {
-      console.log("⚠️  Skipping - no API key");
-      return;
-    }
-
     const existingSpec: GameDesignSpecification = {
       summary: "A simple coin flip guessing game",
       playerCount: { min: 2, max: 2 },
