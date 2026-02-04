@@ -519,14 +519,10 @@ export const invokeModel = async (
 const createInvokeOptions = (
   callbacks: any[],
   metadata?: Record<string, any>
-) => {
-  console.log('[createInvokeOptions] callbacks:', callbacks);
-  console.log('[createInvokeOptions] callbacks[0]?.projectName:', (callbacks?.[0] as any)?.projectName);
-  return {
-    callbacks,
-    ...(metadata ? { metadata } : {}),
-  };
-};
+) => ({
+  callbacks,
+  ...(metadata ? { metadata } : {}),
+});
 
 /**
  * Helper: Log usage statistics including cache metrics
@@ -605,13 +601,7 @@ const invokeWithSchema = async (
  * @returns Array of callbacks for model invocation
  */
 export const createTracerCallbacks = (tracerProjectName?: string): any[] => {
-  console.log('[createTracerCallbacks] Called with tracerProjectName:', tracerProjectName);
-  console.log('[createTracerCallbacks] isTest:', isTest);
-  console.log('[createTracerCallbacks] NODE_ENV:', process.env.NODE_ENV);
-  console.log('[createTracerCallbacks] LANGCHAIN_PROJECT env var:', process.env.LANGCHAIN_PROJECT);
-  
   if (!tracerProjectName) {
-    console.log('[createTracerCallbacks] WARNING: No tracer project name, returning empty array - will use LangSmith default');
     return [];
   }
 
@@ -620,10 +610,6 @@ export const createTracerCallbacks = (tracerProjectName?: string): any[] => {
     ? `${tracerProjectName}-test`
     : tracerProjectName;
 
-  console.log('[createTracerCallbacks] Creating LangChainTracer with project:', finalProjectName);
-  console.log('[createTracerCallbacks] LANGSMITH_API_KEY exists:', !!process.env.LANGSMITH_API_KEY);
-  console.log('[createTracerCallbacks] LANGSMITH_ENDPOINT:', process.env.LANGSMITH_ENDPOINT);
-
   // Create LangChain tracer with explicit configuration
   const tracer = new LangChainTracer({
     projectName: finalProjectName,
@@ -631,9 +617,6 @@ export const createTracerCallbacks = (tracerProjectName?: string): any[] => {
     ...(process.env.LANGSMITH_ENDPOINT && { endpoint: process.env.LANGSMITH_ENDPOINT }),
     ...(process.env.LANGSMITH_API_KEY && { apiKey: process.env.LANGSMITH_API_KEY }),
   });
-
-  console.log('[createTracerCallbacks] Tracer created with name:', tracer.name);
-  console.log('[createTracerCallbacks] Tracer projectName property:', (tracer as any).projectName);
 
   return [tracer];
 };
