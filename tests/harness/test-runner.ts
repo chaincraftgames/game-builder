@@ -6,7 +6,7 @@
 
 import { expect } from "@jest/globals";
 import { executeGameTest } from "./executor.js";
-import { getGameTest } from "../games/index.js";
+import { getGameTest, getGameTestsDirectory } from "../games/index.js";
 import { createGameId } from "./helpers.js";
 import { ConsoleCapture, saveTestResult } from "./test-logger.js";
 import type { TestResult, ReliabilityReport } from "./types.js";
@@ -44,7 +44,7 @@ export async function runGameTestScenario(
   
   try {
     // Execute the test
-    const result = await executeGameTest(gameTest, scenario, gameId);
+    const result = await executeGameTest(gameTest, scenario, gameId, getGameTestsDirectory());
     
     // Log results
     logTestResult(gameTest.name, scenario.name, result);

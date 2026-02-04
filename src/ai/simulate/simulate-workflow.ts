@@ -93,13 +93,13 @@ export function getActionsAllowed(playerState: RuntimePlayerState): boolean {
     playerState.actionsAllowed !== null &&
     playerState.actionsAllowed !== undefined
   ) {
-    // Validate: if actionRequired is true, actionsAllowed cannot be false
+    // Validate: if actionRequired is truthy, actionsAllowed cannot be falsy
     if (
-      playerState.actionRequired === true &&
-      playerState.actionsAllowed === false
+      !!playerState.actionRequired &&
+      !playerState.actionsAllowed
     ) {
       console.warn(
-        "[getActionsAllowed] Invalid state: actionRequired is true but actionsAllowed is false. " +
+        "[getActionsAllowed] Invalid state: actionRequired is truthy but actionsAllowed is falsy. " +
           "Forcing actionsAllowed to true to match actionRequired.",
       );
       return true;
