@@ -58,14 +58,22 @@ interface PhaseApiKeys {
   play: string;     // For gameplay execution
 }
 
-// Environment variables or config
+// Environment variables or config - initialized at module load
 const PHASE_API_KEYS: PhaseApiKeys = {
-  // Use not null assertions to indicate these must be set and produce a runtime
-  // error if missing.
   create: process.env.ANTHROPIC_API_KEY_CREATE || process.env.ANTHROPIC_API_KEY!,
   sim: process.env.ANTHROPIC_API_KEY_SIM || process.env.ANTHROPIC_API_KEY!,
   play: process.env.ANTHROPIC_API_KEY_PLAY || process.env.ANTHROPIC_API_KEY!,
 };
+
+// Log API key status once at module initialization for debugging
+console.log('[model-config] API Keys loaded at module init:', {
+  hasCreate: !!PHASE_API_KEYS.create,
+  hasSim: !!PHASE_API_KEYS.sim,
+  hasPlay: !!PHASE_API_KEYS.play,
+  createSuffix: '...' + PHASE_API_KEYS.create?.slice(-7),
+  simSuffix: '...' + PHASE_API_KEYS.sim?.slice(-7),
+  playSuffix: '...' + PHASE_API_KEYS.play?.slice(-7),
+});
 
 /**
  * Model setup result interface
@@ -121,6 +129,7 @@ export interface ModelConfigOptions {
   tracerProjectName?: string;
   maxTokens?: number;
   apiKey?: string;
+  phaseLabel?: string; // For logging which phase key is being used
 }
 export interface InvocationBuilder {
   addSystemPrompt: (systemPrompt: string) => InvocationBuilder;
@@ -137,6 +146,7 @@ const DESIGN_DEFAULTS = {
   tracerProjectName:
     process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT_NAME || "chaincraft-design",
   apiKey: PHASE_API_KEYS.create,
+  phaseLabel: 'DESIGN/CREATE' as const,
 };
 
 /**
@@ -147,6 +157,7 @@ const SIMULATION_DEFAULTS = {
   tracerProjectName:
     process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
   apiKey: PHASE_API_KEYS.sim,
+  phaseLabel: 'SIMULATION' as const,
 };
 
 /**
@@ -215,6 +226,7 @@ const ARTIFACT_CREATION_DEFAULTS = {
   tracerProjectName:
     process.env.CHAINCRAFT_ARTIFACT_CREATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
   apiKey: PHASE_API_KEYS.create,
+  phaseLabel: 'ARTIFACT_CREATION/CREATE' as const,
 };
 
 /**
@@ -271,6 +283,15 @@ export const setupModel = async (
       "Model name must be provided either through options or environment variables"
     );
   }
+  
+  // Log which API key is being used for this setup
+  console.log('[model-config] Setting up model:', {
+    phase: options.phaseLabel || 'CUSTOM',
+    modelName,
+    tracerProjectName,
+    hasApiKey: !!apiKey,
+    apiKeySuffix: '...' + apiKey?.slice(-7),
+  });
 
   const model = await getModel(modelName, options.maxTokens, apiKey);
 
