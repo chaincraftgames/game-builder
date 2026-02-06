@@ -12,6 +12,7 @@ import { TransitionsArtifact, TransitionsArtifactSchema } from "#chaincraft/ai/s
 import { JsonLogicSchema } from "#chaincraft/ai/simulate/logic/jsonlogic.js";
 import extractJsonBlocks from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/extractJsonBlocks.js";
 import { containsForbiddenArrayAccess, containsExplicitPlayerReference } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/utils.js";
+import { getOrBuildGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/transition-graph.js";
 
 /**
  * Validate planner output is complete and well-formed
@@ -241,7 +242,10 @@ export async function validateNoExplicitPlayerReferences(
 }
 
 /**
- * Validate transition coverage (all phases have incoming/outgoing transitions)
+ * Validate transition coverage using TransitionGraph
+ * 
+ * Checks that all phases except "finished" have outgoing transitions,
+ * and all phases except "init" have incoming transitions.
  */
 export async function validateTransitionCoverage(
   state: SpecProcessingStateType,
@@ -250,55 +254,61 @@ export async function validateTransitionCoverage(
 ): Promise<string[]> {
   const errors: string[] = [];
 
-  const executionOutput = await getFromStore(
-    store,
-    ["transitions", "execution", "output"],
-    threadId
-  );
+  try {
+    const executionOutput = await getFromStore(
+      store,
+      ["transitions", "execution", "output"],
+      threadId
+    );
 
-  if (!executionOutput) {
-    errors.push("Execution output is missing");
-    return errors;
-  }
-
-  const transitions = typeof executionOutput === 'string' 
-    ? JSON.parse(executionOutput)
-    : executionOutput;
-
-  if (
-    !transitions ||
-    !Array.isArray(transitions.phases) ||
-    !Array.isArray(transitions.transitions)
-  ) {
-    errors.push("Transitions artifact missing 'phases' or 'transitions' arrays");
-    return errors;
-  }
-
-  const phases = transitions.phases as string[];
-  const fromCounts: Record<string, number> = {};
-  const toCounts: Record<string, number> = {};
-
-  for (const t of transitions.transitions) {
-    const from = String((t as any).fromPhase || (t as any).from || "");
-    const to = String((t as any).toPhase || (t as any).to || "");
-    fromCounts[from] = (fromCounts[from] || 0) + 1;
-    toCounts[to] = (toCounts[to] || 0) + 1;
-  }
-
-  // From every phase except the last, expect at least one outgoing transition
-  for (let i = 0; i < phases.length - 1; i++) {
-    const phase = phases[i];
-    if (!fromCounts[phase]) {
-      errors.push(`No outgoing transitions from phase '${phase}'`);
+    if (!executionOutput) {
+      errors.push("Execution output is missing");
+      return errors;
     }
-  }
 
-  // To every phase except the first, expect at least one incoming transition
-  for (let i = 1; i < phases.length; i++) {
-    const phase = phases[i];
-    if (!toCounts[phase]) {
-      errors.push(`No incoming transitions to phase '${phase}'`);
+    const transitionsArtifact: TransitionsArtifact = typeof executionOutput === 'string' 
+      ? JSON.parse(executionOutput)
+      : executionOutput;
+
+    if (
+      !transitionsArtifact ||
+      !Array.isArray(transitionsArtifact.phases) ||
+      !Array.isArray(transitionsArtifact.transitions)
+    ) {
+      errors.push("Transitions artifact missing 'phases' or 'transitions' arrays");
+      return errors;
     }
+
+    // Build graph for analysis
+    const graph = getOrBuildGraph(threadId, transitionsArtifact);
+    
+    // Get all reachable phases from init
+    const reachablePhases = graph.getReachablePhasesFromInit();
+    const allPhases = new Set(transitionsArtifact.phases);
+    
+    // Check that all defined phases are reachable
+    for (const phase of allPhases) {
+      if (!reachablePhases.has(phase)) {
+        errors.push(
+          `Phase '${phase}' is unreachable from 'init'. ` +
+          `This phase will never execute and should be removed or connected to the game flow.`
+        );
+      }
+    }
+    
+    // Check that "finished" phase is reachable
+    const terminalPhase = graph.getTerminalPhase();
+    if (allPhases.has(terminalPhase) && !reachablePhases.has(terminalPhase)) {
+      errors.push(
+        `Terminal phase '${terminalPhase}' is unreachable from 'init'. ` +
+        `Game cannot properly end.`
+      );
+    }
+    
+  } catch (error) {
+    errors.push(
+      `Error validating transition coverage: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 
   return errors;
@@ -348,6 +358,8 @@ export async function validateDeterministicPreconditions(
 }
 
 // Helper: validate a planning-like artifact (either planner JSON or final transitions).
+// Note: This is used during PLAN validation, so we can't use TransitionGraph here
+// (graph requires the final transitions artifact from execution phase).
 function validatePhaseCoverage(artifact: any): {
   ok: boolean;
   errors: string[];

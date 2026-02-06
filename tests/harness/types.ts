@@ -49,7 +49,8 @@ export interface PlayerAction {
 
 export interface ExpectedOutcome {
   gameEnded: boolean;
-  winner?: string | null;
+  winner?: string | null;  // Deprecated: use winningPlayers instead
+  winningPlayers?: string[];  // Array of winning player IDs (empty array = draw/no winner)
   finalPhase?: string;
 }
 

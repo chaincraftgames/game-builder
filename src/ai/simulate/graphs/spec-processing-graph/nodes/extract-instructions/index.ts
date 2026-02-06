@@ -16,6 +16,8 @@ import {
   validateArtifactStructure,
   validateInitialStatePreconditions,
   validatePathStructure,
+  validateGameCompletion,
+  validatePhaseConnectivity,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/validators.js";
 import { getFromStore, NodeConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import { InstructionsArtifact } from "#chaincraft/ai/simulate/schema.js";
@@ -42,9 +44,11 @@ export const instructionsExtractionConfig: NodeConfig = {
       validateJsonParseable,
       validatePathStructure,
       validateArtifactStructure,
+      validatePhaseConnectivity,
       validateInitializationCompleteness,
       validateActionRequiredSet,
       validateNarrativeMarkers,
+      validateGameCompletion,
     ]
   },
   

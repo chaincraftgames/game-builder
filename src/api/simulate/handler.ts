@@ -117,6 +117,7 @@ export async function handleProcessAction(
       publicMessage: response.publicMessage,
       playerStates,
       gameEnded: response.gameEnded,
+      winningPlayers: response.winningPlayers,
       gameError: response.gameError,
     };
   } catch (error) {
@@ -151,6 +152,7 @@ export async function handleGetSimulationState(
       publicMessage: response.publicMessage,
       playerStates,
       gameEnded: response.gameEnded,
+      winningPlayers: response.winningPlayers,
       gameError: response.gameError,
     };
   } catch (error) {
