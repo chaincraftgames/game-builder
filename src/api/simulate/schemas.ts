@@ -6,6 +6,7 @@ export const RuntimePlayerStateSchema = z.object({
   privateMessage: z.string().optional(),
   actionsAllowed: z.boolean(),
   actionRequired: z.boolean(),
+  isGameWinner: z.boolean(),
 });
 
 // Player states schema (Map serialized as object)
@@ -19,6 +20,7 @@ export const SimResponseSchema = z.object({
   publicMessage: z.string().optional(),
   playerStates: PlayerStatesSchema,
   gameEnded: z.boolean(),
+  winningPlayers: z.array(z.string()).optional(), // Array of player IDs who won the game
   gameError: z
     .object({
       errorType: z.enum([
