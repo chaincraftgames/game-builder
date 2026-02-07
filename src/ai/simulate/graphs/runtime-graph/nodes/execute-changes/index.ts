@@ -14,7 +14,7 @@ import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { executeChangesTemplate } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes/prompts.js";
-import { executeChangesResponseSchema } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes//schema.js";
+import { executeChangesResponseSchema } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes/schema.js";
 import { applyStateDeltas, type StateDeltaOp } from "#chaincraft/ai/simulate/logic/statedelta.js";
 import { deserializePlayerMapping, reversePlayerMapping, transformStateToAliases } from "#chaincraft/ai/simulate/player-mapping.js";
 import { expandAndTransformOperation, isDeterministicOperation, applyDeterministicOperations, mergeDeterministicOverrides } from "#chaincraft/ai/simulate/deterministic-ops.js";

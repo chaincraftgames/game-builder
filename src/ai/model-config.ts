@@ -353,6 +353,16 @@ export const setupModel = async (
     metadata?: Record<string, any>,
     schema?: any
   ): Promise<ModelResponse | any> => {
+    // Log invocation with API key info for debugging
+    console.log('[model-config] Invoking model with system prompt:', {
+      phase: phaseLabel,
+      modelName,
+      agent: metadata?.agent,
+      hasApiKey: !!apiKey,
+      apiKeySuffix: '...' + apiKey?.slice(-7),
+      tracerProject: tracerProjectName,
+    });
+
     // If schema is provided, append structured output guidance to system prompt
     if (schema) {
       systemPrompt = systemPrompt + STRUCTURED_OUTPUT_GUIDANCE;
