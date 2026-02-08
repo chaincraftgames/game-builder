@@ -262,6 +262,8 @@ export async function getDesignByVersion(
   conversationId: string,
   version: number
 ): Promise<(DesignState | undefined)> {
+  // TODO - Consider paginating through checkpoints if we expect many versions, 
+  // to avoid excessive memory usage. 
   // Check if conversation exists
   if (!(await isActiveConversation(conversationId))) {
     throw new Error(`Conversation ${conversationId} not found`);
