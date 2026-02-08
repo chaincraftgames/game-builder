@@ -18,7 +18,6 @@ interface DatabaseState {
   savers: Map<string, CheckpointSaver>;
   sharedSaver?: CheckpointSaver; // Used for PostgreSQL
   backend: DatabaseBackend;
-  isSetup: boolean;
 }
 
 const databases = new Map<string, DatabaseState>();
@@ -60,7 +59,6 @@ async function getOrCreateDatabase(graphType: string): Promise<DatabaseState> {
     const state: DatabaseState = {
       savers: new Map(),
       backend,
-      isSetup: false,
     };
 
     if (backend === "sqlite") {
@@ -110,15 +108,8 @@ export async function getSaver(
       }
       
       try {
-        // Setup PostgreSQL tables on first use (only once per graph type)
-        // setupPostgresSaver creates the saver and sets up tables, so reuse it
-        if (!db.isSetup) {
-          db.sharedSaver = await setupPostgresSaver(db.connectionString);
-          db.isSetup = true;
-        } else {
-          // If already set up, just create the saver (no need to setup again)
-          db.sharedSaver = PostgresSaver.fromConnString(db.connectionString);
-        }
+        // Setup PostgreSQL tables and create singleton saver (only once per graph type)
+        db.sharedSaver = await setupPostgresSaver(db.connectionString);
       } catch (error) {
         console.error(`Failed to create PostgreSQL saver for ${graphType}: ${error}`);
         throw error;
