@@ -200,9 +200,9 @@ export async function handleDbStats(
     const blobStatsQuery = `
       SELECT 
         COUNT(*) AS row_count,
-        pg_size_pretty(COALESCE(AVG(pg_column_size(value)), 0)::bigint) AS avg_blob_size,
-        pg_size_pretty(COALESCE(SUM(pg_column_size(value)), 0)) AS total_blob_data,
-        COALESCE(SUM(pg_column_size(value)), 0) AS total_blob_bytes
+        pg_size_pretty(COALESCE(AVG(pg_column_size(blob)), 0)::bigint) AS avg_blob_size,
+        pg_size_pretty(COALESCE(SUM(pg_column_size(blob)), 0)) AS total_blob_data,
+        COALESCE(SUM(pg_column_size(blob)), 0) AS total_blob_bytes
       FROM checkpoint_blobs`;
     
     // Query 3: Top 10 largest threads
@@ -210,12 +210,12 @@ export async function handleDbStats(
       SELECT 
         thread_id,
         COUNT(*) AS checkpoint_count,
-        pg_size_pretty(SUM(pg_column_size(value))) AS total_size,
-        pg_size_pretty(AVG(pg_column_size(value))::bigint) AS avg_size,
-        SUM(pg_column_size(value)) AS total_bytes
+        pg_size_pretty(SUM(pg_column_size(blob))) AS total_size,
+        pg_size_pretty(AVG(pg_column_size(blob))::bigint) AS avg_size,
+        SUM(pg_column_size(blob)) AS total_bytes
       FROM checkpoint_blobs
       GROUP BY thread_id
-      ORDER BY SUM(pg_column_size(value)) DESC
+      ORDER BY SUM(pg_column_size(blob)) DESC
       LIMIT 10`;
     
     // Query 4: Total database size
