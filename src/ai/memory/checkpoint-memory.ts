@@ -1,5 +1,6 @@
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { Pool } from "pg";
 import path from "path";
 import fs from "fs/promises";
 
@@ -73,7 +74,16 @@ async function getOrCreateDatabase(graphType: string): Promise<DatabaseState> {
 }
 
 async function setupPostgresSaver(connectionString: string): Promise<PostgresSaver> {
-  const saver = PostgresSaver.fromConnString(connectionString);
+  // Create pool with configuration to prevent memory leaks
+  const pool = new Pool({
+    connectionString,
+    max: 10,                      // Maximum 10 connections
+    idleTimeoutMillis: 30000,     // Disconnect idle clients after 30 seconds
+    connectionTimeoutMillis: 5000, // Timeout if can't connect within 5 seconds
+  });
+
+  const saver = new PostgresSaver(pool);
+  
   // setup() creates the necessary tables if they don't exist.
   // In practice, this can sometimes race or re-run against an already-initialized
   // database and throw a duplicate-key error (code 23505). Treat that as
