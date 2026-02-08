@@ -26,9 +26,15 @@ export const CONSOLIDATION_DEFAULTS = {
 
 export const GameDesignState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
-    // combine the messages because we are using a checkpointer that saves the state,
-    // so we want to updated the saved state with the new messages.
-    reducer: (x, y) => [...x, ...y],
+    // Combine messages, filter out system messages, and keep only last 50
+    // This reduces checkpoint memory usage for long-running design conversations
+    reducer: (x, y) => {
+      const combined = [...x, ...y];
+      // Filter out system messages (internal prompts not needed in conversation history)
+      const filtered = combined.filter(msg => msg.type !== "system");
+      // Keep last 50 messages (sufficient for UI and prevents unbounded growth)
+      return filtered.slice(-50);
+    },
   }),
   title: Annotation<string>({
     reducer: (_, y) => y, // Always take the newest title

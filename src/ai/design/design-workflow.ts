@@ -451,9 +451,6 @@ export async function getConversationHistory(
       // Filter out empty messages
       if (!msg.content || msg.content.length === 0) return false;
 
-      // Filter out system messages (these are internal prompts)
-      if (msg.type === "system") return false;
-
       // Filter out automatic spec request messages (exact match)
       if (
         msg.type === "human" &&
@@ -462,6 +459,10 @@ export async function getConversationHistory(
       ) {
         return false;
       }
+
+      // Note: System messages are already filtered out at the state level (GameDesignState)
+      // so this check is redundant, but kept for safety in case old checkpoints still have them
+      if (msg.type === "system") return false;
 
       // Keep everything else - let frontend handle display
       // This includes spec response messages and XML-only messages
