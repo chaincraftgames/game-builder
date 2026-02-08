@@ -42,6 +42,7 @@ Commands:
   cleanup              Run checkpoint cleanup (removes old completed game sessions)
   heap-snapshot        Generate and download a heap snapshot for memory analysis
   memory-stats         Show detailed memory usage breakdown
+  db-stats             Show database checkpoint storage statistics
   help                 Show this help message
 
 Options:
@@ -187,11 +188,57 @@ cmd_heap_snapshot() {
   fi
 }
 
+# Command: db-stats
+cmd_db_stats() {
+  check_token
+  
+  print_info "Fetching database stats from $BASE_URL"
+  
+  RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+    -H "X-Internal-Token: $INTERNAL_TOKEN" \
+    "$BASE_URL/internal/db-stats")
+  
+  HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+  BODY=$(echo "$RESPONSE" | sed '$d')
+  
+  if [ "$HTTP_CODE" = "200" ]; then
+    print_success "Database stats retrieved"
+    echo ""
+    
+    # Parse and format the response
+    if command -v jq &> /dev/null; then
+      echo "$BODY" | jq -r '
+        "Database Size: \(.database.database_size)",
+        "",
+        "Checkpoint Blobs Table:",
+        "  Total Size: \(.checkpointBlobs.tableSize.total_size)",
+        "  Table Data: \(.checkpointBlobs.tableSize.table_size)",
+        "  Indexes: \(.checkpointBlobs.tableSize.indexes_size)",
+        "",
+        "Checkpoint Statistics:",
+        "  Row Count: \(.checkpointBlobs.stats.row_count)",
+        "  Average Blob Size: \(.checkpointBlobs.stats.avg_blob_size)",
+        "  Total Blob Data: \(.checkpointBlobs.stats.total_blob_data)",
+        "",
+        "Top 10 Largest Threads:",
+        (.checkpointBlobs.largestThreads[] | 
+          "  \(.thread_id): \(.checkpoint_count) checkpoints, \(.total_size) total (\(.avg_size) avg)")
+      '
+    else
+      echo "$BODY"
+    fi
+  else
+    print_error "Failed to get database stats (HTTP $HTTP_CODE)"
+    echo "$BODY"
+    exit 1
+  fi
+}
+
 # Parse arguments
 COMMAND=""
 while [[ $# -gt 0 ]]; do
   case $1 in
-    cleanup|heap-snapshot|memory-stats|help)
+    cleanup|heap-snapshot|memory-stats|db-stats|help)
       COMMAND=$1
       shift
       ;;
@@ -224,6 +271,9 @@ case $COMMAND in
     ;;
   memory-stats)
     cmd_memory_stats
+    ;;
+  db-stats)
+    cmd_db_stats
     ;;
   help|"")
     print_usage
