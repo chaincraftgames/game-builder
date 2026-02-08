@@ -41,6 +41,7 @@ Usage: ./internal-api.sh <command> [options]
 Commands:
   cleanup              Run checkpoint cleanup (removes old completed game sessions)
   heap-snapshot        Generate and download a heap snapshot for memory analysis
+  memory-stats         Show detailed memory usage breakdown
   help                 Show this help message
 
 Options:
@@ -57,6 +58,9 @@ Examples:
 
   # Get heap snapshot from production
   ./internal-api.sh heap-snapshot --url https://api.chaincraft.games
+
+  # Check memory stats
+  ./internal-api.sh memory-stats
 
   # Run cleanup on Railway with explicit token
   ./internal-api.sh cleanup --url https://your-app.up.railway.app --token your-token
@@ -106,6 +110,46 @@ cmd_cleanup() {
   fi
 }
 
+# Command: memory-stats
+cmd_memory_stats() {
+  check_token
+  
+  print_info "Fetching memory stats from $BASE_URL"
+  
+  RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+    -H "X-Internal-Token: $INTERNAL_TOKEN" \
+    "$BASE_URL/internal/memory-stats")
+  
+  HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+  BODY=$(echo "$RESPONSE" | sed '$d')
+  
+  if [ "$HTTP_CODE" = "200" ]; then
+    print_success "Memory stats retrieved"
+    echo ""
+    if command -v jq &> /dev/null; then
+      echo "$BODY" | jq -r '
+        "RSS (Total): \(.rss.mb)MB",
+        "Heap Total: \(.heapTotal.mb)MB",
+        "Heap Used: \(.heapUsed.mb)MB",
+        "External (C++ objects): \(.external.mb)MB",
+        "Array Buffers: \(.arrayBuffers.mb)MB",
+        "Unaccounted: \(.unaccounted.mb)MB",
+        "",
+        "Breakdown:",
+        "  • Heap accounts for \((.heapTotal.mb * 100 / .rss.mb) | floor)% of total",
+        "  • External accounts for \((.external.mb * 100 / .rss.mb) | floor)% of total",
+        "  • Unaccounted is \((.unaccounted.mb * 100 / .rss.mb) | floor)% of total"
+      '
+    else
+      echo "$BODY"
+    fi
+  else
+    print_error "Failed to get memory stats (HTTP $HTTP_CODE)"
+    echo "$BODY"
+    exit 1
+  fi
+}
+
 # Command: heap-snapshot
 cmd_heap_snapshot() {
   check_token
@@ -147,7 +191,7 @@ cmd_heap_snapshot() {
 COMMAND=""
 while [[ $# -gt 0 ]]; do
   case $1 in
-    cleanup|heap-snapshot|help)
+    cleanup|heap-snapshot|memory-stats|help)
       COMMAND=$1
       shift
       ;;
@@ -177,6 +221,9 @@ case $COMMAND in
     ;;
   heap-snapshot)
     cmd_heap_snapshot
+    ;;
+  memory-stats)
+    cmd_memory_stats
     ;;
   help|"")
     print_usage
