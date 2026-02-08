@@ -1,4 +1,4 @@
-import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
+import { listThreadIds } from "#chaincraft/ai/memory/checkpoint-memory.js";
 
 // Map of conversation IDs by graph type
 const conversationIds = new Map<string, Set<string>>();
@@ -30,16 +30,7 @@ async function bootstrapConversationIds(graphType: string): Promise<void> {
         return;
     }
 
-    const saver = await getSaver('list-conversations', graphType);
-    const ids = new Set<string>();
-    
-    for await (const checkpoint of saver.list({}, {})) {
-        const threadId = checkpoint.config?.configurable?.thread_id;
-        if (threadId) {
-            ids.add(threadId);
-        }
-    }
-    
-    conversationIds.set(graphType, ids);
+    const threadIds = await listThreadIds(graphType);
+    conversationIds.set(graphType, new Set(threadIds));
     bootstrappedTypes.add(graphType);
 }
