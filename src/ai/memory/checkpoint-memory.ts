@@ -155,12 +155,12 @@ export async function listThreadIds(graphType: string): Promise<string[]> {
   await initialize();
   
   const db = await getOrCreateDatabase(graphType);
+  const saver = await getSaver('list-threads', graphType); // Ensure saver is initialized
   const ids = new Set<string>();
   
-  if (db.backend === "postgres" && db.sharedSaver) {
+  if (db.backend === "postgres") {
     // For PostgreSQL: query distinct thread_ids directly (much more efficient than loading checkpoints)
-    const postgresaver = db.sharedSaver as PostgresSaver;
-    const pool = (postgresaver as any).pool as Pool;
+    const pool = (saver as any).pool as Pool;
     const result = await pool.query(
       'SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id'
     );
@@ -169,7 +169,6 @@ export async function listThreadIds(graphType: string): Promise<string[]> {
     }
   } else {
     // For SQLite: use limited checkpoint list
-    const saver = await getSaver('list-threads', graphType);
     for await (const checkpoint of saver.list({}, { limit: 100 })) {
       const threadId = checkpoint.config?.configurable?.thread_id;
       if (threadId) {
