@@ -147,6 +147,40 @@ export async function getSaver(
   }
 }
 
+/**
+ * List all thread IDs for a given graph type.
+ * Uses efficient direct SQL query for PostgreSQL, falls back to checkpoint list for SQLite.
+ */
+export async function listThreadIds(graphType: string): Promise<string[]> {
+  await initialize();
+  
+  const db = await getOrCreateDatabase(graphType);
+  const ids = new Set<string>();
+  
+  if (db.backend === "postgres" && db.sharedSaver) {
+    // For PostgreSQL: query distinct thread_ids directly (much more efficient than loading checkpoints)
+    const postgresaver = db.sharedSaver as PostgresSaver;
+    const pool = (postgresaver as any).pool as Pool;
+    const result = await pool.query(
+      'SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id'
+    );
+    for (const row of result.rows) {
+      ids.add(row.thread_id);
+    }
+  } else {
+    // For SQLite: use limited checkpoint list
+    const saver = await getSaver('list-threads', graphType);
+    for await (const checkpoint of saver.list({}, { limit: 100 })) {
+      const threadId = checkpoint.config?.configurable?.thread_id;
+      if (threadId) {
+        ids.add(threadId);
+      }
+    }
+  }
+  
+  return Array.from(ids).sort();
+}
+
 export async function deleteThread(
   threadId: string,
   graphType: string
