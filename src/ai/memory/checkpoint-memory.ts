@@ -146,6 +146,32 @@ export async function getSaver(
   }
 }
 
+export async function deleteThread(
+  threadId: string,
+  graphType: string
+): Promise<void> {
+  await initialize();
+  
+  const db = await getOrCreateDatabase(graphType);
+  const saver = db.backend === "postgres" && db.sharedSaver 
+    ? db.sharedSaver 
+    : await getSaver(threadId, graphType);
+
+  if (!saver) {
+    console.warn(`[checkpoint-cleanup] No saver found for thread ${threadId}, skipping`);
+    return;
+  }
+
+  try {
+    // Use the saver's delete method to remove all checkpoints for this thread
+    await saver.deleteThread(threadId);
+    console.log(`[checkpoint-cleanup] Deleted thread ${threadId} from ${graphType}`);
+  } catch (error) {
+    console.error(`[checkpoint-cleanup] Error deleting thread ${threadId}:`, error);
+    throw error;
+  }
+}
+
 export async function cleanup(
   graphType: string,
   olderThanDays: number = 7
@@ -155,8 +181,84 @@ export async function cleanup(
   const db = await getOrCreateDatabase(graphType);
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+  const cutoffTimestamp = cutoffDate.getTime();
 
   console.log(
-    `Cleaning up ${graphType} sessions older than ${cutoffDate.toISOString()}`
+    `[checkpoint-cleanup] Cleaning up ${graphType} threads older than ${cutoffDate.toISOString()}`
   );
+
+  let deletedCount = 0;
+  const seenThreads = new Set<string>();
+  
+  // Get the appropriate saver
+  const saver = db.backend === "postgres" && db.sharedSaver 
+    ? db.sharedSaver 
+    : db.savers.values().next().value;
+
+  if (!saver) {
+    console.log(`[checkpoint-cleanup] No saver found for ${graphType}, skipping`);
+    return;
+  }
+
+  try {
+    // Single pass: saver.list() returns checkpoints in reverse chronological order
+    // The first checkpoint we see for each thread is the latest one
+    for await (const checkpoint of saver.list({}, { limit: undefined })) {
+      const threadId = checkpoint.config?.configurable?.thread_id;
+      if (!threadId) continue;
+
+      // Only process the first (latest) checkpoint for each thread
+      if (!seenThreads.has(threadId)) {
+        seenThreads.add(threadId);
+        
+        const checkpointTime = new Date(checkpoint.checkpoint.ts).getTime();
+
+        // Check if this thread's latest checkpoint is older than cutoff
+        if (checkpointTime < cutoffTimestamp) {
+          // For simulation threads, check if the game has actually ended
+          let shouldDelete = true;
+          if (graphType.includes('simulation')) {
+            const channelValues = checkpoint.checkpoint.channel_values as any;
+            if (channelValues?.gameState) {
+              try {
+                const gameState = typeof channelValues.gameState === 'string'
+                  ? JSON.parse(channelValues.gameState)
+                  : channelValues.gameState;
+                
+                // Only delete if game has ended
+                if (!gameState?.game?.gameEnded) {
+                  shouldDelete = false;
+                  console.log(
+                    `[checkpoint-cleanup] Skipping thread ${threadId} - game still active (last activity: ${new Date(checkpointTime).toISOString()})`
+                  );
+                }
+              } catch (error) {
+                console.warn(`[checkpoint-cleanup] Could not parse gameState for thread ${threadId}, will delete anyway`);
+              }
+            }
+          }
+
+          if (shouldDelete) {
+            try {
+              await saver.deleteThread(threadId);
+              deletedCount++;
+              console.log(
+                `[checkpoint-cleanup] Deleted thread ${threadId} (last activity: ${new Date(checkpointTime).toISOString()})`
+              );
+            } catch (error) {
+              console.error(`[checkpoint-cleanup] Failed to delete thread ${threadId}:`, error);
+            }
+          }
+        }
+      }
+    }
+
+    console.log(
+      `[checkpoint-cleanup] Deleted ${deletedCount} thread(s) from ${graphType}`
+    );
+    
+  } catch (error) {
+    console.error(`[checkpoint-cleanup] Error during cleanup for ${graphType}:`, error);
+    throw error;
+  }
 }
