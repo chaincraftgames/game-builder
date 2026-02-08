@@ -119,3 +119,48 @@ export async function handleHeapSnapshot(
     };
   }
 }
+
+/**
+ * Memory stats endpoint - returns detailed memory usage breakdown
+ * GET /internal/memory-stats
+ */
+export async function handleMemoryStats(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  if (!authenticateInternal(request, reply)) return;
+
+  const usage = process.memoryUsage();
+  
+  return {
+    rss: {
+      bytes: usage.rss,
+      mb: Math.round(usage.rss / 1024 / 1024),
+      description: 'Total memory (Resident Set Size) - includes all memory used by the process'
+    },
+    heapTotal: {
+      bytes: usage.heapTotal,
+      mb: Math.round(usage.heapTotal / 1024 / 1024),
+      description: 'Total size of the allocated V8 heap'
+    },
+    heapUsed: {
+      bytes: usage.heapUsed,
+      mb: Math.round(usage.heapUsed / 1024 / 1024),
+      description: 'Actual memory used in the V8 heap (JavaScript objects)'
+    },
+    external: {
+      bytes: usage.external,
+      mb: Math.round(usage.external / 1024 / 1024),
+      description: 'Memory used by C++ objects bound to JavaScript (e.g., Buffers, native modules)'
+    },
+    arrayBuffers: {
+      bytes: usage.arrayBuffers,
+      mb: Math.round(usage.arrayBuffers / 1024 / 1024),
+      description: 'Memory allocated for ArrayBuffers and SharedArrayBuffers'
+    },
+    unaccounted: {
+      mb: Math.round((usage.rss - usage.heapTotal - usage.external) / 1024 / 1024),
+      description: 'Memory not in heap or external (native modules, V8 internals, etc.)'
+    }
+  };
+}
