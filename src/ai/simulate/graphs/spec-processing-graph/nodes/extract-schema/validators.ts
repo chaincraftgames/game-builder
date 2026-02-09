@@ -9,6 +9,7 @@ import { BaseStore } from "@langchain/langgraph";
 
 /**
  * Parse planner output to extract field definitions
+ * Preserves all field properties from planner output
  */
 export function extractPlannerFields(plannerOutput: string): PlannerField[] {
   const fields: PlannerField[] = [];
@@ -24,7 +25,15 @@ export function extractPlannerFields(plannerOutput: string): PlannerField[] {
     if (Array.isArray(parsed)) {
       parsed.forEach((field: any) => {
         if (field.name && field.path) {
-          fields.push({ name: field.name, path: field.path });
+          // Preserve all field properties
+          fields.push({
+            name: field.name,
+            path: field.path,
+            type: field.type,
+            source: field.source,
+            purpose: field.purpose,
+            constraints: field.constraints,
+          });
         }
       });
     }
