@@ -56,18 +56,30 @@ export const SpecProcessingState = Annotation.Root({
   }),
 
   // Arrays to capture validation errors across retry attempts
-  schemaValidationErrors: Annotation<string[] | undefined>({
-    reducer: (x, y) => y ? [...(x || []), ...y] : x,
+  schemaValidationErrors: Annotation<string[] | null | undefined>({
+    reducer: (x, y) => {
+      if (y === null) return null;              // explicit clear
+      if (y === undefined) return x;            // not mentioned, keep existing
+      return [...(x || []), ...y];              // accumulate new errors
+    },
     default: () => undefined,
   }),
 
-  transitionsValidationErrors: Annotation<string[] | undefined>({
-    reducer: (x, y) => y ? [...(x || []), ...y] : x,
+  transitionsValidationErrors: Annotation<string[] | null | undefined>({
+    reducer: (x, y) => {
+      if (y === null) return null;              // explicit clear
+      if (y === undefined) return x;            // not mentioned, keep existing
+      return [...(x || []), ...y];              // accumulate new errors
+    },
     default: () => undefined,
   }),
 
-  instructionsValidationErrors: Annotation<string[] | undefined>({
-    reducer: (x, y) => y ? [...(x || []), ...y] : x,
+  instructionsValidationErrors: Annotation<string[] | null | undefined>({
+    reducer: (x, y) => {
+      if (y === null) return null;              // explicit clear
+      if (y === undefined) return x;            // not mentioned, keep existing
+      return [...(x || []), ...y];              // accumulate new errors
+    },
     default: () => undefined,
   }),
 });

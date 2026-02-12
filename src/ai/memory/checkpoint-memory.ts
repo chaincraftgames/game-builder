@@ -1,5 +1,6 @@
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { Pool } from "pg";
 import path from "path";
 import fs from "fs/promises";
 
@@ -18,7 +19,6 @@ interface DatabaseState {
   savers: Map<string, CheckpointSaver>;
   sharedSaver?: CheckpointSaver; // Used for PostgreSQL
   backend: DatabaseBackend;
-  isSetup: boolean;
 }
 
 const databases = new Map<string, DatabaseState>();
@@ -60,7 +60,6 @@ async function getOrCreateDatabase(graphType: string): Promise<DatabaseState> {
     const state: DatabaseState = {
       savers: new Map(),
       backend,
-      isSetup: false,
     };
 
     if (backend === "sqlite") {
@@ -75,7 +74,16 @@ async function getOrCreateDatabase(graphType: string): Promise<DatabaseState> {
 }
 
 async function setupPostgresSaver(connectionString: string): Promise<PostgresSaver> {
-  const saver = PostgresSaver.fromConnString(connectionString);
+  // Create pool with configuration to prevent memory leaks
+  const pool = new Pool({
+    connectionString,
+    max: 10,                      // Maximum 10 connections
+    idleTimeoutMillis: 30000,     // Disconnect idle clients after 30 seconds
+    connectionTimeoutMillis: 5000, // Timeout if can't connect within 5 seconds
+  });
+
+  const saver = new PostgresSaver(pool);
+  
   // setup() creates the necessary tables if they don't exist.
   // In practice, this can sometimes race or re-run against an already-initialized
   // database and throw a duplicate-key error (code 23505). Treat that as
@@ -110,15 +118,8 @@ export async function getSaver(
       }
       
       try {
-        // Setup PostgreSQL tables on first use (only once per graph type)
-        // setupPostgresSaver creates the saver and sets up tables, so reuse it
-        if (!db.isSetup) {
-          db.sharedSaver = await setupPostgresSaver(db.connectionString);
-          db.isSetup = true;
-        } else {
-          // If already set up, just create the saver (no need to setup again)
-          db.sharedSaver = PostgresSaver.fromConnString(db.connectionString);
-        }
+        // Setup PostgreSQL tables and create singleton saver (only once per graph type)
+        db.sharedSaver = await setupPostgresSaver(db.connectionString);
       } catch (error) {
         console.error(`Failed to create PostgreSQL saver for ${graphType}: ${error}`);
         throw error;
@@ -146,6 +147,65 @@ export async function getSaver(
   }
 }
 
+/**
+ * List all thread IDs for a given graph type.
+ * Uses efficient direct SQL query for PostgreSQL, falls back to checkpoint list for SQLite.
+ */
+export async function listThreadIds(graphType: string): Promise<string[]> {
+  await initialize();
+  
+  const db = await getOrCreateDatabase(graphType);
+  const saver = await getSaver('list-threads', graphType); // Ensure saver is initialized
+  const ids = new Set<string>();
+  
+  if (db.backend === "postgres") {
+    // For PostgreSQL: query distinct thread_ids directly (much more efficient than loading checkpoints)
+    const pool = (saver as any).pool as Pool;
+    const result = await pool.query(
+      'SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id'
+    );
+    for (const row of result.rows) {
+      ids.add(row.thread_id);
+    }
+  } else {
+    // For SQLite: use limited checkpoint list
+    for await (const checkpoint of saver.list({}, { limit: 100 })) {
+      const threadId = checkpoint.config?.configurable?.thread_id;
+      if (threadId) {
+        ids.add(threadId);
+      }
+    }
+  }
+  
+  return Array.from(ids).sort();
+}
+
+export async function deleteThread(
+  threadId: string,
+  graphType: string
+): Promise<void> {
+  await initialize();
+  
+  const db = await getOrCreateDatabase(graphType);
+  const saver = db.backend === "postgres" && db.sharedSaver 
+    ? db.sharedSaver 
+    : await getSaver(threadId, graphType);
+
+  if (!saver) {
+    console.warn(`[checkpoint-cleanup] No saver found for thread ${threadId}, skipping`);
+    return;
+  }
+
+  try {
+    // Use the saver's delete method to remove all checkpoints for this thread
+    await saver.deleteThread(threadId);
+    console.log(`[checkpoint-cleanup] Deleted thread ${threadId} from ${graphType}`);
+  } catch (error) {
+    console.error(`[checkpoint-cleanup] Error deleting thread ${threadId}:`, error);
+    throw error;
+  }
+}
+
 export async function cleanup(
   graphType: string,
   olderThanDays: number = 7
@@ -155,8 +215,84 @@ export async function cleanup(
   const db = await getOrCreateDatabase(graphType);
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+  const cutoffTimestamp = cutoffDate.getTime();
 
   console.log(
-    `Cleaning up ${graphType} sessions older than ${cutoffDate.toISOString()}`
+    `[checkpoint-cleanup] Cleaning up ${graphType} threads older than ${cutoffDate.toISOString()}`
   );
+
+  let deletedCount = 0;
+  const seenThreads = new Set<string>();
+  
+  // Get the appropriate saver
+  const saver = db.backend === "postgres" && db.sharedSaver 
+    ? db.sharedSaver 
+    : db.savers.values().next().value;
+
+  if (!saver) {
+    console.log(`[checkpoint-cleanup] No saver found for ${graphType}, skipping`);
+    return;
+  }
+
+  try {
+    // Single pass: saver.list() returns checkpoints in reverse chronological order
+    // The first checkpoint we see for each thread is the latest one
+    for await (const checkpoint of saver.list({}, { limit: undefined })) {
+      const threadId = checkpoint.config?.configurable?.thread_id;
+      if (!threadId) continue;
+
+      // Only process the first (latest) checkpoint for each thread
+      if (!seenThreads.has(threadId)) {
+        seenThreads.add(threadId);
+        
+        const checkpointTime = new Date(checkpoint.checkpoint.ts).getTime();
+
+        // Check if this thread's latest checkpoint is older than cutoff
+        if (checkpointTime < cutoffTimestamp) {
+          // For simulation threads, check if the game has actually ended
+          let shouldDelete = true;
+          if (graphType.includes('simulation')) {
+            const channelValues = checkpoint.checkpoint.channel_values as any;
+            if (channelValues?.gameState) {
+              try {
+                const gameState = typeof channelValues.gameState === 'string'
+                  ? JSON.parse(channelValues.gameState)
+                  : channelValues.gameState;
+                
+                // Only delete if game has ended
+                if (!gameState?.game?.gameEnded) {
+                  shouldDelete = false;
+                  console.log(
+                    `[checkpoint-cleanup] Skipping thread ${threadId} - game still active (last activity: ${new Date(checkpointTime).toISOString()})`
+                  );
+                }
+              } catch (error) {
+                console.warn(`[checkpoint-cleanup] Could not parse gameState for thread ${threadId}, will delete anyway`);
+              }
+            }
+          }
+
+          if (shouldDelete) {
+            try {
+              await saver.deleteThread(threadId);
+              deletedCount++;
+              console.log(
+                `[checkpoint-cleanup] Deleted thread ${threadId} (last activity: ${new Date(checkpointTime).toISOString()})`
+              );
+            } catch (error) {
+              console.error(`[checkpoint-cleanup] Failed to delete thread ${threadId}:`, error);
+            }
+          }
+        }
+      }
+    }
+
+    console.log(
+      `[checkpoint-cleanup] Deleted ${deletedCount} thread(s) from ${graphType}`
+    );
+    
+  } catch (error) {
+    console.error(`[checkpoint-cleanup] Error during cleanup for ${graphType}:`, error);
+    throw error;
+  }
 }

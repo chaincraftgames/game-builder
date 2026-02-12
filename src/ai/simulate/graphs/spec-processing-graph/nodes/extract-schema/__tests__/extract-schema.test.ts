@@ -3,7 +3,7 @@
  * 
  * Validates that the subgraph can:
  * 1. Extract game rules from specification
- * 2. Generate valid planner field definitions
+ * 2. Generate valid field definitions in condensed format
  * 3. Handle validation and retry logic
  */
 
@@ -11,7 +11,7 @@ import { describe, expect, it } from "@jest/globals";
 import { schemaExtractionConfig } from "../index.js";
 import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
 import { InMemoryStore } from "@langchain/langgraph";
-import { validatePlannerFieldsInSchema } from "../validators.js";
+import { createArtifactCreationGraphConfig } from "#chaincraft/ai/graph-config.js";
 
 describe.skip("validatePlannerFieldsInSchema", () => {
   const mockSchema = {
@@ -121,26 +121,26 @@ describe("Extract Schema Subgraph", () => {
       gameSpecification: RPS_SPEC,
     };
 
-    // Execute subgraph with InMemoryStore
+    // Execute subgraph with InMemoryStore and artifact creation callbacks
     console.log("Extracting schema from RPS specification...");
-    const result = await subgraph.invoke(inputState, {
-      store: new InMemoryStore(),
-      configurable: { thread_id: "test-thread-1" }
-    });
+    const result = await subgraph.invoke(
+      inputState,
+      createArtifactCreationGraphConfig("test-thread-1", new InMemoryStore())
+    );
 
     // Validate game rules
     expect(result.gameRules).toBeDefined();
     expect(result.gameRules?.length).toBeGreaterThan(10);
     console.log("✓ Game rules extracted");
 
-    // Validate state schema (now planner format - array of field definitions)
+    // Validate state schema (condensed format - array of field definitions)
     expect(result.stateSchema).toBeDefined();
     const fields = JSON.parse(result.stateSchema!);
     expect(Array.isArray(fields)).toBe(true);
-    console.log("✓ Schema is planner format (array of fields)");
+    console.log("✓ Schema is condensed format (array of fields)");
     
-    // Debug: Show the planner fields
-    console.log("\n=== Planner Fields ===");
+    // Debug: Show the field definitions
+    console.log("\n=== Field Definitions ===");
     fields.forEach((field: any) => {
       console.log(`  - ${field.name} (type=${field.type}, path=${field.path})`);
       if (field.purpose) {
@@ -160,13 +160,13 @@ describe("Extract Schema Subgraph", () => {
     });
     console.log("✓ All fields have required structure (name, type, path)");
 
-    // Example state is no longer generated in planner-only mode
+    // Example state is no longer generated (not needed for stateDelta operations)
     expect(result.exampleState).toBeDefined();
     expect(result.exampleState).toBe("");
-    console.log("✓ Example state not generated (planner-only mode)");
+    console.log("✓ Example state not generated (not needed)");
 
-    // Verify field extraction works with the planner format
-    const { extractSchemaFields } = await import("../../schema-utils.js");
+    // Verify field extraction works with the condensed format
+    const { extractSchemaFields } = await import("#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js");
     const fieldPaths = extractSchemaFields(fields);
     expect(fieldPaths.size).toBeGreaterThan(0);
     console.log(`✓ Field extraction works (${fieldPaths.size} field paths extracted)`);
@@ -176,7 +176,7 @@ describe("Extract Schema Subgraph", () => {
     Array.from(fieldPaths).forEach(path => {
       console.log(`  - ${path}`);
     });
-  }, 60000); // Timeout reduced since executor was removed (only planner LLM call now)
+  }, 60000); // Single-phase extraction
 
   it("should add storage field for dice roll randomness", async () => {
     console.log("\n=== Testing RNG Storage Field Detection ===");
@@ -210,15 +210,12 @@ A simple turn-based game where players face a monster.
     console.log("Extracting schema with dice roll randomness...");
     const result = await subgraph.invoke(
       { gameSpecification: DICE_ROLL_SPEC },
-      { 
-        store: new InMemoryStore(),
-        configurable: { thread_id: "test-thread-2" }
-      }
+      createArtifactCreationGraphConfig("test-thread-2", new InMemoryStore())
     );
 
     expect(result.stateSchema).toBeTruthy();
     
-    // Parse the planner fields
+    // Parse the field definitions
     const fields = JSON.parse(result.stateSchema);
     expect(Array.isArray(fields)).toBe(true);
     

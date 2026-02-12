@@ -140,12 +140,15 @@ export function createCommitNode(
       } as Partial<SpecProcessingStateType>;
     }
 
-    // No validation errors - commit successful artifacts
+    // No validation errors - commit successful artifacts and clear stale errors
     const updates = await commitFunction(store, state, threadId);
 
-    console.debug(`[${namespace}_commit] Commit complete`);
+    console.debug(`[${namespace}_commit] Commit complete, clearing stale validation errors`);
 
-    return updates;
+    return {
+      ...updates,
+      [`${namespace}ValidationErrors`]: null,  // Clear stale errors from previous runs
+    } as Partial<SpecProcessingStateType>;
   };
 }
 

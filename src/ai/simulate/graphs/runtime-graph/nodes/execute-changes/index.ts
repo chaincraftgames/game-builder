@@ -14,7 +14,7 @@ import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import { RuntimeStateType } from "#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { executeChangesTemplate } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes/prompts.js";
-import { executeChangesResponseSchema } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes//schema.js";
+import { executeChangesResponseSchema } from "#chaincraft/ai/simulate/graphs/runtime-graph/nodes/execute-changes/schema.js";
 import { applyStateDeltas, type StateDeltaOp } from "#chaincraft/ai/simulate/logic/statedelta.js";
 import { deserializePlayerMapping, reversePlayerMapping, transformStateToAliases } from "#chaincraft/ai/simulate/player-mapping.js";
 import { expandAndTransformOperation, isDeterministicOperation, applyDeterministicOperations, mergeDeterministicOverrides } from "#chaincraft/ai/simulate/deterministic-ops.js";
@@ -161,6 +161,21 @@ export function executeChanges(model: ModelWithOptions) {
     // Router is the state machine controller - it determines which phase to transition to
     updatedState.game.currentPhase = state.nextPhase;
     updatedState.game.gameEnded = state.nextPhase === "finished" ? true : updatedState.game?.gameEnded || false;
+    
+    // Ensure standard runtime fields exist for all players
+    // Initialize isGameWinner to false if not already set (LLM only sets to true for winners)
+    for (const playerId in updatedState.players) {
+      if (updatedState.players[playerId].isGameWinner === undefined) {
+        updatedState.players[playerId].isGameWinner = false;
+      }
+    }
+    
+    // Deterministically compute game.winningPlayers from player isGameWinner flags
+    // This ensures winningPlayers is always accurate and LLM doesn't need to construct arrays
+    const winningPlayerIds = Object.keys(updatedState.players).filter(
+      playerId => updatedState.players[playerId].isGameWinner === true
+    );
+    updatedState.game.winningPlayers = winningPlayerIds;
     
     console.log(`[execute_changes] Phase transition to: ${state.nextPhase}`);
     console.debug("[execute_changes] Updated state sample:", JSON.stringify(updatedState).substring(0, 200));

@@ -8,9 +8,10 @@ const server = Fastify({
   logger: true
 });
 
-// Add authentication hook for all routes except health check
+// Add authentication hook for all routes except health check and internal endpoints
 server.addHook('onRequest', async (request, reply) => {
   if (request.url === '/health') return;
+  if (request.url.startsWith('/internal/')) return; // Internal endpoints have their own auth
   await authenticate(request, reply);
 });
 
