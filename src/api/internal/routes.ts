@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { handleCleanup, handleHeapSnapshot, handleMemoryStats, handleDbStats } from './handler.js';
+import { handleCleanup, handleHeapSnapshot, handleMemoryStats, handleDbStats, handleGameExport } from './handler.js';
 
 export async function registerInternalRoutes(server: FastifyInstance) {
   // Cleanup endpoint - removes old checkpoints
@@ -13,4 +13,7 @@ export async function registerInternalRoutes(server: FastifyInstance) {
   
   // Database stats endpoint - returns checkpoint storage statistics
   server.get('/db-stats', handleDbStats);
+  
+  // Game export endpoint - exports game design and artifacts for local import
+  server.get('/game-export', handleGameExport);
 }
