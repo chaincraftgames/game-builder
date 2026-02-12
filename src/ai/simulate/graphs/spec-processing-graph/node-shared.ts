@@ -54,7 +54,7 @@ export interface NodeConfig {
     model: ModelWithOptions;
     validators: Validator[];
   };
-  executor: {
+  executor?: {
     node: (model: ModelWithOptions) => 
       (
         state: SpecProcessingStateType, 
