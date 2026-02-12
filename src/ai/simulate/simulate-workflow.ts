@@ -128,7 +128,7 @@ export interface SpecArtifacts {
  * Get cached spec processing artifacts from checkpoint.
  * Similar to getCachedDesignSpecification in design-workflow.
  */
-async function getCachedSpecArtifacts(
+export async function getCachedSpecArtifacts(
   specKey: string,
 ): Promise<SpecArtifacts | undefined> {
   const saver = await getSaver(specKey, getConfig("simulation-graph-type"));

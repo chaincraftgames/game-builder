@@ -5,6 +5,8 @@ import { unlink } from 'fs/promises';
 import { Pool } from 'pg';
 import { cleanup } from '#chaincraft/ai/memory/checkpoint-memory.js';
 import { getConfig } from '#chaincraft/config.js';
+import { getCachedDesign, getDesignByVersion } from '#chaincraft/ai/design/design-workflow.js';
+import { getCachedSpecArtifacts } from '#chaincraft/ai/simulate/simulate-workflow.js';
 
 /**
  * Authenticate internal API requests using X-Internal-Token header
@@ -248,5 +250,117 @@ export async function handleDbStats(
     };
   } finally {
     await pool.end();
+  }
+}
+
+/**
+ * Game export endpoint - exports game design state and optionally artifacts
+ * GET /internal/game-export?gameId=xxx&version=N&artifacts=true
+ * 
+ * Query parameters:
+ * - gameId (required): The conversation/game ID
+ * - version (optional): Specific version number to export. If not provided, exports latest version
+ * - artifacts (optional): If "true", includes spec processing artifacts (schema, transitions, instructions)
+ * 
+ * Returns JSON with:
+ * - metadata: { gameId, version, timestamp, hasArtifacts }
+ * - design: { title, specification, specNarratives, pendingSpecChanges }
+ * - artifacts: { gameRules, stateSchema, stateTransitions, playerPhaseInstructions, transitionInstructions } (if artifacts=true and available)
+ */
+export async function handleGameExport(
+  request: FastifyRequest<{ Querystring: { gameId?: string; version?: string; artifacts?: string } }>,
+  reply: FastifyReply
+) {
+  if (!authenticateInternal(request, reply)) return;
+
+  const { gameId, version: versionParam, artifacts: artifactsParam } = request.query;
+
+  if (!gameId) {
+    reply.code(400);
+    return { error: 'gameId query parameter required' };
+  }
+
+  const includeArtifacts = artifactsParam === 'true';
+  const specificVersion = versionParam ? parseInt(versionParam, 10) : undefined;
+
+  if (versionParam && isNaN(specificVersion!)) {
+    reply.code(400);
+    return { error: 'version must be a valid number' };
+  }
+
+  try {
+    console.log(`[internal/game-export] Exporting game ${gameId}`, {
+      version: specificVersion ?? 'latest',
+      includeArtifacts
+    });
+
+    // Get design state (specific version or latest)
+    const design = specificVersion !== undefined
+      ? await getDesignByVersion(gameId, specificVersion)
+      : await getCachedDesign(gameId);
+
+    if (!design) {
+      reply.code(404);
+      return {
+        error: 'Game not found',
+        message: specificVersion !== undefined
+          ? `No design found for game ${gameId} version ${specificVersion}`
+          : `No design found for game ${gameId}`
+      };
+    }
+
+    // Extract version from the design
+    const exportVersion = design.specification?.version ?? 0;
+
+    // Optionally get artifacts
+    let artifacts = null;
+    if (includeArtifacts) {
+      const specKey = `${gameId}-v${exportVersion}`;
+      artifacts = await getCachedSpecArtifacts(specKey);
+      
+      // If artifacts requested but not found, just don't include them (per user request)
+      if (!artifacts) {
+        console.log(`[internal/game-export] No artifacts found for ${specKey}`);
+      }
+    }
+
+    // Build export response
+    const exportData = {
+      metadata: {
+        gameId,
+        version: exportVersion,
+        timestamp: new Date().toISOString(),
+        hasArtifacts: !!artifacts
+      },
+      design: {
+        title: design.title,
+        specification: design.specification,
+        specNarratives: design.specNarratives,
+        pendingSpecChanges: design.pendingSpecChanges,
+        consolidationThreshold: design.consolidationThreshold,
+        consolidationCharLimit: design.consolidationCharLimit
+      },
+      ...(artifacts && {
+        artifacts: {
+          gameRules: artifacts.gameRules,
+          stateSchema: artifacts.stateSchema,
+          stateTransitions: artifacts.stateTransitions,
+          playerPhaseInstructions: artifacts.playerPhaseInstructions,
+          transitionInstructions: artifacts.transitionInstructions,
+          specNarratives: artifacts.specNarratives
+        }
+      })
+    };
+
+    console.log(`[internal/game-export] Successfully exported game ${gameId} version ${exportVersion}`);
+    return exportData;
+
+  } catch (error) {
+    console.error('[internal/game-export] Error exporting game:', error);
+    reply.code(500);
+    return {
+      error: 'Export failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }
