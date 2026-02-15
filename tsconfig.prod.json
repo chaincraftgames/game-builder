@@ -2,11 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": ["node"],
-    "rootDir": "."
+    "rootDir": "./src"
   },
   "include": [
-    "src/**/*",
-    "scripts/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "src/ai/simulate/index.ts",
@@ -15,8 +14,6 @@
     "node_modules",
     "modules",
     "**/__tests__/**",
-    "**/*.test.ts",
-    "scripts/test-*.ts",
-    "scripts/**/*.js"
+    "**/*.test.ts"
   ]
 }

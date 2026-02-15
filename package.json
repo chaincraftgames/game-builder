@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc -p tsconfig.prod.json",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "build": "npm run clean && tsc -p tsconfig.prod.json",
     "build:dev": "tsc",
     "start": "node ./dist/index.js",
     "start:discord": "npm run build && node dist/integrations/clients/discord/index.js",
