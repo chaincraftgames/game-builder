@@ -43,11 +43,23 @@ Commands:
   heap-snapshot        Generate and download a heap snapshot for memory analysis
   memory-stats         Show detailed memory usage breakdown
   db-stats             Show database checkpoint storage statistics
+  game-export          Export a game (design state and artifacts) for local import
+  game-import          Import an exported game into local environment
   help                 Show this help message
 
 Options:
   --url <url>          Base URL (default: http://localhost:3000)
   --token <token>      Internal API token (or set CHAINCRAFT_GAMEBUILDER_INTERNAL_API_TOKEN)
+  
+  game-export options:
+    --game-id <id>     Game/conversation ID to export (required)
+    --version <n>      Specific version to export (optional, defaults to latest)
+    --artifacts        Include spec processing artifacts (optional)
+    --output <dir>     Output directory (default: data/exports)
+  
+  game-import options:
+    --file <path>      Path to exported game JSON file (required)
+    --force            Overwrite existing checkpoints
 
 Environment Variables:
   CHAINCRAFT_GAMEBUILDER_INTERNAL_API_TOKEN  Internal API authentication token
@@ -63,8 +75,15 @@ Examples:
   # Check memory stats
   ./internal-api.sh memory-stats
 
-  # Run cleanup on Railway with explicit token
-  ./internal-api.sh cleanup --url https://your-app.up.railway.app --token your-token
+  # Export latest version of a game with artifacts
+  ./internal-api.sh game-export --game-id abc123 --artifacts
+
+  # Export specific version from production
+  ./internal-api.sh game-export --game-id abc123 --version 2 --artifacts \\
+    --url https://your-app.up.railway.app --token your-token
+
+  # Import a game into local environment
+  ./internal-api.sh game-import --file data/exports/abc123-v2.json
 
 EOF
 }
@@ -234,11 +253,133 @@ cmd_db_stats() {
   fi
 }
 
+# Command: game-export
+cmd_game_export() {
+  check_token
+  
+  # Validate required parameters
+  if [ -z "$GAME_ID" ]; then
+    print_error "Game ID is required"
+    print_info "Usage: ./internal-api.sh game-export --game-id <id> [--version N] [--artifacts]"
+    exit 1
+  fi
+  
+  # Build query parameters
+  QUERY_PARAMS="gameId=$GAME_ID"
+  
+  if [ -n "$VERSION" ]; then
+    QUERY_PARAMS="$QUERY_PARAMS&version=$VERSION"
+  fi
+  
+  if [ "$ARTIFACTS" = "true" ]; then
+    QUERY_PARAMS="$QUERY_PARAMS&artifacts=true"
+  fi
+  
+  # Determine output filename
+  if [ -n "$VERSION" ]; then
+    OUTPUT_FILE="${OUTPUT_DIR}/${GAME_ID}-v${VERSION}.json"
+  else
+    OUTPUT_FILE="${OUTPUT_DIR}/${GAME_ID}-latest.json"
+  fi
+  
+  # Ensure output directory exists
+  mkdir -p "$OUTPUT_DIR"
+  
+  print_info "Exporting game $GAME_ID from $BASE_URL"
+  if [ -n "$VERSION" ]; then
+    print_info "Version: $VERSION"
+  else
+    print_info "Version: latest"
+  fi
+  if [ "$ARTIFACTS" = "true" ]; then
+    print_info "Including artifacts: yes"
+  fi
+  
+  RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+    -H "X-Internal-Token: $INTERNAL_TOKEN" \
+    "$BASE_URL/internal/game-export?$QUERY_PARAMS")
+  
+  HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+  BODY=$(echo "$RESPONSE" | sed '$d')
+  
+  if [ "$HTTP_CODE" = "200" ]; then
+    # Save to file
+    echo "$BODY" > "$OUTPUT_FILE"
+    
+    FILE_SIZE=$(ls -lh "$OUTPUT_FILE" | awk '{print $5}')
+    print_success "Game exported: $OUTPUT_FILE ($FILE_SIZE)"
+    
+    # Show summary if jq is available
+    if command -v jq &> /dev/null; then
+      echo ""
+      print_info "Export Summary:"
+      echo "$BODY" | jq -r '
+        "  Game ID: \(.metadata.gameId)",
+        "  Version: \(.metadata.version)",
+        "  Timestamp: \(.metadata.timestamp)",
+        "  Has Artifacts: \(.metadata.hasArtifacts)",
+        "  Title: \(.design.title // "Untitled")"
+      '
+    fi
+    
+    echo ""
+    print_info "To import this game locally:"
+    echo "  npm run import-game -- --file $OUTPUT_FILE"
+  else
+    print_error "Failed to export game (HTTP $HTTP_CODE)"
+    echo "$BODY"
+    exit 1
+  fi
+}
+
+# Command: game-import
+cmd_game_import() {
+  # Note: This command does not require authentication token
+  # It runs locally and imports into local databases
+  
+  # Validate required parameters
+  if [ -z "$IMPORT_FILE" ]; then
+    print_error "Import file is required"
+    print_info "Usage: ./internal-api.sh game-import --file <path> [--wallet <address>]"
+    exit 1
+  fi
+  
+  if [ ! -f "$IMPORT_FILE" ]; then
+    print_error "File not found: $IMPORT_FILE"
+    exit 1
+  fi
+  
+  print_info "Importing game from: $IMPORT_FILE"
+  echo ""
+  
+  print_info "Building import script..."
+  npm run build > /dev/null 2>&1
+  
+  if [ $? -ne 0 ]; then
+    print_error "Build failed"
+    exit 1
+  fi
+  
+  # Run the import script
+  if [ "$FORCE_IMPORT" = "true" ]; then
+    node ./dist/scripts/import-game.js --file "$IMPORT_FILE" --force
+  else
+    node ./dist/scripts/import-game.js --file "$IMPORT_FILE"
+  fi
+}
+
 # Parse arguments
 COMMAND=""
+GAME_ID=""
+VERSION=""
+ARTIFACTS="false"
+OUTPUT_DIR="data/exports"
+IMPORT_FILE=""
+FORCE_IMPORT="false"
+
 while [[ $# -gt 0 ]]; do
   case $1 in
-    cleanup|heap-snapshot|memory-stats|db-stats|help)
+    cleanup|heap-snapshot|memory-stats|db-stats|game-export|game-import|help)
       COMMAND=$1
       shift
       ;;
@@ -250,8 +391,31 @@ while [[ $# -gt 0 ]]; do
       INTERNAL_TOKEN="$2"
       shift 2
       ;;
+    --game-id)
+      GAME_ID="$2"
+      shift 2
+      ;;
+    --version)
+      VERSION="$2"
+      shift 2
+      ;;
+    --artifacts)
+      ARTIFACTS="true"
+      shift
+      ;;
+    --output)
+      OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --file)
+      IMPORT_FILE="$2"
+      shift 2
+      ;;
+    --force)
+      FORCE_IMPORT="true"
+      shift
+      ;;
     *)
-      print_error "Unknown option: $1"
       print_usage
       exit 1
       ;;
@@ -274,6 +438,12 @@ case $COMMAND in
     ;;
   db-stats)
     cmd_db_stats
+    ;;
+  game-export)
+    cmd_game_export
+    ;;
+  game-import)
+    cmd_game_import
     ;;
   help|"")
     print_usage

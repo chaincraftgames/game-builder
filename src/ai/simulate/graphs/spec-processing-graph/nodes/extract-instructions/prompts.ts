@@ -133,8 +133,8 @@ Rules & Guidance:
        - Runtime will automatically compute game.winningPlayers from these flags
        - Example stateChanges:
          * Single winner: "set winning player's isGameWinner to true"
-         * Tie/multiple winners: "set both/all winning players' isGameWinner to true"
-         * No winner/draw: "leave all isGameWinner flags false (default)"
+         * Tie/multiple winners: "set ALL players tied for the win isGameWinner to true"
+         * No winner/abandoned game: "explicitly set ALL players' isGameWinner to false"
        - Can be set before gameEnded (e.g., player meets win condition mid-game)
        - MUST be set on all paths leading to the "finished" phase (except no-winner scenarios)
        - ⚠️ Validation will fail if any path to "finished" doesn't set isGameWinner appropriately
@@ -464,25 +464,42 @@ Common variable patterns:
 - Example: {{ "op": "set", "path": "game.gameEnded", "value": true }}
 - Missing this will cause validation failure: "No transition sets game.gameEnded=true"
 
-**players.{{{{playerId}}}}.isGameWinner** (boolean) - Set to true for winning player(s):
-- ⚠️ CRITICAL: MUST be set on ALL paths to the "finished" phase (except no-winner scenarios)
-- Set to true for each player who won the game
-- Leave as false (default) for players who didn't win or in draw scenarios
+**players.{{{{playerId}}}}.isGameWinner** (boolean) - MUST be set in game-ending transitions:
+- ⚠️ CRITICAL: At least ONE transition MUST set isGameWinner (validation will fail otherwise)
+- ⚠️ CRITICAL: Set isGameWinner on ALL paths leading to "finished" phase (including no-winner 
+  scenarios)
 - Runtime automatically computes game.winningPlayers array from these flags
 - Can be set in same transition as gameEnded OR in an earlier transition
-- Examples:
-  * Single winner: {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }}
-  * Multiple winners (tie): Two ops - {{ "op": "set", "path": "players.{{{{player1Id}}}}.isGameWinner", "value": true }} and {{ "op": "set", "path": "players.{{{{player2Id}}}}.isGameWinner", "value": true }}
-  * No winner (draw/abandoned): No operations needed - all flags remain false
-- Missing this will cause validation failure: "Path [phases] does not set isGameWinner"
+- **DO NOT** leave isGameWinner unset - validation requires explicit set operations
 - If game has multiple ending scenarios, EACH ending transition must set isGameWinner appropriately
 
-**Example: Complete game-ending transition stateDelta (sets BOTH required fields)**:
+**Complete Examples (game-ending transitions with BOTH required fields):**
+
+Single Winner:
 {{
   "stateDelta": [
     {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
     {{ "op": "set", "path": "game.gameEnded", "value": true }},
-    {{ "op": "set", "path": "game.publicMessage", "value": "Game Over! {{{{winnerName}}}} wins!" }}
+    {{ "op": "set", "path": "game.publicMessage", "value": "{{{{winnerName}}}} wins!" }}
+  ]
+}}
+
+Tie (Multiple Winners - ALL tied players set to true):
+{{
+  "stateDelta": [
+    {{ "op": "set", "path": "players.{{{{player1Id}}}}.isGameWinner", "value": true }},
+    {{ "op": "set", "path": "players.{{{{player2Id}}}}.isGameWinner", "value": true }},
+    {{ "op": "set", "path": "game.gameEnded", "value": true }},
+    {{ "op": "set", "path": "game.publicMessage", "value": "It's a tie! Both players win!" }}
+  ]
+}}
+
+No Winner (Abandoned/Stalemate - explicitly set ALL to false):
+{{
+  "stateDelta": [
+    {{ "op": "setForAllPlayers", "field": "isGameWinner", "value": false }},
+    {{ "op": "set", "path": "game.gameEnded", "value": true }},
+    {{ "op": "set", "path": "game.publicMessage", "value": "Game ended with no winner." }}
   ]
 }}
 

@@ -1008,8 +1008,8 @@ export async function validateGameCompletion(
       );
     }
     
-    // Check 3: All terminal paths set isGameWinner somewhere along the path
-    // Note: We don't require isGameWinner to be set for draw/no-winner scenarios
+    // Check 3: At least one terminal path sets isGameWinner to true (winning scenario)
+    // Note: No-winner scenarios should explicitly set isGameWinner=false (not leave unset)
     const terminalPaths = graph.getTerminalPaths();
     
     if (terminalPaths.length === 0) {
@@ -1025,12 +1025,14 @@ export async function validateGameCompletion(
         }
       }
       
-      // Warn if no paths set isGameWinner (might be intentional for draw-only games)
+      // Check if at least one path sets isGameWinner to true (winning scenario)
+      // Note: Paths that set all players to false (no-winner scenarios) still count as setting the field
       if (!hasWinningPath) {
         errors.push(
-          'No path to "finished" sets players.*.isGameWinner. ' +
-          'If your game has winners, at least one ending path must set isGameWinner=true for winning players. ' +
-          'If this is a draw-only game (no winners), you can ignore this warning.'
+          'No path to "finished" sets players.*.isGameWinner to true. ' +
+          'At least one ending path must set isGameWinner=true for winning players. ' +
+          'For no-winner scenarios (abandoned/stalemate), explicitly set isGameWinner=false for all players. ' +
+          'Do not leave isGameWinner unset - validation requires explicit set operations.'
         );
       }
     }

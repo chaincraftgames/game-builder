@@ -62,7 +62,13 @@ Don't create phases that only exist to trigger one automatic transition. Merge t
 - ❌ Wrong: phase_a → [trivial transition] → phase_b → [does actual work] → phase_c
 - ✅ Right: phase_a → [does all work] → phase_c
 
-### 5. Precondition Hints (for executor synthesis)
+### 5. Game-Ending Transitions MUST Set Winner
+
+⚠️ **CRITICAL**: Every path to "finished" must explicitly set the game winner. Any transition that determines winners MUST include "set isGameWinner" guidance in its \`humanSummary\` or validation will fail.
+
+Example: "After round 3, determine winner by closest guess, set isGameWinner=true for winner and false for others, then end game"
+
+### 6. Precondition Hints (for executor synthesis)
 When writing \`explain\` text for preconditionHints, follow these rules so executor can synthesize valid JsonLogic:
 
 ✅ Use wildcard for player array checks: "players[*].actionRequired == false"

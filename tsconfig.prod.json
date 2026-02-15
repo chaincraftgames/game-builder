@@ -1,8 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "rootDir": "./src"
   },
+  "include": [
+    "src/**/*"
+  ],
   "exclude": [
     "src/ai/simulate/index.ts",
     "src/ai/simulate/runtime.ts",
