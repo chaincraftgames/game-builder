@@ -16,6 +16,7 @@
     "modules",
     "**/__tests__/**",
     "**/*.test.ts",
-    "scripts/test-*.ts"
+    "scripts/test-*.ts",
+    "scripts/**/*.js"
   ]
 }

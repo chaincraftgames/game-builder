@@ -40,7 +40,9 @@
     "pm2:logs:api": "pm2 logs chaincraft-web-api",
     "pm2:logs:bot": "pm2 logs chaincraft-discord-bot",
     "pm2:status": "pm2 status",
-    "pm2:monit": "pm2 monit"
+    "pm2:monit": "pm2 monit",
+    "cleanup-broken-games": "npm run build && node ./dist/scripts/cleanup-broken-games.js",
+    "import-game": "npm run build && node ./dist/scripts/import-game.js"
   },
   "keywords": [],
   "author": "",

@@ -59,7 +59,7 @@ Options:
   
   game-import options:
     --file <path>      Path to exported game JSON file (required)
-    --wallet <addr>    Wallet address for game owner (default: "local")
+    --force            Overwrite existing checkpoints
 
 Environment Variables:
   CHAINCRAFT_GAMEBUILDER_INTERNAL_API_TOKEN  Internal API authentication token
@@ -84,9 +84,6 @@ Examples:
 
   # Import a game into local environment
   ./internal-api.sh game-import --file data/exports/abc123-v2.json
-
-  # Import with custom wallet address
-  ./internal-api.sh game-import --file data/exports/abc123-latest.json --wallet 0x123...
 
 EOF
 }
@@ -353,10 +350,8 @@ cmd_game_import() {
   fi
   
   print_info "Importing game from: $IMPORT_FILE"
-  print_info "Wallet address: $WALLET_ADDRESS"
   echo ""
   
-  # Build and run the import script
   print_info "Building import script..."
   npm run build > /dev/null 2>&1
   
@@ -366,7 +361,11 @@ cmd_game_import() {
   fi
   
   # Run the import script
-  node ./dist/scripts/import-game.js --file "$IMPORT_FILE" --wallet "$WALLET_ADDRESS"
+  if [ "$FORCE_IMPORT" = "true" ]; then
+    node ./dist/scripts/import-game.js --file "$IMPORT_FILE" --force
+  else
+    node ./dist/scripts/import-game.js --file "$IMPORT_FILE"
+  fi
 }
 
 # Parse arguments
@@ -376,7 +375,7 @@ VERSION=""
 ARTIFACTS="false"
 OUTPUT_DIR="data/exports"
 IMPORT_FILE=""
-WALLET_ADDRESS="local"
+FORCE_IMPORT="false"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -412,12 +411,11 @@ while [[ $# -gt 0 ]]; do
       IMPORT_FILE="$2"
       shift 2
       ;;
-    --wallet)
-      WALLET_ADDRESS="$2"
-      shift 2
+    --force)
+      FORCE_IMPORT="true"
+      shift
       ;;
     *)
-      print_error "Unknown option: $1"
       print_usage
       exit 1
       ;;
