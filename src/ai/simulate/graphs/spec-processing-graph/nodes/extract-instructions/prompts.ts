@@ -136,13 +136,8 @@ Rules & Guidance:
          * Tie/multiple winners: "set ALL players tied for the win isGameWinner to true"
          * No winner/abandoned game: "explicitly set ALL players' isGameWinner to false"
        - Can be set before gameEnded (e.g., player meets win condition mid-game)
-       - ⚠️ CRITICAL: MUST be set on ALL paths to "finished" (including no-winner scenarios)
-       - ⚠️ Validation requires at least ONE transition sets isGameWinner (even if setting to false)
-     * **DETECTION RULE**: For ANY transition with toPhase == "finished":
-       - Your stateChanges array MUST include determining winner and setting isGameWinner
-       - This applies REGARDLESS of what the humanSummary says
-       - Even if humanSummary doesn't mention isGameWinner, YOU MUST INCLUDE IT
-       - Check the transitions artifact: if a transition goes to "finished", it needs winner logic
+       - MUST be set on all paths leading to the "finished" phase (except no-winner scenarios)
+       - ⚠️ Validation will fail if any path to "finished" doesn't set isGameWinner appropriately
      * If game has multiple ending scenarios, EACH ending transition must handle both fields
 
 4. Mechanics Descriptions (Key Guidance):
