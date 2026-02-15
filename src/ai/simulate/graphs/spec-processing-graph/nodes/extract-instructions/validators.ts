@@ -248,7 +248,7 @@ function validateStateDelta(
   warnings: string[],
   schemaFields?: Set<string>
 ): void {
-  const validOps = ['set', 'increment', 'append', 'delete', 'transfer', 'merge', 'rng'];
+  const validOps = ['set', 'increment', 'append', 'delete', 'transfer', 'merge', 'rng', 'setForAllPlayers'];
   
   for (let i = 0; i < stateDelta.length; i++) {
     const op = stateDelta[i];
@@ -274,6 +274,15 @@ function validateStateDelta(
         }
         if (op.value === undefined) {
           errors.push(`${context}: stateDelta[${i}] op '${op.op}' missing 'value' field`);
+        }
+        break;
+        
+      case 'setForAllPlayers':
+        if (!op.field) {
+          errors.push(`${context}: stateDelta[${i}] op 'setForAllPlayers' missing 'field' field`);
+        }
+        if (op.value === undefined) {
+          errors.push(`${context}: stateDelta[${i}] op 'setForAllPlayers' missing 'value' field`);
         }
         break;
         
@@ -316,7 +325,7 @@ function validateStateDelta(
     }
     
     // Validate that array values don't contain template variables
-    if ((op.op === 'set' || op.op === 'append') && op.value !== undefined) {
+    if ((op.op === 'set' || op.op === 'append' || op.op === 'setForAllPlayers') && op.value !== undefined) {
       if (Array.isArray(op.value)) {
         const hasTemplates = JSON.stringify(op.value).includes('{{');
         if (hasTemplates) {
@@ -506,9 +515,15 @@ export async function validateActionRequiredSet(
       }
 
       const hasActionRequiredOp = action.stateDelta.some((op: any) => {
-        return op.path && 
-               typeof op.path === 'string' && 
-               (op.path.includes('.actionRequired') || op.path.endsWith('actionRequired'));
+        // Check for operations with path (set, increment, etc.)
+        if (op.path && typeof op.path === 'string') {
+          return op.path.includes('.actionRequired') || op.path.endsWith('actionRequired');
+        }
+        // Check for setForAllPlayers operations with field
+        if (op.op === 'setForAllPlayers' && op.field === 'actionRequired') {
+          return true;
+        }
+        return false;
       });
       
       if (!hasActionRequiredOp) {
@@ -862,9 +877,9 @@ export function validateInitialStatePreconditions(
   const phaseMetadata = transitions.phaseMetadata?.find((pm: any) => pm.phase === startingPhase);
   const requiresPlayerInput = phaseMetadata?.requiresPlayerInput ?? false;
 
-  // Check if players can actually act (at least one player has actionRequired=true)
+  // Check if players can actually act (at least one player has actionRequired truthy)
   const players = Object.values(mockState.players || {});
-  const anyPlayerCanAct = players.some((player: any) => player.actionRequired === true);
+  const anyPlayerCanAct = players.some((player: any) => !!player.actionRequired);
 
   // Deadlock conditions:
   // 1. Automatic phase (no player input) AND no transitions can fire

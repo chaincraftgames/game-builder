@@ -522,18 +522,13 @@ Do NOT assume schema defaults - runtime requires explicit set operations.
 - If ANY precondition checks any counter or flag → initialize it to appropriate starting value in init
 
 **For ALL players** (when planner says "initialize player scores" or "set actionRequired for all players"):
-Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all player IDs in the game):
-{{ "op": "set", "path": "players.{{{{player1Id}}}}.score", "value": 0 }}
-{{ "op": "set", "path": "players.{{{{player2Id}}}}.score", "value": 0 }}
-{{ "op": "set", "path": "players.{{{{player1Id}}}}.actionRequired", "value": true }}
-{{ "op": "set", "path": "players.{{{{player2Id}}}}.actionRequired", "value": true }}
+Use the **setForAllPlayers** operation when setting the same value for all players:
+{{ "op": "setForAllPlayers", "field": "score", "value": 0 }}
+{{ "op": "setForAllPlayers", "field": "actionRequired", "value": true }}
 
 **Common initializations** planner will request:
-- Player scores/counters → {{ "op": "set", "path": "players.{{{{playerNId}}}}.score", "value": 0 }}
-- Action flags → {{ "op": "set", "path": "players.{{{{playerNId}}}}.actionRequired", "value": true }}
-- Clear fields → {{ "op": "set", "path": "players.{{{{playerNId}}}}.currentChoice", "value": null }}
+- Player fields → {{ "op": "setForAllPlayers", "field": "fieldName", "value": <value> }}
 - Game counters → {{ "op": "set", "path": "game.roundNumber", "value": 1 }}
-- Illegal action tracking → {{ "op": "set", "path": "players.{{{{playerNId}}}}.illegalActionCount", "value": 0 }}
 
 ⚠️ Operations like "increment" WILL FAIL if field is undefined - must initialize first!
 
@@ -614,7 +609,7 @@ Generate separate operations for {{{{player1Id}}}} and {{{{player2Id}}}} (or all
   "stateDelta": [
     {{ "op": "rng", "path": "game.oracleMood", "choices": ["calm", "irritable", "cryptic"], "probabilities": [0.33, 0.33, 0.34] }},
     {{ "op": "set", "path": "game.phase", "value": "greeting" }},
-    {{ "op": "set", "path": "players.{{{{playerId}}}}.trustLevel", "value": 0 }}
+    {{ "op": "setForAllPlayers", "field": "trustLevel", "value": 0 }}
   ],
   "messages": {{
     "public": {{ "template": "You stand before the oracle. The air is thick with ancient power." }}

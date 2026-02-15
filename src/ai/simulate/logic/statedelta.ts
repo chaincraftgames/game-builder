@@ -174,6 +174,21 @@ export const RngOpSchema = z.object({
 });
 
 /**
+ * SetForAllPlayers operation: sets a value for a field in all player states
+ * This is a convenience operation that automatically expands to set operations for each player.
+ * Use this when initializing or resetting the same value across all players.
+ */
+export const SetForAllPlayersOpSchema = z.object({
+  op: z.literal("setForAllPlayers"),
+  field: z.string().describe(
+    "Player state field name (without 'players.' prefix). " +
+    "Examples: 'score', 'actionRequired', 'currentMove'. " +
+    "The operation will set 'players.{playerId}.{field}' for each player."
+  ),
+  value: z.any().describe("Value to set for all players"),
+});
+
+/**
  * Union of all state delta operations
  */
 export const StateDeltaOpSchema = z.discriminatedUnion("op", [
@@ -184,6 +199,7 @@ export const StateDeltaOpSchema = z.discriminatedUnion("op", [
   TransferOpSchema,
   MergeOpSchema,
   RngOpSchema,
+  SetForAllPlayersOpSchema,
 ]);
 
 /**
@@ -199,6 +215,7 @@ export type DeleteOp = z.infer<typeof DeleteOpSchema>;
 export type TransferOp = z.infer<typeof TransferOpSchema>;
 export type RngOp = z.infer<typeof RngOpSchema>;
 export type MergeOp = z.infer<typeof MergeOpSchema>;
+export type SetForAllPlayersOp = z.infer<typeof SetForAllPlayersOpSchema>;
 
 // JSON schema exports for prompt injection
 export const StateDeltaOpSchemaJson = zodToJsonSchema(StateDeltaOpSchema, "StateDeltaOp");
@@ -329,6 +346,27 @@ function applySingleOp(state: any, op: StateDeltaOp): string | null {
         }
         
         setByPath(state, op.path, selectedValue);
+        return null;
+      }
+
+      case "setForAllPlayers": {
+        // Get all player IDs from the state
+        const players = state.players;
+        if (!players || typeof players !== "object") {
+          return `State must have a 'players' object to use setForAllPlayers`;
+        }
+        
+        const playerIds = Object.keys(players);
+        if (playerIds.length === 0) {
+          return `No players found in state.players for setForAllPlayers operation`;
+        }
+        
+        // Set the value for each player
+        for (const playerId of playerIds) {
+          const path = `players.${playerId}.${op.field}`;
+          setByPath(state, path, op.value);
+        }
+        
         return null;
       }
 

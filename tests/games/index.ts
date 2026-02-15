@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { rpsTest } from "./rps.test.js";
 import { westwardPerilTest } from "./westward-peril.test.js";
 import { wackyWeaponsRouterBugTest } from "./wacky-weapons-router-bug.test.js";
+import { gameTest as absurdArmamentsTest } from "./absurd-armaments.test.js";
 import type { GameTest } from "../harness/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,6 +19,7 @@ export const gameTests: Record<string, GameTest> = {
   "rps": rpsTest,
   "westward-peril": westwardPerilTest,
   "wacky-weapons-router-bug": wackyWeaponsRouterBugTest,
+  "absurd-armaments": absurdArmamentsTest,
 };
 
 export function getGameTest(name: string): GameTest | undefined {

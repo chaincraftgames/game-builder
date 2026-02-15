@@ -16,6 +16,15 @@ const myEnv = dotenv.config();
 dotenvExpand.expand(myEnv);
 
 /**
+ * Detect if running in test environment
+ */
+const isTest = process.env.NODE_ENV === 'test' || 
+               process.env.JEST_WORKER_ID !== undefined ||
+               process.argv.some(arg => arg.includes('jest'));
+
+
+
+/**
  * Guidance automatically appended to system prompts when using structured output.
  * Helps prevent LLMs from stringifying JSON instead of returning proper structures.
  */
@@ -40,6 +49,32 @@ Your response MUST be valid JSON matching the provided schema.
 This applies to ALL nested structures - arrays of objects, objects containing arrays, etc.
 `;
 
+const DEFAULT_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+
+// New config structure
+interface PhaseApiKeys {
+  create: string;   // For design + spec processing
+  sim: string;      // For simulation
+  play: string;     // For gameplay execution
+}
+
+// Environment variables or config - initialized at module load
+const PHASE_API_KEYS: PhaseApiKeys = {
+  create: process.env.ANTHROPIC_API_KEY_CREATE || process.env.ANTHROPIC_API_KEY!,
+  sim: process.env.ANTHROPIC_API_KEY_SIM || process.env.ANTHROPIC_API_KEY!,
+  play: process.env.ANTHROPIC_API_KEY_PLAY || process.env.ANTHROPIC_API_KEY!,
+};
+
+// Log API key status once at module initialization for debugging
+console.log('[model-config] API Keys loaded at module init:', {
+  hasCreate: !!PHASE_API_KEYS.create,
+  hasSim: !!PHASE_API_KEYS.sim,
+  hasPlay: !!PHASE_API_KEYS.play,
+  createSuffix: '...' + PHASE_API_KEYS.create?.slice(-7),
+  simSuffix: '...' + PHASE_API_KEYS.sim?.slice(-7),
+  playSuffix: '...' + PHASE_API_KEYS.play?.slice(-7),
+});
+
 /**
  * Model setup result interface
  */
@@ -47,9 +82,6 @@ export interface ModelWithOptions {
   model: BaseChatModel;
   modelName: string;
   tracerProjectName?: string;
-  invokeOptions: {
-    callbacks: any[];
-  };
   invoke: (
     prompt: string,
     metadata?: Record<string, any>,
@@ -74,6 +106,11 @@ export interface ModelWithOptions {
     metadata?: Record<string, any>,
     schema?: any
   ) => InvocationBuilder;
+  /**
+   * Get tracer callbacks for passing to LangGraph subgraph invocations
+   * @returns Tracer callback array
+   */
+  getCallbacks: () => any[];
 }
 
 /**
@@ -90,9 +127,9 @@ export interface ModelResponse {
 export interface ModelConfigOptions {
   modelName?: string;
   tracerProjectName?: string;
-  useDesignDefaults?: boolean;
-  useSimulationDefaults?: boolean;
   maxTokens?: number;
+  apiKey?: string;
+  phaseLabel?: string; // For logging which phase key is being used
 }
 export interface InvocationBuilder {
   addSystemPrompt: (systemPrompt: string) => InvocationBuilder;
@@ -107,7 +144,9 @@ export interface InvocationBuilder {
 const DESIGN_DEFAULTS = {
   modelName: process.env.CHAINCRAFT_DESIGN_MODEL_NAME || "",
   tracerProjectName:
-    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
+    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT_NAME || "chaincraft-design",
+  apiKey: PHASE_API_KEYS.create,
+  phaseLabel: 'DESIGN/CREATE' as const,
 };
 
 /**
@@ -116,55 +155,53 @@ const DESIGN_DEFAULTS = {
 const SIMULATION_DEFAULTS = {
   modelName: process.env.CHAINCRAFT_SIMULATION_MODEL_NAME || "",
   tracerProjectName:
-    process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
+    process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
+  apiKey: PHASE_API_KEYS.sim,
+  phaseLabel: 'SIMULATION' as const,
 };
 
 /**
  * Default configuration for conversational agent
  */
 const CONVERSATIONAL_AGENT_DEFAULTS = {
+  ...DESIGN_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_CONVERSATIONAL_AGENT_MODEL ||
     process.env.CHAINCRAFT_DESIGN_MODEL_NAME ||
-    "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
+    ""
 };
 
 /**
  * Default configuration for spec-plan agent
  */
 const SPEC_PLAN_DEFAULTS = {
+  ...DESIGN_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SPEC_PLAN_MODEL ||
     process.env.CHAINCRAFT_DESIGN_MODEL_NAME ||
     "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
 };
 
 /**
  * Default configuration for spec-execute agent
  */
 const SPEC_EXECUTE_DEFAULTS = {
+  ...DESIGN_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SPEC_EXECUTE_MODEL ||
     process.env.CHAINCRAFT_DESIGN_MODEL_NAME ||
     "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
 };
 
 /**
  * Default configuration for narrative generation in specs
  */
 const SPEC_NARRATIVE_DEFAULTS = {
+  ...DESIGN_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SPEC_NARRATIVE_MODEL ||
     process.env.CHAINCRAFT_DESIGN_MODEL_NAME ||
     "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
   maxTokens: 4000,
 };
 
@@ -172,12 +209,24 @@ const SPEC_NARRATIVE_DEFAULTS = {
  * Default configuration for spec-diff agent
  */
 const SPEC_DIFF_DEFAULTS = {
+  ...DESIGN_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SPEC_DIFF_MODEL ||
     process.env.CHAINCRAFT_DESIGN_MODEL_NAME ||
     "",
+};
+
+/**
+ * Default configuration for artifact creation.  This happens in the sim flow, but
+ * we want to track using the create key, since it is conceptually part of the 
+ * design/build phase.
+ */
+const ARTIFACT_CREATION_DEFAULTS = {
+  modelName: process.env.CHAINCRAFT_SIMULATION_MODEL_NAME || "",
   tracerProjectName:
-    process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT || "chaincraft-design",
+    process.env.CHAINCRAFT_ARTIFACT_CREATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
+  apiKey: PHASE_API_KEYS.create,
+  phaseLabel: 'ARTIFACT_CREATION/CREATE' as const,
 };
 
 /**
@@ -185,12 +234,11 @@ const SPEC_DIFF_DEFAULTS = {
  * Falls back to SIMULATION_MODEL_NAME if not specified (override recommended with Sonnet)
  */
 const SIM_SCHEMA_EXTRACTION_DEFAULTS = {
+  ...ARTIFACT_CREATION_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SIM_SCHEMA_EXTRACTION_MODEL ||
     process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
     "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
 };
 
 /**
@@ -198,12 +246,11 @@ const SIM_SCHEMA_EXTRACTION_DEFAULTS = {
  * Uses SIMULATION_MODEL_NAME by default (Haiku 4.5 recommended for cost-effectiveness)
  */
 const SIM_TRANSITIONS_EXTRACTION_DEFAULTS = {
+  ...ARTIFACT_CREATION_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SPEC_TRANSITIONS_MODEL ||
     process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
     "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
 };
 
 /**
@@ -211,12 +258,11 @@ const SIM_TRANSITIONS_EXTRACTION_DEFAULTS = {
  * Uses Sonnet 4.5 by default for high-quality planning
  */
 const SIM_INSTRUCTIONS_DEFAULTS = {
+  ...ARTIFACT_CREATION_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SIM_INSTRUCTIONS_MODEL ||
     process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
     "",
-  tracerProjectName:
-    process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT || "chaincraft-simulation",
   maxTokens: 16384, // Required for comprehensive instruction planning output
 };
 
@@ -228,27 +274,9 @@ const SIM_INSTRUCTIONS_DEFAULTS = {
 export const setupModel = async (
   options: ModelConfigOptions = {}
 ): Promise<ModelWithOptions> => {
-  let modelName: string;
-  let tracerProjectName: string | undefined;
-
-  if (options.useDesignDefaults) {
-    modelName = options.modelName || DESIGN_DEFAULTS.modelName;
-    tracerProjectName =
-      options.tracerProjectName || DESIGN_DEFAULTS.tracerProjectName;
-  } else if (options.useSimulationDefaults) {
-    modelName = options.modelName || SIMULATION_DEFAULTS.modelName;
-    tracerProjectName =
-      options.tracerProjectName || SIMULATION_DEFAULTS.tracerProjectName;
-  } else {
-    // Use explicit options or design defaults as fallback
-    modelName = options.modelName || DESIGN_DEFAULTS.modelName;
-    tracerProjectName =
-      options.tracerProjectName || DESIGN_DEFAULTS.tracerProjectName;
-  }
-
-  console.log(
-    `[DEBUG] setupModel - modelName: ${modelName}, tracerProjectName: ${tracerProjectName}`
-  );
+  const modelName = options.modelName;
+  const tracerProjectName = options.tracerProjectName;
+  const apiKey = options.apiKey;
 
   if (!modelName) {
     throw new Error(
@@ -256,15 +284,13 @@ export const setupModel = async (
     );
   }
 
-  const model = await getModel(modelName, options.maxTokens);
+  const model = await getModel(modelName, options.maxTokens, apiKey);
+  
+  // Store phase label for invocation logging
+  const phaseLabel = options.phaseLabel || 'CUSTOM';
 
-  // Create tracer callbacks based on configuration
+  // Create tracer callbacks based on configuration (created once, reused for all invocations)
   const callbacks = createTracerCallbacks(tracerProjectName);
-
-  // Create invoke options object (maxTokens now set in model constructor, not here)
-  const invokeOptions = {
-    callbacks,
-  };
 
   // Create convenient invoke method that uses the pre-configured options
   const invoke = async (
@@ -272,6 +298,15 @@ export const setupModel = async (
     metadata?: Record<string, any>,
     schema?: any
   ): Promise<ModelResponse | any> => {
+    // Log invocation with API key info for debugging
+    console.log('[model-config] Invoking model:', {
+      phase: phaseLabel,
+      modelName,
+      agent: metadata?.agent,
+      hasApiKey: !!apiKey,
+      apiKeySuffix: '...' + apiKey?.slice(-7),
+    });
+    
     const messages = [new HumanMessage(prompt)];
     const opts = createInvokeOptions(callbacks, metadata);
 
@@ -287,8 +322,16 @@ export const setupModel = async (
     messages: BaseMessage[],
     metadata?: Record<string, any>,
     schema?: any
-  ): Promise<ModelResponse | any> => {
-    const opts = createInvokeOptions(callbacks, metadata);
+  ): Promise<ModelResponse | any> => {    // Log invocation with API key info for debugging
+    console.log('[model-config] Invoking model with messages:', {
+      phase: phaseLabel,
+      modelName,
+      agent: metadata?.agent,
+      messageCount: messages.length,
+      hasApiKey: !!apiKey,
+      apiKeySuffix: '...' + apiKey?.slice(-7),
+    });
+        const opts = createInvokeOptions(callbacks, metadata);
 
     if (schema) {
       return await invokeWithSchema(model, messages, opts, schema);
@@ -356,11 +399,12 @@ export const setupModel = async (
     model,
     modelName,
     tracerProjectName,
-    invokeOptions,
     invoke,
     invokeWithMessages,
     invokeWithSystemPrompt,
     createInvocation,
+    // Expose callbacks for LangGraph subgraph invocations
+    getCallbacks: () => callbacks,
   };
 };
 
@@ -372,18 +416,17 @@ const createSetupFunction =
     modelName: string;
     tracerProjectName: string;
     maxTokens?: number;
+    apiKey?: string;
+    phaseLabel?: string;
   }) =>
-  async (
-    options: Omit<
-      ModelConfigOptions,
-      "useDesignDefaults" | "useSimulationDefaults"
-    > = {}
-  ): Promise<ModelWithOptions> => {
+  async (options: ModelConfigOptions = {}): Promise<ModelWithOptions> => {
+    const finalTracerProjectName = options.tracerProjectName || defaults.tracerProjectName;
     return setupModel({
       modelName: options.modelName || defaults.modelName,
-      tracerProjectName:
-        options.tracerProjectName || defaults.tracerProjectName,
+      tracerProjectName: finalTracerProjectName,
+      apiKey: options.apiKey || defaults.apiKey,
       maxTokens: options.maxTokens || defaults.maxTokens,
+      phaseLabel: options.phaseLabel || defaults.phaseLabel,
     });
   };
 
@@ -393,12 +436,14 @@ const createSetupFunction =
  * @returns Promise resolving to ModelSetup configured for discovery
  */
 export const setupDesignModel = async (
-  options: Omit<
-    ModelConfigOptions,
-    "useDesignDefaults" | "useSimulationDefaults"
-  > = {}
+  options: ModelConfigOptions = {}
 ): Promise<ModelWithOptions> => {
-  return setupModel({ ...options, useDesignDefaults: true });
+  return setupModel({
+    modelName: options.modelName || DESIGN_DEFAULTS.modelName,
+    tracerProjectName: options.tracerProjectName || DESIGN_DEFAULTS.tracerProjectName,
+    apiKey: options.apiKey || DESIGN_DEFAULTS.apiKey,
+    maxTokens: options.maxTokens,
+  });
 };
 
 /**
@@ -407,12 +452,16 @@ export const setupDesignModel = async (
  * @returns Promise resolving to ModelSetup configured for simulation
  */
 export const setupSimulationModel = async (
-  options: Omit<
-    ModelConfigOptions,
-    "useDesignDefaults" | "useSimulationDefaults"
-  > = {}
+  options: ModelConfigOptions = {}
 ): Promise<ModelWithOptions> => {
-  return setupModel({ ...options, useSimulationDefaults: true });
+  const tracerProjectName = options.tracerProjectName || SIMULATION_DEFAULTS.tracerProjectName;
+  
+  return setupModel({
+    modelName: options.modelName || SIMULATION_DEFAULTS.modelName,
+    tracerProjectName,
+    apiKey: options.apiKey || SIMULATION_DEFAULTS.apiKey,
+    maxTokens: options.maxTokens,
+  });
 };
 
 export const setupConversationalAgentModel = createSetupFunction(
@@ -482,8 +531,8 @@ export const invokeModel = async (
   callbacks?: any[],
   metadata?: Record<string, any>
 ): Promise<ModelResponse> => {
-  // Merge the configured callbacks with any additional callbacks (without mutating)
-  const allCallbacks = [...model.invokeOptions.callbacks, ...(callbacks || [])];
+  // Merge the configured callbacks with any additional callbacks
+  const allCallbacks = [...model.getCallbacks(), ...(callbacks || [])];
 
   const invokeOptions = {
     callbacks: allCallbacks,
@@ -581,27 +630,28 @@ const invokeWithSchema = async (
 
 /**
  * Create callbacks array with tracer project name if provided
+ * Automatically appends -test suffix when running in test environment
  * @param tracerProjectName Optional tracer project name for tracing
  * @returns Array of callbacks for model invocation
  */
 export const createTracerCallbacks = (tracerProjectName?: string): any[] => {
-  console.log(
-    `[DEBUG] createTracerCallbacks called with tracerProjectName: ${tracerProjectName}`
-  );
-
   if (!tracerProjectName) {
-    console.log(
-      `[DEBUG] No tracer project name provided, returning empty callbacks`
-    );
     return [];
   }
 
-  // Create LangChain tracer with the specified project name
+  // Auto-append -test suffix when running in test environment (unless already present)
+  const finalProjectName = isTest && !tracerProjectName.includes('-test')
+    ? `${tracerProjectName}-test`
+    : tracerProjectName;
+
+  // Create LangChain tracer with explicit configuration
   const tracer = new LangChainTracer({
-    projectName: tracerProjectName,
+    projectName: finalProjectName,
+    // Explicitly pass endpoint and API key to ensure they're used
+    ...(process.env.LANGSMITH_ENDPOINT && { endpoint: process.env.LANGSMITH_ENDPOINT }),
+    ...(process.env.LANGSMITH_API_KEY && { apiKey: process.env.LANGSMITH_API_KEY }),
   });
 
-  console.log(`[DEBUG] Created tracer for project: ${tracerProjectName}`);
   return [tracer];
 };
 

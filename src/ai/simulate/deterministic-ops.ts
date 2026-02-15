@@ -84,6 +84,13 @@ export function isDeterministicOperation(op: StateDeltaOp): boolean {
     return true;
   }
   
+  if (op.op === 'setForAllPlayers') {
+    // setForAllPlayers is deterministic if field and value have no templates
+    const setForAllOp = op as any;
+    if (hasTemplateVariables(setForAllOp.field)) return false;
+    return !hasTemplateVariables(setForAllOp.value);
+  }
+  
   return false;
 }
 
@@ -129,6 +136,24 @@ export function expandAndTransformOperation(
   op: StateDeltaOp,
   mapping: PlayerMapping
 ): StateDeltaOp[] {
+  // Handle setForAllPlayers operation - expand to individual set operations for each player
+  if (op.op === 'setForAllPlayers') {
+    const setForAllOp = op as any;
+    const playerUuids = Object.values(mapping);
+    
+    if (playerUuids.length === 0) {
+      console.warn('[deterministic-ops] setForAllPlayers with no players in mapping');
+      return []; // No players, no operations
+    }
+    
+    // Create one set operation per player UUID
+    return playerUuids.map(uuid => ({
+      op: 'set',
+      path: `players.${uuid}.${setForAllOp.field}`,
+      value: setForAllOp.value
+    } as StateDeltaOp));
+  }
+  
   // Handle transfer operations separately (have fromPath/toPath)
   if (op.op === 'transfer') {
     const transferOp = op as any;
