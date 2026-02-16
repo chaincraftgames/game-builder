@@ -82,4 +82,4 @@ export const transitionsExtractionConfig: NodeConfig = {
 };
 
 // Re-export utility functions for backward compatibility
-export { extractFieldsFromJsonSchema, formatFieldsListForPrompt, formatComputedContextForPrompt } from "./utils.js";
+export { formatComputedContextForPrompt } from "./utils.js";

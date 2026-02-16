@@ -231,6 +231,7 @@ export interface ApplyDeltaResult {
     op: StateDeltaOp;
     error: string;
   }>;
+  touchedPaths: Set<string>;
 }
 
 /**
@@ -387,19 +388,33 @@ function applySingleOp(state: any, op: StateDeltaOp): string | null {
  * 
  * @param state - The initial state object (will not be modified)
  * @param deltas - Array of state delta operations to apply
- * @returns Result containing the new state or errors
+ * @returns Result containing the new state, touched paths, or errors
  */
 export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDeltaResult {
-  // Validate all deltas first
+  // Filter out forbidden operations and validate remaining deltas
   const validationErrors: Array<{ op: StateDeltaOp; error: string }> = [];
+  const filteredDeltas: StateDeltaOp[] = [];
+  const touchedPaths = new Set<string>();
   
   for (const delta of deltas) {
+    // CRITICAL: Filter out any operation attempting to set game.currentPhase
+    // Phase changes are ONLY handled by the router based on transition preconditions
+    if (delta.op === 'set' && delta.path === 'game.currentPhase') {
+      console.warn(
+        `[statedelta] Ignoring forbidden operation: Cannot set 'game.currentPhase' via stateDelta. ` +
+        `Phase changes are controlled exclusively by the router based on transition preconditions.`
+      );
+      continue; // Skip this operation, don't add to errors
+    }
+    
     const parsed = StateDeltaOpSchema.safeParse(delta);
     if (!parsed.success) {
       validationErrors.push({
         op: delta,
         error: `Schema validation failed: ${parsed.error.errors.map(e => e.message).join(", ")}`,
       });
+    } else {
+      filteredDeltas.push(delta);
     }
   }
 
@@ -407,6 +422,7 @@ export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDelta
     return {
       success: false,
       errors: validationErrors,
+      touchedPaths,
     };
   }
 
@@ -414,8 +430,38 @@ export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDelta
   const newState = deepClone(state);
   const applicationErrors: Array<{ op: StateDeltaOp; error: string }> = [];
 
-  // Apply each delta sequentially
-  for (const delta of deltas) {
+  // Apply each delta sequentially and track touched paths
+  for (const delta of filteredDeltas) {
+    // Track which paths this operation touches
+    switch (delta.op) {
+      case 'set':
+      case 'append':
+      case 'increment':
+      case 'delete':
+      case 'merge':
+      case 'rng':
+        if ('path' in delta && delta.path) {
+          touchedPaths.add(delta.path);
+        }
+        break;
+      
+      case 'setForAllPlayers': {
+        // Track all player paths that setForAllPlayers touches
+        const players = newState.players;
+        if (players && typeof players === 'object') {
+          for (const playerId of Object.keys(players)) {
+            touchedPaths.add(`players.${playerId}.${delta.field}`);
+          }
+        }
+        break;
+      }
+      
+      case 'transfer':
+        touchedPaths.add(delta.fromPath);
+        touchedPaths.add(delta.toPath);
+        break;
+    }
+    
     const error = applySingleOp(newState, delta);
     if (error) {
       applicationErrors.push({ op: delta, error });
@@ -427,12 +473,14 @@ export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDelta
       success: false,
       newState,
       errors: applicationErrors,
+      touchedPaths,
     };
   }
 
   return {
     success: true,
     newState,
+    touchedPaths,
   };
 }
 

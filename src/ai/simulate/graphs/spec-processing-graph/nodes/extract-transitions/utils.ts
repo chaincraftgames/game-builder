@@ -4,51 +4,7 @@
 
 import { RouterContextSchema } from "#chaincraft/ai/simulate/logic/jsonlogic.js";
 
-/**
- * Extract field paths from JSON Schema for explicit field list in prompts.
- * Only extracts flat fields (one level under game/players).
- */
-export function extractFieldsFromJsonSchema(schemaJson: string): Array<{
-  path: string;
-  type: string;
-  description: string;
-}> {
-  try {
-    const schema = JSON.parse(schemaJson);
-    const fields: Array<{ path: string; type: string; description: string }> = [];
-
-    // Extract game-level fields
-    if (schema.properties?.game?.properties) {
-      Object.entries(schema.properties.game.properties).forEach(
-        ([key, prop]: [string, any]) => {
-          fields.push({
-            path: `game.${key}`,
-            type: prop.type || "any",
-            description: prop.description || "",
-          });
-        }
-      );
-    }
-
-    // Extract player-level fields (with [*] wildcard)
-    if (schema.properties?.players?.additionalProperties?.properties) {
-      Object.entries(
-        schema.properties.players.additionalProperties.properties
-      ).forEach(([key, prop]: [string, any]) => {
-        fields.push({
-          path: `players[*].${key}`,
-          type: prop.type || "any",
-          description: prop.description || "",
-        });
-      });
-    }
-
-    return fields.sort((a, b) => a.path.localeCompare(b.path));
-  } catch (error) {
-    console.warn("[extract_transitions] Failed to extract field paths:", error);
-    return [];
-  }
-}
+// extractFieldsFromJsonSchema removed - use extractSchemaFields from schema-utils.ts instead
 
 /**
  * Format computed context fields list for prompt injection.
@@ -69,41 +25,7 @@ export function formatComputedContextForPrompt(): string {
   return output;
 }
 
-/**
- * Format fields list for prompt injection.
- * Creates clear, readable list of available state fields.
- */
-export function formatFieldsListForPrompt(
-  fields: Array<{ path: string; type: string; description: string }>
-): string {
-  if (fields.length === 0) {
-    return "No additional fields defined beyond base schema.";
-  }
-
-  const gameFields = fields.filter((f) => f.path.startsWith("game."));
-  const playerFields = fields.filter((f) => f.path.startsWith("players[*]."));
-
-  let output =
-    "Available State Fields (ONLY reference these exact paths in preconditions):\n\n";
-
-  if (gameFields.length > 0) {
-    output += "Game-level fields:\n";
-    gameFields.forEach((f) => {
-      const desc = f.description ? ` - ${f.description}` : "";
-      output += `  • ${f.path} (${f.type})${desc}\n`;
-    });
-  }
-
-  if (playerFields.length > 0) {
-    output += "\nPer-player fields (use [*] wildcard for all players):\n";
-    playerFields.forEach((f) => {
-      const desc = f.description ? ` - ${f.description}` : "";
-      output += `  • ${f.path} (${f.type})${desc}\n`;
-    });
-  }
-
-  return output;
-}
+// formatFieldsListForPrompt removed - fields are now formatted inline
 
 /**
  * Check if JsonLogic contains forbidden array index access to players.

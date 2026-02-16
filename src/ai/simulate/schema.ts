@@ -145,7 +145,7 @@ const JsonLogicValidator = z
         code: z.ZodIssueCode.custom,
         message: `Unsupported JsonLogic operations: ${unsupportedOps.join(
           ", "
-        )}. Only standard json-logic-js operations are allowed: ==, !=, >, <, >=, <=, and, or, !, if, +, -, *, /, %, max, min, map, filter, all, none, some, merge, in, cat, substr, var, missing, missing_some, log. Custom operations: allPlayers, anyPlayer, lookup (for dynamic array/object access)`,
+        )}. Only standard json-logic-js operations are allowed: ==, !=, >, <, >=, <=, and, or, !, if, +, -, *, /, %, max, min, map, filter, all, none, some, merge, in, cat, substr, var, missing, missing_some, log. Custom operations: allPlayers, anyPlayer, lookup, length (for dynamic array/object access and string/array length)`,
       });
     }
   });
@@ -318,7 +318,6 @@ export const ValidationConfigSchema = z.object({
 export const PlayerActionInstructionSchema = z.object({
   id: z.string().describe("Stable identifier matching hint id"),
   actionName: z.string().describe("Human-readable action name"),
-  description: z.string().describe("Brief description"),
 
   // Optional validation
   validation: ValidationConfigSchema.nullable().optional().describe(
@@ -345,15 +344,6 @@ export const PlayerActionInstructionSchema = z.object({
     })
     .nullable()
     .optional(),
-
-  // Documentation fields (not used at runtime for slicing)
-  requiredStateFields: z
-    .array(z.string())
-    .nullable()
-    .optional()
-    .describe(
-      "Documentation of state fields needed (full state always provided)"
-    ),
 });
 
 /**
@@ -362,10 +352,6 @@ export const PlayerActionInstructionSchema = z.object({
 export const AutomaticTransitionInstructionSchema = z.object({
   id: z.string().describe("Stable identifier matching hint id"),
   transitionName: z.string().describe("Human-readable transition name"),
-  description: z.string().describe("Brief description"),
-  priority: z
-    .number()
-    .describe("Order to check transitions (lower = checked first)"),
 
   // Optional mechanics guidance (for computing winners, outcomes, etc.)
   mechanicsGuidance: MechanicsGuidanceSchema.nullable().optional().describe(
@@ -392,15 +378,6 @@ export const AutomaticTransitionInstructionSchema = z.object({
     })
     .nullable()
     .optional(),
-
-  // Documentation fields
-  requiredStateFields: z
-    .array(z.string())
-    .nullable()
-    .optional()
-    .describe(
-      "Documentation of state fields needed (full state always provided)"
-    ),
 });
 
 /**
@@ -513,3 +490,10 @@ export function deserializeSchema(schemaJson: string): z.ZodObject<any> {
   return baseSchema;
 }
 
+/**
+ * Base schema fields in condensed format for AI prompts
+ * Generated at module initialization from baseGameStateSchema
+ */
+import { zodSchemaToFields } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/zod-to-fields.js";
+export const baseSchemaFields = zodSchemaToFields(baseGameStateSchema);
+export const baseSchemaFieldsJson = JSON.stringify(baseSchemaFields, null, 2);

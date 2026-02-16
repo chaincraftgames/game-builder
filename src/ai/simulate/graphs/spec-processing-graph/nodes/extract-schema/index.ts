@@ -1,43 +1,43 @@
 /**
  * Schema Extraction Configuration
  *
- * Exports node configuration for schema extraction with planner-only pattern.
+ * Exports node configuration for schema extraction with executor-only pattern.
  * 
- * SIMPLIFIED APPROACH: We no longer convert the planner's custom format to JSON Schema
- * since state updates are deterministic (via stateDelta operations) and we never output
- * full state objects at runtime. The planner's lightweight format is sufficient for
- * field validation purposes.
+ * SIMPLIFIED APPROACH: Direct extraction without planning phase. The executor
+ * generates field definitions directly since state updates are deterministic
+ * (via stateDelta operations) and we never output full state objects at runtime.
  */
 
 import {
   setupSpecSchemaModel,
 } from "#chaincraft/ai/model-config.js";
-import { schemaPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/planner.js";
+import { schemaExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/executor.js";
 import {
-  validatePlanCompleteness,
-  validatePlanFieldCoverage,
-  extractPlannerFields,
+  validateExecutionCompleteness,
+  validateExecutionFieldCoverage,
+  extractExecutorFields,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/validators.js";
 import {
   getFromStore,
   NodeConfig,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
+import { baseSchemaFields } from "#chaincraft/ai/simulate/schema.js";
 
 export const schemaExtractionConfig: NodeConfig = {
   namespace: "schema",
 
-  planner: {
-    node: schemaPlannerNode,
+  // No planning needed - direct extraction
+  planner: undefined,
+
+  executor: {
+    node: schemaExecutorNode,
     model: await setupSpecSchemaModel(),
-    validators: [validatePlanCompleteness, validatePlanFieldCoverage],
+    validators: [validateExecutionCompleteness, validateExecutionFieldCoverage],
   },
 
-  // No executor needed - planner output is sufficient
-  executor: undefined,
-
   maxAttempts: {
-    plan: 1,
-    execution: 0, // No execution phase
+    plan: 0, // No planning phase
+    execution: 1,
   },
 
   commit: async (store, state, threadId) => {
@@ -47,47 +47,50 @@ export const schemaExtractionConfig: NodeConfig = {
       );
     }
 
-    // Retrieve planner output directly (no executor conversion)
-    let plannerOutput;
+    // Retrieve executor output directly
+    let executorOutput;
     try {
-      plannerOutput = await getFromStore(
+      executorOutput = await getFromStore(
         store,
-        ["schema", "plan", "output"],
+        ["schema", "execution", "output"],
         threadId
       );
     } catch (error) {
-      // Planner never ran or failed validation, return empty updates
+      // Executor never ran or failed validation, return empty updates
       return {};
     }
 
-    console.log("[commit] plannerOutput type:", typeof plannerOutput);
+    console.log("[commit] executorOutput type:", typeof executorOutput);
     console.log(
-      "[commit] plannerOutput:",
-      JSON.stringify(plannerOutput).substring(0, 200)
+      "[commit] executorOutput:",
+      JSON.stringify(executorOutput).substring(0, 200)
     );
 
-    // Extract fields from planner output
-    const fields = extractPlannerFields(plannerOutput);
+    // Extract fields from executor output
+    const customFields = extractExecutorFields(executorOutput);
     
-    // Extract natural summary from planner output (handles both quoted and unquoted)
+    // Merge base schema fields with custom fields
+    const allFields = [...baseSchemaFields, ...customFields];
+    
+    // Extract natural summary from executor output (handles both quoted and unquoted)
     let gameRules = "";
     // Try quoted format first: Natural summary: "..."
-    let summaryMatch = plannerOutput.match(/Natural summary:\s*"([^"]+)"/i);
+    let summaryMatch = executorOutput.match(/Natural summary:\s*"([^"]+)"/i);
     if (summaryMatch) {
       gameRules = summaryMatch[1];
     } else {
       // Try unquoted format: Natural summary: text... (until Fields: or end)
-      summaryMatch = plannerOutput.match(/Natural summary:\s*([^\n]+(?:\n(?!Fields:)[^\n]+)*)/i);
+      summaryMatch = executorOutput.match(/Natural summary:\s*([^\n]+(?:\n(?!Fields:)[^\n]+)*)/i);
       if (summaryMatch) {
         gameRules = summaryMatch[1].trim();
       }
     }
 
     // Return partial state to be merged
-    // stateSchema now stores the planner fields array instead of JSON Schema
+    // stateSchema stores the field definitions array in condensed format
     return {
       gameRules: gameRules,
-      stateSchema: JSON.stringify(fields),
+      stateSchema: JSON.stringify(allFields),
       exampleState: "", // No longer needed since we don't generate full state examples
     };
   },

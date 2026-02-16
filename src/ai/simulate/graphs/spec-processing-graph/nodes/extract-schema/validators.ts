@@ -8,15 +8,15 @@ import { getFromStore } from "#chaincraft/ai/simulate/graphs/spec-processing-gra
 import { BaseStore } from "@langchain/langgraph";
 
 /**
- * Parse planner output to extract field definitions
- * Preserves all field properties from planner output
+ * Parse executor output to extract field definitions
+ * Preserves all field properties from executor output
  */
-export function extractPlannerFields(plannerOutput: string): PlannerField[] {
+export function extractExecutorFields(executorOutput: string): PlannerField[] {
   const fields: PlannerField[] = [];
   
   try {
-    // Look for Fields: ```json [...] ``` markdown code block in planner output
-    const fieldsMatch = plannerOutput.match(/Fields:\s*```json\s*([\s\S]*?)```/i);
+    // Look for Fields: ```json [...] ``` markdown code block in executor output
+    const fieldsMatch = executorOutput.match(/Fields:\s*```json\s*([\s\S]*?)```/i);
     if (!fieldsMatch) return fields;
     
     const fieldsJson = fieldsMatch[1].trim();
@@ -38,34 +38,34 @@ export function extractPlannerFields(plannerOutput: string): PlannerField[] {
       });
     }
   } catch (error) {
-    console.warn("[validator] Failed to parse planner fields:", error);
+    console.warn("[validator] Failed to parse executor fields:", error);
   }
   
   return fields;
 }
 
 /**
- * Validate planner output completeness
+ * Validate executor output completeness
  */
-export async function validatePlanCompleteness(
+export async function validateExecutionCompleteness(
   state: SpecProcessingStateType,
   store: BaseStore,
   threadId: string
 ): Promise<string[]> {
   const errors: string[] = [];
   
-  const plannerOutput = await getFromStore(store, ["schema", "plan", "output"], threadId);
+  const executorOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
   
-  console.log("[validatePlanCompleteness] plannerOutput type:", typeof plannerOutput);
-  console.log("[validatePlanCompleteness] plannerOutput value:", JSON.stringify(plannerOutput).substring(0, 200));
+  console.log("[validateExecutionCompleteness] executorOutput type:", typeof executorOutput);
+  console.log("[validateExecutionCompleteness] executorOutput value:", JSON.stringify(executorOutput).substring(0, 200));
   
-  if (!plannerOutput || (typeof plannerOutput === 'string' && plannerOutput.trim().length === 0)) {
-    errors.push("Planner output is empty");
+  if (!executorOutput || (typeof executorOutput === 'string' && executorOutput.trim().length === 0)) {
+    errors.push("Executor output is empty");
     return errors;
   }
   
   // Handle if it's still wrapped
-  const outputString = typeof plannerOutput === 'string' ? plannerOutput : JSON.stringify(plannerOutput);
+  const outputString = typeof executorOutput === 'string' ? executorOutput : JSON.stringify(executorOutput);
   
   // Check for natural summary
   if (!outputString.match(/Natural summary:/i)) {
@@ -81,28 +81,28 @@ export async function validatePlanCompleteness(
 }
 
 /**
- * Validate planner identified required fields
+ * Validate executor identified required fields
  */
-export async function validatePlanFieldCoverage(
+export async function validateExecutionFieldCoverage(
   state: SpecProcessingStateType,
   store: BaseStore,
   threadId: string
 ): Promise<string[]> {
   const errors: string[] = [];
   
-  const plannerOutput = await getFromStore(store, ["schema", "plan", "output"], threadId);
+  const executorOutput = await getFromStore(store, ["schema", "execution", "output"], threadId);
   
-  if (!plannerOutput) {
-    errors.push("No planner output found");
+  if (!executorOutput) {
+    errors.push("No executor output found");
     return errors;
   }
   
-  const fields = extractPlannerFields(plannerOutput);
+  const fields = extractExecutorFields(executorOutput);
   
   // It's okay to have zero fields if game is very simple
   // But log a warning
   if (fields.length === 0) {
-    console.warn("[validator] Planner identified zero custom fields - game uses only base schema");
+    console.warn("[validator] Executor identified zero custom fields - game uses only base schema");
   }
   
   return errors;
@@ -293,7 +293,7 @@ export async function validatePlannerFieldsInSchema(
   }
   
   try {
-    const plannerFields = extractPlannerFields(plannerOutput);
+    const plannerFields = extractExecutorFields(plannerOutput);
     const response = JSON.parse(executionOutput);
     const executorSchema = response.stateSchema;
     

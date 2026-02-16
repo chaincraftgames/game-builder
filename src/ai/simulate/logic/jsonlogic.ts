@@ -85,6 +85,44 @@ jsonLogic.add_operation("lookup", function(this: any, collectionExpr: any, index
   return collection[index];
 });
 
+/**
+ * Custom length operation for getting the length of strings or arrays.
+ * 
+ * Format: {"length": expression}
+ * - expression: JsonLogic expression that resolves to a string or array
+ * 
+ * Examples:
+ * - {"length": {"var": "game.secretWord"}} - returns length of secretWord string
+ * - {"length": {"var": "game.players"}} - returns count of players array
+ * - {">": [{"length": {"var": "game.history"}}, 5]} - check if history has more than 5 items
+ * 
+ * Returns: The length of the string/array, or 0 if null/undefined
+ */
+jsonLogic.add_operation("length", function(this: any, expr: any) {
+  // Access the data context - json-logic binds 'this' to the data
+  const data = this;
+  
+  // Evaluate the expression to get the value
+  const value = jsonLogic.apply(expr, data);
+  
+  // Handle null/undefined gracefully
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  
+  // Return length for strings and arrays
+  if (typeof value === 'string' || Array.isArray(value)) {
+    return value.length;
+  }
+  
+  // For objects, return the number of keys
+  if (typeof value === 'object') {
+    return Object.keys(value).length;
+  }
+  
+  return 0;
+});
+
 // Export the configured jsonLogic instance with custom operations registered
 export { jsonLogic };
 
@@ -107,7 +145,7 @@ const SUPPORTED_JSONLOGIC_OPERATIONS = new Set([
   // Misc
   'var', 'missing', 'missing_some', 'log',
   // Custom operations
-  'allPlayers', 'anyPlayer', 'lookup',
+  'allPlayers', 'anyPlayer', 'lookup', 'length',
 ]);
 
 /**

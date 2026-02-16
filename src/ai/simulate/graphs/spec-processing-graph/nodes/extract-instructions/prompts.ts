@@ -1,7 +1,5 @@
 /**
  * Prompts for Instructions Extraction
- *
- * Generates phase instructions with templated stateDelta operations and mechanics guidance.
  */
 
 export const planInstructionsTemplate = `
@@ -13,213 +11,28 @@ export const planInstructionsTemplate = `
 
 # Your Task
 
-You are analyzing a game specification and transitions to identify what instructions 
-are needed for each phase.
+Analyze the game specification and transitions to extract semantic information needed for instruction execution.
 
-Your task: Identify player actions and automatic transitions that need instructions 
-for runtime execution.
+Focus on:
+- **Game mechanics/rules**: Win conditions, scoring, trump rules, costs, constraints
+- **LLM requirements**: Does this need LLM reasoning or semantic validation?
+- **Message purposes**: Brief description of what messages should convey
+- **Randomness**: Probability distributions, ranges, what values are needed
 
-# CRITICAL INSTRUCTION STRUCTURE
+# Output Rules
 
-Instructions are separated by type:
+1. **Player Actions**: Provide hints ONLY for phases requiring player input
+2. **Transitions**: Provide hints for EVERY automatic transition  
+3. **mechanicsDescription**: Natural language rules (null if purely administrative)
+4. **requiresLLMValidation/requiresLLMReasoning**: Boolean flags
+5. **Message purposes**: Brief strings (null if no message needed)
 
-1. **Player Phase Instructions** (playerPhases array):
-   - Generate ONLY for phases that require player input
-   - Keyed by phase name
-   - Contains player action handling logic
-   
-2. **Transition Instructions** (transitions array):
-   - Generate for EVERY automatic transition
-   - Keyed by transition ID (not phase name!)
-   - Contains transition execution logic
+# Critical Fields (mention in globalNotes)
+- **game.gameEnded**: At least one transition must set this to true
+- **players.{{playerId}}.isGameWinner**: Set in transitions leading to finished phase
+- **players.{{playerId}}.actionRequired**: Every player action must set this
 
-Phases without player input should have NO phase instructions - only their outgoing
-transitions have instructions.
-
-Example for RPS:
-- choice_submission phase: HAS phase instructions (player submits choice)
-- round_resolution phase: NO phase instructions (only transitions have instructions)
-  * game_won transition: HAS instructions
-  * round_resolved_continue transition: HAS instructions
-
-Instructions Overview:
-- Instructions are templates that tell the LLM HOW to handle player actions and 
-  automatic state transitions
-- Each instruction contains:
-  * Validation rules (JsonLogic preconditions for deterministic checks)
-  * Mechanics guidance (natural language rules like "rock beats scissors")
-  * Templated stateDelta operations (with {{variables}} the LLM must resolve)
-  * Message templates (with {{variables}} for player names, choices, outcomes)
-  
-- At runtime, the LLM will:
-  1. Read the instruction template
-  2. Apply mechanics rules to current game state
-  3. Resolve {{template}} variables to literal values
-  4. Return concrete stateDelta operations and messages
-
-Your Role (Planner):
-- Identify WHAT instructions are needed (don't generate the actual templates yet)
-- For each action/transition, describe:
-  * What needs validation (can it be JsonLogic or needs LLM?)
-  * What game mechanics apply (trump rules, scoring logic, win conditions)
-  * What state changes are needed
-  * What messages players should receive
-  * What template variables the LLM must resolve
-  * Whether randomness is involved
-
-Output Contract:
-Return EXACTLY a JSON object matching the planning schema structure.
-
-Rules & Guidance:
-
-1. Player Phase Coverage:
-   - Provide hints ONLY for phases that require player input (check phaseMetadata)
-   - Phases without player input should NOT appear in playerPhases array
-   - These phases get their execution logic from their transition instructions instead
-
-2. Player Actions (for phases requiring player input):
-   - Identify all actions players can take (submit move, vote, play card, etc.)
-   - Consider validation:
-     * Can validation be checked with JsonLogic? (phase, turn order, has resources, input format)
-     * Does payload need LLM validation? (free text, strategy verification)
-   - Consider mechanics:
-     * Simple actions (submit choice, confirm ready) rarely need mechanics
-     * Complex actions (play card, make trade) may involve rules
-   - Template variables:
-     * Always include: playerId, input fields (choice, moveData, etc.)
-     * Often include: playerName for messages
-   - ⚠️ CRITICAL: State changes must include actionRequired:
-     * EVERY player action MUST include a state change to set actionRequired
-     * Set to false if player has completed all required actions for this phase
-     * Set to true if player must take additional actions (multi-step phases)
-     * Example state changes: "set player choice", "set actionRequired to false"
-     * DO NOT create custom completion flags like "hasSubmitted", "hasMoved", "turnComplete"
-   
-3. Automatic Transitions:
-   - Create EXACTLY ONE instruction hint per AUTOMATIC transition in transitions artifact
-   - Use exact transition ID from artifact as the instruction key (see critical requirements at top)
-   - Set 'basedOnTransition' to same ID for validation
-   - These instructions are keyed by TRANSITION ID, not by phase name
-   - Identify what each transition DOES (not just when it triggers)
-   - If multiple game actions happen during a transition (e.g., score + advance), combine into one instruction
-   - DO NOT create additional transitions - use only the IDs from the artifact
-   - **CRITICAL for the transition from "init" phase** (the first transition, typically "initialize_game"):
-     * This transition MUST initialize EVERY field used in ANY transition precondition
-     * Review ALL transition preconditions in the entire artifact
-     * List EVERY field referenced in ANY precondition (including later transitions)
-     * Your stateChanges MUST include initialization of ALL those fields
-     * Example: If any transition checks \`game.roundNumber < game.maxRounds\`, the init transition's
-       stateChanges must include both "set game.roundNumber to 1" and "set game.maxRounds to 2"
-     * Missing initializations will cause runtime deadlocks when those transitions try to evaluate!
-   - Trigger: reference the transition's preconditions from artifact
-   - Computation: What must be calculated?
-     * Deterministic: simple counters, flags, phase changes (no LLM)
-     * LLM-driven: winner determination, scoring with complex rules, narrative outcomes
-   - Mechanics guidance: THIS IS CRITICAL
-     * For any transition involving game rules (scoring, winners, trump, combat):
-       Describe the rules in natural language as ordered steps
-       Example: ["Rock beats scissors", "Scissors beats paper", "Paper beats rock"]
-     * For random events: describe probability distributions and how to apply them
-   - Template variables:
-     * What values must LLM compute? (winnerId, score changes, event outcomes)
-     * What state values are needed in messages? (player names, choices, results)
-   - **⚠️ CRITICAL - Game Completion Fields (Required for ALL games):**
-     * **game.gameEnded** (boolean): At least ONE transition must set this to true
-       - Signals the game has reached a terminal state
-       - Example stateChange: "set game.gameEnded to true"
-       - Typically set in transitions that move to the "finished" phase
-     * **players.{{{{playerId}}}}.isGameWinner** (boolean): Set to true for winning player(s)
-       - Set this boolean flag for each winning player before game ends
-       - Runtime will automatically compute game.winningPlayers from these flags
-       - Example stateChanges:
-         * Single winner: "set winning player's isGameWinner to true"
-         * Tie/multiple winners: "set ALL players tied for the win isGameWinner to true"
-         * No winner/abandoned game: "explicitly set ALL players' isGameWinner to false"
-       - Can be set before gameEnded (e.g., player meets win condition mid-game)
-       - MUST be set on all paths leading to the "finished" phase (except no-winner scenarios)
-       - ⚠️ Validation will fail if any path to "finished" doesn't set isGameWinner appropriately
-     * If game has multiple ending scenarios, EACH ending transition must handle both fields
-
-4. Mechanics Descriptions (Key Guidance):
-   - Keep rules ordered and unambiguous
-   - Use concrete examples when helpful
-   - For trump/hierarchy: list precedence explicitly
-   - For probability: specify ranges and distributions
-   - For complex logic: break into numbered steps
-   
-5. Randomness:
-   - Use "rng" stateDelta operations for random value selection
-   - Define choices array and probabilities array (must sum to 1.0)
-   - **CRITICAL**: Each RNG operation generates ONE value only
-   - To generate multiple random values, use multiple separate RNG operations
-   - Examples:
-     * Single value: {{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
-     * Boolean with bias: {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
-     * Numeric range: {{ "op": "rng", "path": "game.value", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.167, 0.167, 0.166, 0.167, 0.167, 0.166] }}
-     * Multiple values: Use separate operations to different paths or append to array
-   - Router will handle RNG execution before passing instructions to LLM
-
-6. Messaging:
-   - Nearly all actions/transitions need messages
-   - Private: player-specific confirmations, secret info
-   - Public: announcements all players see
-   - Describe PURPOSE not exact wording (executor will create templates)
-
-Example Player Action Hint:
-{{
-  "id": "submit-choice",
-  "actionName": "Submit Choice",
-  "description": "Player submits their RPS choice (rock/paper/scissors)",
-  "stateChanges": ["set player choice", "set actionRequired to false"],
-  "validationNeeded": {{
-    "hasJsonLogicValidation": true,
-    "validationDescription": "Check phase is 'choice', player hasn't submitted yet, choice is valid",
-    "needsLLMValidation": false
-  }},
-  "mechanicsDescription": null,
-  "messaging": {{
-    "needsPrivateMessage": true,
-    "privateMessagePurpose": "Confirm choice to player",
-    "needsPublicMessage": true,
-    "publicMessagePurpose": "Announce player has submitted (without revealing choice)"
-  }},
-  "templateVariables": ["playerId", "input.choice", "playerName"]
-}}
-
-Example Automatic Transition Hint (with mechanics):
-{{
-  "id": "choices-complete",
-  "transitionName": "Choices Complete",
-  "description": "Determine winner based on RPS rules and update scores when both players submitted",
-  "trigger": {{
-    "isDeterministic": true,
-    "triggerDescription": "Both players have submitted choices",
-    "basedOnTransition": "choices-complete"
-  }},
-  "computationNeeded": {{
-    "isDeterministic": false,
-    "computationDescription": "Apply RPS trump rules to determine winner",
-    "requiresLLMReasoning": true,
-    "llmReasoningDescription": "Compare choices using RPS rules, identify winner or tie"
-  }},
-  "mechanicsDescription": "Rock beats scissors. Scissors beats paper. Paper beats rock. If both choose the same, it's a tie (no score change).",
-  "usesRandomness": false,
-  "stateChanges": ["increment winner score", "set phase to reveal", "append to history"],
-  "messaging": {{
-    "needsPublicMessage": true,
-    "publicMessagePurpose": "Reveal both choices and announce winner",
-    "needsPrivateMessages": false
-  }},
-  "templateVariables": ["winnerId", "winnerName", "p1Choice", "p2Choice", "outcome"]
-}}
-
-Return EXACTLY one JSON object matching the InstructionsPlanningResponseSchema.
-
-Include:
-- naturalLanguageSummary: 1-3 sentences about instruction structure
-- phases: EXACT list from transitions.phases array
-- phaseInstructions: array with hints for each phase (using EXACT phase names)
-- globalNotes: any cross-cutting patterns (optional)
+Return EXACTLY one JSON object matching the schema.
 !___ END-CACHE ___!
 
 !___ CACHE:design-spec ___!
@@ -230,19 +43,13 @@ Include:
 
 # Narrative Markers Available
 {narrativeMarkersSection}
-
-**Narrative Markers:**
-Reference available markers using !___ NARRATIVE:MARKER_NAME ___! in mechanicsDescription.
-Expanded at runtime for atmospheric/thematic guidance. Omit for purely mechanical games.
 !___ END-CACHE ___!
 
 !___ CACHE:artifacts ___!
-# ⚠️ USE THESE EXACT PHASE NAMES - DO NOT MODIFY ⚠️
-
+# Phase Names (use exactly as shown)
 {phaseNamesList}
 
-# ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
-
+# Transition IDs (use exactly as shown)
 {transitionIdsList}
 
 # Transitions Artifact
@@ -257,20 +64,6 @@ Expanded at runtime for atmospheric/thematic guidance. Omit for purely mechanica
 !___ END-CACHE ___!
 
 {validationFeedback}
-
----
-
-# ⚠️ FINAL REMINDER - EXACT ID MATCHING ⚠️
-
-Before outputting, verify:
-✓ Every phase name in your output is FROM THE PHASE LIST ABOVE
-✓ Every transition ID in your output is FROM THE TRANSITION ID LIST ABOVE
-✓ You copied them EXACTLY (same capitalization, underscores, hyphens)
-
-If the phase list has "choicePhase", you MUST use "choicePhase" NOT "choice" or "choice_phase".
-If the transition ID list has "both_players_submitted", you MUST use "both_players_submitted" NOT "both-submitted".
-
-Begin output now.
 `;
 
 /**
@@ -464,42 +257,25 @@ Common variable patterns:
 - Example: {{ "op": "set", "path": "game.gameEnded", "value": true }}
 - Missing this will cause validation failure: "No transition sets game.gameEnded=true"
 
-**players.{{{{playerId}}}}.isGameWinner** (boolean) - MUST be set in game-ending transitions:
-- ⚠️ CRITICAL: At least ONE transition MUST set isGameWinner (validation will fail otherwise)
-- ⚠️ CRITICAL: Set isGameWinner on ALL paths leading to "finished" phase (including no-winner 
-  scenarios)
+**players.{{{{playerId}}}}.isGameWinner** (boolean) - Set to true for winning player(s):
+- ⚠️ CRITICAL: MUST be set on ALL paths to the "finished" phase (except no-winner scenarios)
+- Set to true for each player who won the game
+- Leave as false (default) for players who didn't win or in draw scenarios
 - Runtime automatically computes game.winningPlayers array from these flags
 - Can be set in same transition as gameEnded OR in an earlier transition
-- **DO NOT** leave isGameWinner unset - validation requires explicit set operations
+- Examples:
+  * Single winner: {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }}
+  * Multiple winners (tie): Two ops - {{ "op": "set", "path": "players.{{{{player1Id}}}}.isGameWinner", "value": true }} and {{ "op": "set", "path": "players.{{{{player2Id}}}}.isGameWinner", "value": true }}
+  * No winner (draw/abandoned): No operations needed - all flags remain false
+- Missing this will cause validation failure: "Path [phases] does not set isGameWinner"
 - If game has multiple ending scenarios, EACH ending transition must set isGameWinner appropriately
 
-**Complete Examples (game-ending transitions with BOTH required fields):**
-
-Single Winner:
+**Example: Complete game-ending transition stateDelta (sets BOTH required fields)**:
 {{
   "stateDelta": [
     {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
     {{ "op": "set", "path": "game.gameEnded", "value": true }},
-    {{ "op": "set", "path": "game.publicMessage", "value": "{{{{winnerName}}}} wins!" }}
-  ]
-}}
-
-Tie (Multiple Winners - ALL tied players set to true):
-{{
-  "stateDelta": [
-    {{ "op": "set", "path": "players.{{{{player1Id}}}}.isGameWinner", "value": true }},
-    {{ "op": "set", "path": "players.{{{{player2Id}}}}.isGameWinner", "value": true }},
-    {{ "op": "set", "path": "game.gameEnded", "value": true }},
-    {{ "op": "set", "path": "game.publicMessage", "value": "It's a tie! Both players win!" }}
-  ]
-}}
-
-No Winner (Abandoned/Stalemate - explicitly set ALL to false):
-{{
-  "stateDelta": [
-    {{ "op": "setForAllPlayers", "field": "isGameWinner", "value": false }},
-    {{ "op": "set", "path": "game.gameEnded", "value": true }},
-    {{ "op": "set", "path": "game.publicMessage", "value": "Game ended with no winner." }}
+    {{ "op": "set", "path": "game.publicMessage", "value": "Game Over! {{{{winnerName}}}} wins!" }}
   ]
 }}
 
