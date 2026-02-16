@@ -25,6 +25,14 @@ beyond the provided base schema. Each field entry must be an object with the fol
    - "purpose" (string): one short phrase (<=10 words) explaining why it is required
    - "constraints" (optional string): e.g. "enum:[rock,paper,scissors]" or "maxItems:3"
 
+⚠️ IMPORTANT: BASE SCHEMA FIELDS ALREADY PROVIDED
+The following fields are already available in the base schema and should NOT be redefined:
+<base_schema_fields>
+{baseSchemaFields}
+</base_schema_fields>
+
+Only add NEW fields that are specific to this game and not already covered by the base schema.
+
 Rules for the planner output:
 - Do NOT output full JSON schemas or example state objects
 - Do not include histories unless explicitly required by the game spec.  Prefer cumulative

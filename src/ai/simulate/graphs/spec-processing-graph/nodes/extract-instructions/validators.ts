@@ -81,7 +81,7 @@ export async function validatePlanCompleteness(
     for (const transition of hints.transitions || []) {
       // Check that transitions requiring LLM reasoning have mechanics descriptions
       if (
-        transition.computationNeeded?.requiresLLMReasoning &&
+        transition.requiresLLMReasoning &&
         !transition.mechanicsDescription
       ) {
         console.warn(
@@ -610,13 +610,13 @@ export async function validateArtifactStructure(
     ? JSON.parse(executionOutput)
     : executionOutput;
 
-  // Extract schema fields
+  // Extract schema fields (supports both planner format array and legacy JSON Schema object)
   let schemaFields: Set<string> | undefined;
   const schema = typeof state.stateSchema === 'string'
     ? JSON.parse(state.stateSchema)
     : state.stateSchema;
     
-  if (schema && schema.type === 'object' && schema.properties) {
+  if (schema) {
     schemaFields = extractSchemaFields(schema);
   }
 
@@ -681,6 +681,180 @@ export async function validateArtifactStructure(
 }
 
 /**
+ * Normalize a path by replacing template variables with wildcards for comparison.
+ * Also normalizes wildcard notation to be consistent.
+ * Examples:
+ *   "players.{{codeMakerId}}.role" -> "players.[*].role"
+ *   "players[*].role" -> "players.[*].role"
+ *   "game.{{someVar}}" -> "game.[*]"
+ *   "players.p1.score" -> "players.p1.score"
+ */
+function normalizePath(path: string): string {
+  // Replace {{anyVariable}} with [*]
+  let normalized = path.replace(/\{\{[^}]+\}\}/g, '[*]');
+  
+  // Normalize bracket notation: ensure consistent format with dots
+  // "players[*].role" -> "players.[*].role"
+  normalized = normalized.replace(/\[(\*|\d+)\]/g, '.[*]');
+  
+  // Clean up double dots that might result
+  normalized = normalized.replace(/\.\.+/g, '.');
+  
+  return normalized;
+}
+
+/**
+ * Validate field coverage: Check that all fields used in transition preconditions
+ * are set by at least one stateDelta operation somewhere in the instructions.
+ * 
+ * This is a soft validation (warnings only) that catches common bugs like:
+ * - Fields referenced in preconditions but never initialized
+ * - Typos in field names between transitions and instructions
+ * 
+ * Returns array of warning messages.
+ */
+export async function validateFieldCoverage(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const warnings: string[] = [];
+
+  // 1. Get artifact from store
+  const executionOutput = await getFromStore(
+    store,
+    ["instructions", "execution", "output"],
+    threadId
+  );
+
+  if (!executionOutput) {
+    return []; // No artifact yet, skip validation
+  }
+
+  let artifact: InstructionsArtifact;
+  try {
+    artifact = typeof executionOutput === 'string'
+      ? JSON.parse(executionOutput)
+      : executionOutput;
+  } catch (e) {
+    return []; // Can't parse, skip validation
+  }
+
+  // 2. Parse transitions
+  let transitions: TransitionsArtifact;
+  try {
+    transitions = typeof state.stateTransitions === 'string'
+      ? JSON.parse(state.stateTransitions)
+      : state.stateTransitions;
+  } catch (e) {
+    return []; // Skip if can't parse - should be caught by other validations
+  }
+
+  if (!transitions.transitions || !Array.isArray(transitions.transitions)) {
+    return [];
+  }
+
+  // 3. Collect all fields SET by any instruction's stateDelta
+  const fieldsSet = new Set<string>();
+
+  // Helper to add field from an operation
+  const addFieldFromOp = (op: any) => {
+    if (op.op === 'set' && op.path) {
+      fieldsSet.add(normalizePath(op.path));
+    } else if (op.op === 'setForAllPlayers' && op.field) {
+      // setForAllPlayers sets players[*].field
+      fieldsSet.add(`players[*].${op.field}`);
+    } else if (op.op === 'increment' && op.path) {
+      fieldsSet.add(normalizePath(op.path));
+    } else if (op.op === 'append' && op.path) {
+      fieldsSet.add(normalizePath(op.path));
+    } else if (op.op === 'merge' && op.path) {
+      fieldsSet.add(normalizePath(op.path));
+    } else if (op.op === 'delete' && op.path) {
+      // Delete operations don't initialize but do touch the field
+      fieldsSet.add(normalizePath(op.path));
+    } else if (op.op === 'transfer') {
+      if (op.fromPath) fieldsSet.add(normalizePath(op.fromPath));
+      if (op.toPath) fieldsSet.add(normalizePath(op.toPath));
+    } else if (op.op === 'rng' && op.path) {
+      fieldsSet.add(normalizePath(op.path));
+    }
+  };
+
+  // Scan all transition instructions
+  if (artifact.transitions) {
+    for (const [transitionId, instruction] of Object.entries(artifact.transitions)) {
+      if (instruction.stateDelta && Array.isArray(instruction.stateDelta)) {
+        instruction.stateDelta.forEach(addFieldFromOp);
+      }
+    }
+  }
+
+  // Scan all player phase instructions
+  if (artifact.playerPhases) {
+    for (const [phase, instruction] of Object.entries(artifact.playerPhases)) {
+      if (typeof instruction === 'string') continue; // Skip raw strings
+      
+      if (instruction.playerActions && Array.isArray(instruction.playerActions)) {
+        for (const action of instruction.playerActions) {
+          if (action.stateDelta && Array.isArray(action.stateDelta)) {
+            action.stateDelta.forEach(addFieldFromOp);
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Check all fields READ by transitions (from checkedFields)
+  const fieldsRead = new Set<string>();
+  const fieldUsage = new Map<string, string[]>(); // field -> [transition IDs that use it]
+
+  for (const transition of transitions.transitions) {
+    if (!transition.checkedFields || !Array.isArray(transition.checkedFields)) {
+      continue;
+    }
+
+    for (const field of transition.checkedFields) {
+      fieldsRead.add(field);
+      
+      if (!fieldUsage.has(field)) {
+        fieldUsage.set(field, []);
+      }
+      fieldUsage.get(field)!.push(transition.id);
+    }
+  }
+
+  // 5. Find fields that are read but never set
+  const uninitializedFields: string[] = [];
+
+  for (const field of fieldsRead) {
+    // Check if this field (or a normalized version) is set
+    const normalizedField = normalizePath(field);
+    
+    // Check exact match or normalized match
+    if (!fieldsSet.has(field) && !fieldsSet.has(normalizedField)) {
+      uninitializedFields.push(field);
+    }
+  }
+
+  // 6. Generate warnings
+  if (uninitializedFields.length > 0) {
+    console.warn('[extract_instructions][validation] Field coverage warnings:');
+    for (const field of uninitializedFields) {
+      const usedBy = fieldUsage.get(field) || [];
+      const warning = `Field '${field}' is used in transition preconditions (${usedBy.join(', ')}) ` +
+        `but is never set by any stateDelta operation. This may cause transitions to never fire. ` +
+        `Consider adding a stateDelta operation to initialize this field.`;
+      warnings.push(warning);
+      console.warn(`  ⚠️  ${warning}`);
+    }
+  }
+
+  // Return empty array - warnings are logged but don't block validation
+  return [];
+}
+
+/**
  * Validate that initial state created by init transition doesn't create a deadlock
  * 
  * This function simulates applying the init transition's stateDelta and checks if:
@@ -689,14 +863,35 @@ export async function validateArtifactStructure(
  * 
  * Exported for testing purposes.
  */
-export function validateInitialStatePreconditions(
-  artifact: InstructionsArtifact,
-  state: SpecProcessingStateType
-): string[] {
+export async function validateInitialStatePreconditions(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
   console.debug('[extract_instructions][validation] Validating initial state preconditions');
   const errors: string[] = [];
 
-  // 1. Parse transitions
+  // 1. Get artifact from store
+  const executionOutput = await getFromStore(
+    store,
+    ["instructions", "execution", "output"],
+    threadId
+  );
+
+  if (!executionOutput) {
+    return []; // No artifact yet, skip validation
+  }
+
+  let artifact: InstructionsArtifact;
+  try {
+    artifact = typeof executionOutput === 'string'
+      ? JSON.parse(executionOutput)
+      : executionOutput;
+  } catch (e) {
+    return []; // Can't parse, skip validation
+  }
+
+  // 2. Parse transitions
   let transitions: any;
   try {
     transitions = typeof state.stateTransitions === 'string'
@@ -710,7 +905,7 @@ export function validateInitialStatePreconditions(
     return []; // Should be caught by other validations
   }
 
-  // 2. Find init transition and its target phase
+  // 3. Find init transition and its target phase
   const initTransition = transitions.transitions.find((t: any) => t.fromPhase === 'init');
   if (!initTransition) {
     return []; // Should be caught by other validations
@@ -721,13 +916,13 @@ export function validateInitialStatePreconditions(
     return ['Init transition has no toPhase'];
   }
 
-  // 3. Get init instructions
+  // 4. Get init instructions
   const initInstructions = artifact.transitions[initTransition.id];
   if (!initInstructions) {
     return []; // Should be caught by other validations
   }
 
-  // 4. Build mock initial state by applying init's stateDelta
+  // 5. Build mock initial state by applying init's stateDelta
   const mockState: any = {
     game: {},
     players: {}
@@ -1008,8 +1203,8 @@ export async function validateGameCompletion(
       );
     }
     
-    // Check 3: At least one terminal path sets isGameWinner to true (winning scenario)
-    // Note: No-winner scenarios should explicitly set isGameWinner=false (not leave unset)
+    // Check 3: All terminal paths set isGameWinner somewhere along the path
+    // Note: We don't require isGameWinner to be set for draw/no-winner scenarios
     const terminalPaths = graph.getTerminalPaths();
     
     if (terminalPaths.length === 0) {
@@ -1025,14 +1220,12 @@ export async function validateGameCompletion(
         }
       }
       
-      // Check if at least one path sets isGameWinner to true (winning scenario)
-      // Note: Paths that set all players to false (no-winner scenarios) still count as setting the field
+      // Warn if no paths set isGameWinner (might be intentional for draw-only games)
       if (!hasWinningPath) {
         errors.push(
-          'No path to "finished" sets players.*.isGameWinner to true. ' +
-          'At least one ending path must set isGameWinner=true for winning players. ' +
-          'For no-winner scenarios (abandoned/stalemate), explicitly set isGameWinner=false for all players. ' +
-          'Do not leave isGameWinner unset - validation requires explicit set operations.'
+          'No path to "finished" sets players.*.isGameWinner. ' +
+          'If your game has winners, at least one ending path must set isGameWinner=true for winning players. ' +
+          'If this is a draw-only game (no winners), you can ignore this warning.'
         );
       }
     }

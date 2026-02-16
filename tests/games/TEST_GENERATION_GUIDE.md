@@ -530,28 +530,16 @@ await executeGameTest(test, scenario2, gameId); // Reuses artifacts
 **Running Tests:**
 
 ```bash
-# Generate fresh artifacts and run all scenarios
-npm run test:game rps
-
-# Run a specific scenario from a test file
-npm run test:game rps -- --scenario="Happy path scenario name"
-
-# Reuse existing artifacts for faster iteration/debugging
-npm run test:game rps -- --gameId=rps-1734480000000-abc123
-
-# Run specific scenario with reused artifacts
-npm run test:game rps -- --scenario="Happy path scenario name" --gameId=rps-1734480000000-abc123
-
-# Run with Jest (single scenario)
+# Run all test scenarios
 npm run test:harness
 
-# Run with Jest and reuse artifacts
+# Run with reused artifacts (faster iteration/debugging)
 GAME_ID=rps-1734480000000-abc123 npm run test:harness
 
-# Run with Jest and specific scenario
+# Run a specific scenario
 SCENARIO="Happy path scenario name" npm run test:harness
 
-# Run with Jest, both scenario and gameId
+# Run with both specific scenario and reused artifacts
 GAME_ID=rps-1734480000000-abc123 SCENARIO="Happy path scenario name" npm run test:harness
 ```
 
@@ -577,15 +565,18 @@ scenarios: [
 **Examples:**
 
 ```bash
-# Run just the first scenario
-npm run test:game rps -- --scenario="Player wins by reaching 10 points"
+# Run a specific scenario
+SCENARIO="Player wins by reaching 10 points" npm run test:harness
 
 # Run a specific scenario with existing artifacts (fast iteration)
-npm run test:game rps -- --scenario="Edge case: tie game" --gameId=rps-1734480000000-abc123
+GAME_ID=rps-1734480000000-abc123 SCENARIO="Edge case: tie game" npm run test:harness
 
 # Debug a specific scenario with full logging
 SCENARIO="Player loses on illegal action" npm run test:harness 2>&1 | tee debug.log
 ```
+
+## Asking Copilot to Generate Tests
+
 When asking Copilot to generate a test file:
 
 1. Provide the full game specification

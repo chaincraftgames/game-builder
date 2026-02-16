@@ -1,12 +1,10 @@
 /**
  * Instructions Extraction Configuration
- * 
- * Exports node configuration for instructions extraction with planner/executor pattern
  */
 
 import { setupSpecInstructionsModel } from "#chaincraft/ai/model-config.js";
-import { instructionsPlannerNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/planner.js";
-import { instructionsExecutorNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/executor.js";
+import { instructionsPlannerNode } from "./planner.js";
+import { instructionsExecutorNode } from "./executor.js";
 import {
   validatePlanCompleteness,
   validateJsonParseable,
@@ -18,13 +16,11 @@ import {
   validatePathStructure,
   validateGameCompletion,
   validatePhaseConnectivity,
-} from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/validators.js";
-import { getFromStore, NodeConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
-import { InstructionsArtifact } from "#chaincraft/ai/simulate/schema.js";
-import { resolvePositionalPlayerTemplates } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/utils.js";
-
-// Re-export validateInitialStatePreconditions for testing
-export { validateInitialStatePreconditions } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/validators.js";
+  validateFieldCoverage,
+} from "./validators.js";
+import { NodeConfig, getFromStore } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
+import { resolvePositionalPlayerTemplates } from "./utils.js";
+import type { InstructionsArtifact } from "#chaincraft/ai/simulate/schema.js";
 
 export const instructionsExtractionConfig: NodeConfig = {
   namespace: "instructions",
@@ -32,9 +28,7 @@ export const instructionsExtractionConfig: NodeConfig = {
   planner: {
     node: instructionsPlannerNode,
     model: await setupSpecInstructionsModel(),
-    validators: [
-      validatePlanCompleteness
-    ]
+    validators: [validatePlanCompleteness]
   },
   
   executor: {
@@ -48,8 +42,10 @@ export const instructionsExtractionConfig: NodeConfig = {
       validateInitializationCompleteness,
       validateActionRequiredSet,
       validateNarrativeMarkers,
+      validateInitialStatePreconditions,
       validateGameCompletion,
-    ]
+      validateFieldCoverage,
+    ],
   },
   
   maxAttempts: {

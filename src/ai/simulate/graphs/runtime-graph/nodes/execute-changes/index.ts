@@ -94,6 +94,7 @@ export function executeChanges(model: ModelWithOptions) {
     
     // Apply the resolved stateDelta operations from LLM to get llmState
     let llmState = canonicalState;
+    let llmTouchedPaths = new Set<string>();
     
     if (llmResponse.stateDelta.length > 0) {
       // Transform operations from aliases (p1, p2) to UUIDs before applying
@@ -111,6 +112,8 @@ export function executeChanges(model: ModelWithOptions) {
       }
       
       llmState = result.newState!;
+      llmTouchedPaths = result.touchedPaths;
+      console.debug(`[execute_changes] LLM touched ${llmTouchedPaths.size} paths`);
     }
     
     // Apply deterministic operations directly to canonical state
@@ -133,10 +136,12 @@ export function executeChanges(model: ModelWithOptions) {
       
       // Merge: LLM state + deterministic overrides
       // Use transformed ops so setByPath uses UUID paths, not alias paths
+      // Skip overriding paths that LLM explicitly touched to preserve LLM's computed values
       updatedState = mergeDeterministicOverrides(
         llmState,
         deterministicState,
-        transformedDeterministicOps
+        transformedDeterministicOps,
+        llmTouchedPaths
       );
       
       console.log("[execute_changes] Deterministic overrides applied successfully");

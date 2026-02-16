@@ -15,10 +15,9 @@ import {
   putToStore,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import {
-  extractFieldsFromJsonSchema,
-  formatFieldsListForPrompt,
   formatComputedContextForPrompt,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/utils.js";
+import { extractSchemaFields } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js";
 
 /**
  * Initial transitions template with required init phase and transition.
@@ -68,10 +67,9 @@ export function transitionsPlannerNode(model: ModelWithOptions) {
     const threadId = config?.configurable?.thread_id || "default";
 
     // Extract fields from schema for explicit field list
-    const availableFields = extractFieldsFromJsonSchema(
-      String(state.stateSchema ?? "{}")
-    );
-    const fieldsListForPrompt = formatFieldsListForPrompt(availableFields);
+    const schemaFields = JSON.parse(String(state.stateSchema ?? "[]"));
+    const availableFields = extractSchemaFields(schemaFields);
+    const fieldsListForPrompt = Array.from(availableFields).sort().map(f => `  • ${f}`).join('\n');
     const computedContextForPrompt = formatComputedContextForPrompt();
 
     // Generate planner analysis

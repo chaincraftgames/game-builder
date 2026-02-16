@@ -19,11 +19,8 @@ import {
   incrementAttemptCount,
   putToStore,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
-import {
-  extractFieldsFromJsonSchema,
-  formatFieldsListForPrompt,
-  formatComputedContextForPrompt,
-} from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/utils.js";
+import { formatComputedContextForPrompt } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/utils.js";
+import { extractSchemaFields } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js";
 
 export function transitionsExecutorNode(model: ModelWithOptions) {
   return async (
@@ -58,10 +55,9 @@ export function transitionsExecutorNode(model: ModelWithOptions) {
     }
 
     // Extract fields from schema for explicit field list
-    const availableFields = extractFieldsFromJsonSchema(
-      String(state.stateSchema ?? "{}")
-    );
-    const fieldsListForPrompt = formatFieldsListForPrompt(availableFields);
+    const schemaFields = JSON.parse(String(state.stateSchema ?? "[]"));
+    const availableFields = extractSchemaFields(schemaFields);
+    const fieldsListForPrompt = Array.from(availableFields).sort().map(f => `  • ${f}`).join('\n');
     const computedContextForPrompt = formatComputedContextForPrompt();
 
     // Generate transitions from plan

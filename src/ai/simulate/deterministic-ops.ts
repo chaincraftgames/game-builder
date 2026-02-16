@@ -238,35 +238,50 @@ export function applyDeterministicOperations(
 
 /**
  * Merge LLM-generated state with deterministically-applied state.
- * Deterministic operations override LLM's values for those specific fields.
+ * Deterministic operations override LLM's values EXCEPT for paths the LLM explicitly touched.
  * 
  * Strategy: Start with LLM state, then override specific fields that were
- * touched by deterministic operations.
+ * touched by deterministic operations, BUT skip any paths the LLM already set.
+ * This preserves LLM's computed values (including expanded operations like setForAllPlayers)
+ * while still applying deterministic overrides for fields the LLM didn't touch.
  * 
  * @param llmState - State returned by LLM (may have forgotten some ops)
  * @param deterministicState - State after applying deterministic ops
  * @param deterministicOps - The operations that were applied deterministically
- * @returns Merged state with deterministic overrides
+ * @param llmTouchedPaths - Set of paths the LLM explicitly modified
+ * @returns Merged state with deterministic overrides (skipping LLM-touched paths)
  */
 export function mergeDeterministicOverrides(
   llmState: BaseRuntimeState,
   deterministicState: BaseRuntimeState,
-  deterministicOps: StateDeltaOp[]
+  deterministicOps: StateDeltaOp[],
+  llmTouchedPaths: Set<string> = new Set()
 ): BaseRuntimeState {
   if (deterministicOps.length === 0) {
     return llmState; // No overrides needed
   }
   
-  console.log(`[deterministic-ops] Merging with ${deterministicOps.length} deterministic overrides`);
+  console.log(`[deterministic-ops] Merging with ${deterministicOps.length} deterministic overrides (skipping ${llmTouchedPaths.size} LLM-touched paths)`);
   
   // Start with LLM's state (has all computed fields)
   const merged = JSON.parse(JSON.stringify(llmState)); // Deep clone
   
+  let skippedCount = 0;
+  
   // For each deterministic op, override the specific field from deterministic state
+  // UNLESS the LLM already set that path
   for (const op of deterministicOps) {
     // Handle transfer operations (have fromPath/toPath, not path)
     if (op.op === 'transfer') {
       const transferOp = op as any;
+      
+      // Skip if LLM touched the toPath
+      if (llmTouchedPaths.has(transferOp.toPath)) {
+        console.debug(`[deterministic-ops] Skipping transfer to ${transferOp.toPath} (LLM touched)`);
+        skippedCount++;
+        continue;
+      }
+      
       // For transfer, override the toPath with the value from deterministic state
       const value = getByPath(deterministicState, transferOp.toPath);
       setByPath(merged, transferOp.toPath, value);
@@ -275,9 +290,22 @@ export function mergeDeterministicOverrides(
     
     // For operations with 'path' property
     if ('path' in op) {
-      const value = getByPath(deterministicState, op.path);
-      setByPath(merged, op.path, value);
+      const path = (op as any).path;
+      
+      // Skip if LLM touched this path
+      if (llmTouchedPaths.has(path)) {
+        console.debug(`[deterministic-ops] Skipping override for ${path} (LLM touched)`);
+        skippedCount++;
+        continue;
+      }
+      
+      const value = getByPath(deterministicState, path);
+      setByPath(merged, path, value);
     }
+  }
+  
+  if (skippedCount > 0) {
+    console.log(`[deterministic-ops] Skipped ${skippedCount} deterministic overrides to preserve LLM values`);
   }
   
   return merged;

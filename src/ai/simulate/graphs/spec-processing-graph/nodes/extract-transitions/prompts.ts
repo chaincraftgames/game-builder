@@ -62,11 +62,57 @@ Don't create phases that only exist to trigger one automatic transition. Merge t
 - ❌ Wrong: phase_a → [trivial transition] → phase_b → [does actual work] → phase_c
 - ✅ Right: phase_a → [does all work] → phase_c
 
-### 5. Game-Ending Transitions MUST Set Winner
+### 5. Avoid Duplicate Player-Specific Phases
+If multiple players take the same action in sequence, DO NOT create separate phases per player.
+Instead, use a SINGLE parameterized phase with dynamic player identification.
 
-⚠️ **CRITICAL**: Every path to "finished" must explicitly set the game winner. Any transition that determines winners MUST include "set isGameWinner" guidance in its \`humanSummary\` or validation will fail.
+❌ Wrong: Separate phases for each player
+\`\`\`json
+{{
+  "phases": ["init", "player1_selecting", "player2_selecting", "resolution", "finished"],
+  "transitionCandidates": [
+    {{ "id": "p1_selected", "fromPhase": "player1_selecting", "toPhase": "player2_selecting" }},
+    {{ "id": "p2_selected", "fromPhase": "player2_selecting", "toPhase": "resolution" }}
+  ]
+}}
+\`\`\`
 
-Example: "After round 3, determine winner by closest guess, set isGameWinner=true for winner and false for others, then end game"
+✅ Right: Single parameterized phase using computed context
+\`\`\`json
+{{
+  "phases": ["init", "player_selecting", "resolution", "finished"],
+  "transitionCandidates": [
+    {{ 
+      "id": "start_selection",
+      "fromPhase": "init", 
+      "toPhase": "player_selecting",
+      "preconditionHints": [{{"explain": "game.currentPhase == 'init'"}}]
+    }},
+    {{ 
+      "id": "next_player", 
+      "fromPhase": "player_selecting", 
+      "toPhase": "player_selecting",
+      "preconditionHints": [{{"explain": "currentPlayerCompleted == true AND allPlayersCompleted == false"}}]
+    }},
+    {{ 
+      "id": "all_selected", 
+      "fromPhase": "player_selecting", 
+      "toPhase": "resolution",
+      "preconditionHints": [{{"explain": "allPlayersCompletedActions == true"}}]
+    }}
+  ]
+}}
+\`\`\`
+
+Key advantages:
+- Reduces phase count by N-1 (where N = player count)
+- Single instruction set works for all players
+- Uses computed context fields: currentPlayerTurnId, allPlayersCompletedActions
+- Phase loops until all players complete, then transitions
+
+Similarly for round-based phases:
+❌ Wrong: "round1_scoring", "round2_scoring", "round3_scoring"
+✅ Right: "scoring" with game.currentRound field and loop transitions
 
 ### 6. Precondition Hints (for executor synthesis)
 When writing \`explain\` text for preconditionHints, follow these rules so executor can synthesize valid JsonLogic:
@@ -259,6 +305,19 @@ Player IDs at runtime are UUIDs, not \`player1\` or \`p1\`. Direct references li
 - Format: \`{{"lookup": [collectionExpr, indexExpr]}}\`
 - Example: \`{{"lookup": [{{"var": "game.choicesPerTurn"}}, {{"var": "game.currentTurn"}}]}}\`
 - Use ONLY when index is dynamic. For literals use dot notation.
+
+\`length\`: Get length of string or array
+- Format: \`{{"length": valueExpr}}\`
+- Example: \`{{"length": {{"var": "game.secretWord"}}}}\` returns string length
+- Example: \`{{">=": [{{"length": {{"var": "game.history"}}}}, 5]}}\` checks if array has 5+ items
+
+⚠️ CRITICAL: These are the ONLY supported operations. DO NOT invent new operations like:
+- ❌ \`matches\`, \`matchesIgnoreCase\`, \`regex\` (not supported - handle validation in mutation logic instead)
+- ❌ \`anyPlayerField\`, \`getPlayer\`, \`findPlayer\` (invalid - use anyPlayer/allPlayers operators)
+- ❌ Any other custom operations not listed above
+
+**For operations not supported (regex, case-insensitive comparison, etc.):**
+The mutation logic will handle these validations. Your preconditions should check simpler deterministic conditions.
 
 ⚠️ Use ARRAY format for custom ops: ["field", "op", value], NOT object format
 
