@@ -105,8 +105,7 @@ Please limit the description to 600 characters.`,
 };
 
 /**
- * Token image generation (direct prompt, no LLM description step).
- * Single-step: token description + data are injected directly into the prompt.
+ * Token image generation (two-step: LLM converts narrative to visual descriptors, then Leonardo generates).
  */
 export const TOKEN_IMAGE_CONFIG: ImageGenConfig = {
   leonardo: {
@@ -116,43 +115,42 @@ export const TOKEN_IMAGE_CONFIG: ImageGenConfig = {
     numImages: 1,
     apiKey: LEO_API_KEY,
   },
-  promptTemplate: `
-Data for the image to be generated:
-{token_description}
+  promptTemplate: `A vintage retro video game trading card illustration.
 
-{token_data}  
+{image_description}
 
-vintage retro video game trading card full card illustration, vertical 
-2:3, bold illustrated border inspired by 1980s and 1990s video game 
-box art, chunky painted frame with bright primary color accents, bold 
-geometric corner details, slightly worn printed cardboard texture on 
-frame edges only, vivid limited color palette feel, symmetrical card 
-layout, the upper two-thirds of the card features a painted portrait 
-of the character, item, ability, or achievement described above, 
-rendered in vintage retro video game box art 
-illustration style, vivid saturated colors, dramatic but flat 
-studio-style lighting with no heavy shadows, clean cel-shaded edges, 
-the portrait blends naturally into a subtle bold color atmospheric 
-background with no hard borders or inset frames around the portrait 
-area, seamlessly flush with generous room on all sides, the lower 
-third is a clean flat darker footer panel matching the card palette, 
-completely empty, no text, no icons; decorative border surrounds 
-card exterior only, no text or symbols anywhere, no harsh shadows 
-on card interior, square portrait composition
-`,
-  negativePrompt: `
-    text, letters, words, numbers, stats, icons, logos, watermarks, UI 
+Card style: vertical 2:3 trading card, bold illustrated border inspired by 
+1980s-1990s video game box art, chunky painted frame with bright primary 
+color accents, bold geometric corner details, slightly worn printed cardboard 
+texture on frame edges only, vivid limited color palette. The upper two-thirds 
+features a painted portrait of the described character in vintage retro video 
+game box art illustration style, vivid saturated colors, dramatic but flat 
+studio-style lighting, clean cel-shaded edges. The portrait blends naturally 
+into a subtle bold color atmospheric background with no hard borders. The 
+lower third is a clean flat darker footer panel, completely empty, no text, 
+no icons. Decorative border surrounds card exterior only, no text or symbols 
+anywhere.`,
+  negativePrompt: `text, letters, words, numbers, stats, icons, logos, watermarks, UI 
 labels, stat boxes, inner border, inset frame, raised edge, bevel, 
-stroke around image zone, recessed panel, shadow around rectangle, 
-frame within frame, dark vignette, lighting gradient in center zone, 
-glow inside image area, texture inside image zone, shadows in art 
-area, realistic photography, hyper-detailed rendering, photorealistic 
-materials, blurry, noise, low quality, asymmetric design, multiple 
-characters, busy background, detailed background, ground or floor 
-visible
+frame within frame, dark vignette, realistic photography, 
+hyper-detailed rendering, photorealistic materials, blurry, noise, 
+low quality, asymmetric design, multiple characters, busy background, 
+detailed background, ground or floor visible`,
+  descriptionSystemPrompt: `You are a visual concept artist who translates character descriptions into concise visual descriptors for an image generation AI.
 
-  `,
-  // No descriptionSystemPrompt → single-step direct prompt
+Given a game token description and its data, produce a SHORT visual description (max 400 characters) that focuses ONLY on:
+- Physical appearance (shape, color, texture, size, materials)
+- Pose or stance
+- Key visual attributes that convey abilities or personality
+- Mood and color palette
+
+Rules:
+- Use visual descriptors only, NOT narrative sentences
+- Do NOT include any text, titles, names, labels, or words that should appear in the image
+- Do NOT repeat the input verbatim — translate it into what the character LOOKS LIKE
+- Be specific and concrete (e.g. "chrome two-slot toaster with glowing red eyes" not "a sentient toaster")
+- Keep it under 400 characters`,
+  descriptionMaxChars: 400,
 };
 
 // ── Service functions ─────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import {
-  generateImageDirect,
+  generateImageWithDescription,
   TOKEN_IMAGE_CONFIG,
 } from "#chaincraft/ai/image-gen/image-gen-service.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
@@ -930,9 +930,9 @@ export async function generateTokenImage(
     throw new Error(`Token type '${tokenType}' not found in configuration.`);
   }
 
-  // Format token data as readable key-value pairs for the prompt
-  const tokenDataStr = Object.entries(token.data)
-    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+  // Format token data as values only (strip field keys which are machine artifacts)
+  const tokenDataStr = Object.values(token.data)
+    .map((value) => typeof value === "string" ? value : JSON.stringify(value))
     .join("\n");
 
   console.log(
@@ -942,11 +942,12 @@ export async function generateTokenImage(
     tokenDataStr,
   );
 
-  const imageUrl = await generateImageDirect(
-    {
-      token_description: tokenDefinition.description,
-      token_data: tokenDataStr,
-    },
+  // Build context for LLM: token description + player's data
+  const contextText = `Token type: ${tokenDefinition.description}\n\nToken data:\n${tokenDataStr}`;
+
+  const imageUrl = await generateImageWithDescription(
+    contextText,
+    {},
     TOKEN_IMAGE_CONFIG,
   );
 
