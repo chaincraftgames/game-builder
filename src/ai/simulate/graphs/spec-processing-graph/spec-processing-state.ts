@@ -49,6 +49,11 @@ export const SpecProcessingState = Annotation.Root({
     default: () => ({}),
   }),
 
+  producedTokensConfiguration: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => "",
+  }),
+
   // Example state for schema generation
   exampleState: Annotation<string>({
     reducer: (_, y) => y,
@@ -75,6 +80,15 @@ export const SpecProcessingState = Annotation.Root({
   }),
 
   instructionsValidationErrors: Annotation<string[] | null | undefined>({
+    reducer: (x, y) => {
+      if (y === null) return null;              // explicit clear
+      if (y === undefined) return x;            // not mentioned, keep existing
+      return [...(x || []), ...y];              // accumulate new errors
+    },
+    default: () => undefined,
+  }),
+
+  producedTokensValidationErrors: Annotation<string[] | null | undefined>({
     reducer: (x, y) => {
       if (y === null) return null;              // explicit clear
       if (y === undefined) return x;            // not mentioned, keep existing

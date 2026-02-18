@@ -4,6 +4,8 @@ import {
   handleInitializeSimulation,
   handleProcessAction,
   handleGetSimulationState,
+  handleProduceToken,
+  handleGenerateTokenImage,
 } from "./handler.js";
 import {
   CreateSimulationRequestSchema,
@@ -14,6 +16,10 @@ import {
   ProcessActionResponseSchema,
   GetSimulationStateRequestSchema,
   GetSimulationStateResponseSchema,
+  ProduceTokenResponseSchema,
+  ProduceTokenRequestSchema,
+  GenerateTokenImageRequestSchema,
+  GenerateTokenImageResponseSchema,
 } from "#chaincraft/api/simulate/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -81,5 +87,37 @@ export async function registerSimulateRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetSimulationState,
+  });
+
+  server.post("/produce-token", {
+    schema: {
+      body: zodToJsonSchema(
+        ProduceTokenRequestSchema,
+        "produceTokenRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          ProduceTokenResponseSchema,
+          "produceTokenResponse"
+        ),
+      },
+    },
+    handler: handleProduceToken,
+  });
+
+  server.post("/generate-token-image", {
+    schema: {
+      body: zodToJsonSchema(
+        GenerateTokenImageRequestSchema,
+        "generateTokenImageRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          GenerateTokenImageResponseSchema,
+          "generateTokenImageResponse"
+        ),
+      },
+    },
+    handler: handleGenerateTokenImage,
   });
 }

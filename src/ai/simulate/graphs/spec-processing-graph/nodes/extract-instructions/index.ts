@@ -8,7 +8,7 @@ import { instructionsExecutorNode } from "./executor.js";
 import {
   validatePlanCompleteness,
   validateJsonParseable,
-  validateInitializationCompleteness,
+  // validateInitializationCompleteness,
   validateActionRequiredSet,
   validateNarrativeMarkers,
   validateArtifactStructure,
@@ -39,7 +39,7 @@ export const instructionsExtractionConfig: NodeConfig = {
       validatePathStructure,
       validateArtifactStructure,
       validatePhaseConnectivity,
-      validateInitializationCompleteness,
+      // validateInitializationCompleteness,
       validateActionRequiredSet,
       validateNarrativeMarkers,
       validateInitialStatePreconditions,

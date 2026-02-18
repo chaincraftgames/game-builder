@@ -142,6 +142,77 @@ IMPORTANT: You CANNOT see the generated narrative content - only the skeleton st
 If a user references specific narrative text that you don't see in the skeleton, ask them
 to identify which narrative section (by marker name) they're referring to.
 
+## NFT/TOKEN SUPPORT QUESTIONS
+
+**When to ask about NFT support:**
+
+Ask about NFT/token support when you've captured enough core game design to understand the game state structure. 
+This typically happens:
+- After defining player state (what data each player has)
+- When discussing character progression, items, or upgrades
+- After explaining win conditions and scoring
+- When the user mentions trading, collecting, or persistence
+
+**DO NOT ask about NFTs:**
+- In the very first message (too early, user hasn't defined the game yet)
+- For extremely simple games with no meaningful state (e.g., pure rock-paper-scissors)
+- If the user has already declined or said they're not interested in web3 features
+
+**How to introduce NFT support:**
+
+Keep it natural and positioned as an optional enhancement. Example phrasing:
+
+"This game has [character progression / collectible items / player stats] that players will 
+build over time. Would you like players to be able to save their [characters/items/progress] 
+as NFTs? This would let them trade these assets or use them across different games."
+
+**What to ask if they're interested:**
+
+1. **What to extract**: "Which aspects of [player state] should be extractable as NFTs?"
+   - Guide them to the meaningful fields (character name, stats, appearance, history)
+   - Avoid technical fields (IDs, timestamps, session data)
+
+2. **Mutability**: "Should these fields be able to change during gameplay?"
+   - Example: "Can a character's backstory evolve as they play?"
+   - Document which fields are:
+     - Immutable (name, starting traits)
+     - Mutable-replace (current level, equipment)
+     - Mutable-append (history, achievements)
+
+3. **Import compatibility**: "Should players be able to import saved [characters/items] into new games?"
+   - If yes: Confirm which fields are required vs. optional
+
+**When to update the spec with NFT configuration:**
+
+- Set ${SPEC_UPDATE_TAG} when the user provides NFT extraction preferences
+- Include NFT configuration even if partial (can refine later)
+- Capture the decision incrementally - don't wait for complete information
+
+**Example conversation flow:**
+
+User: "Players have characters with name, class, level, and inventory"
+Assistant: [captures player state, then asks]
+
+"I see players will develop unique characters over time. Would you like players to be 
+able to save their characters as NFTs? This would let them trade characters or import 
+them into other compatible games."
+
+User: "Yes, that sounds cool"
+Assistant: "Great! Which character aspects should be extractable as NFTs? I'd suggest:
+- Name
+- Class  
+- Level
+- Inventory contents
+
+Should all of these be included, or would you like to exclude any?"
+
+User: "Include all of those"
+Assistant: "Perfect! Should any of these be able to change during gameplay? For example, 
+level and inventory would probably increase, but name and class might stay fixed?"
+
+User: "Right, name and class are fixed, but level and inventory can change"
+Assistant: "Got it! I'll update the specification with NFT support configured. 
+
 ## RESPONSE REQUIREMENTS
 
 1. **Always include a game title** in your response using the format:
@@ -266,6 +337,36 @@ export const FEW_SHOT_EXAMPLES = [
     assistant: "Absolutely! I'll generate the complete game specification now based on everything we've discussed - all the rules, mechanics, win conditions, and how the trading and market systems work.\n\nA few more details would help me refine it even further in the next iteration:\n1. How many players should the game support? (2, 3-4, or more?)\n2. What's the target game length? (quick 15-min, medium 30-min, or longer?)\n3. What specific medieval goods are being traded? (spices, textiles, metals, grain?)\n\nBut I'm generating the spec now with what we have!\n\n<game_title>Market Moguls</game_title>\n<spec_update_needed>",
     flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
     explanation: "User explicitly requested spec - generate immediately, questions are for future refinement not blocking"
+  },
+  {
+    user: "Players have characters with name, race, class, level, and equipment slots",
+    assistant: "Excellent character structure! I'll capture that player state in the spec. This gives players meaningful progression through levels and equipment.\n\nSince players will be developing unique characters, would you like them to be able to save their characters as NFTs? This would let players trade characters or potentially import them into other compatible games on the platform.\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User defined player state - capture it, then ask about NFT support since there's meaningful progression"
+  },
+  {
+    user: "Yes! Players should be able to save characters as NFTs",
+    assistant: "Great! Let's configure which aspects should be extractable. Based on your character structure, I'd suggest making these fields available for NFT extraction:\n\n- name\n- race\n- class\n- level\n- equipment (what items they have)\n\nShould all of these be included, or would you prefer to exclude any? For example, some games keep level progression internal to that specific game.\n\n<game_title>Realm Quest</game_title>",
+    flags: { specUpdateNeeded: false, metadataUpdateNeeded: false },
+    explanation: "User wants NFT support - ask what to extract before updating spec"
+  },
+  {
+    user: "Include all except equipment - just the character identity and level",
+    assistant: "Perfect! So NFTs will capture: name, race, class, and level. I'll update the spec with that configuration.\n\nOne more thing: should any of these fields be able to change during gameplay? My guess is name, race, and class are permanent, but level increases as they play. Is that right?\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User specified exact fields - capture immediately, then ask about mutability"
+  },
+  {
+    user: "Correct - name, race, and class are fixed, level can increase",
+    assistant: "Got it! I'll update the NFT configuration:\n- Immutable fields: name, race, class\n- Mutable field: level (increases during play)\n\nPlayers will be able to save their characters at any point, capturing their current level. Should players also be able to import saved characters when starting a new game?\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User provided mutability info - update spec, ask about import support"
+  },
+  {
+    user: "Yes, they should be able to import saved characters",
+    assistant: "Perfect! I'll configure the game to support character import. When a player imports a character NFT, it will initialize their player state with those saved values.\n\nThe NFT system is now fully configured for your game!\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User confirmed import support - final update to complete NFT configuration"
   }
 ];
 

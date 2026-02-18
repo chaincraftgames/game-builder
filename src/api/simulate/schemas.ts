@@ -47,6 +47,8 @@ export const CreateSimulationRequestSchema = z.object({
 
 export const CreateSimulationResponseSchema = z.object({
   gameRules: z.string(),
+  /** Key is token type, value is token description. */
+  producedTokens: z.record(z.string()).optional(), 
 });
 
 // Initialize simulation schemas
@@ -100,3 +102,40 @@ export type GetSimulationStateRequest = z.infer<
 export type GetSimulationStateResponse = z.infer<
   typeof GetSimulationStateResponseSchema
 >;
+
+export const ProduceTokenRequestSchema = z.object({
+  sessionId: z.string().min(1),
+  tokenType: z.string().min(1),
+  playerId: z.string().min(1), // Optional - if token is player-specific, provide playerId
+});
+
+export type ProduceTokenRequest = z.infer<typeof ProduceTokenRequestSchema>;
+
+export const TokenMetadataSchema = z.object({
+  tokenType: z.string(),
+  gameId: z.string().min(1),
+  gameVersion: z.number().min(1),
+});
+
+export const ProduceTokenResponseSchema = z.object({
+  metadata: TokenMetadataSchema,
+  data: z.record(z.string(), z.any()), // Arbitrary key-value pairs representing token data
+});
+
+export type ProduceTokenResponse = z.infer<typeof ProduceTokenResponseSchema>;
+
+// Generate token image schemas
+export const GenerateTokenImageRequestSchema = z.object({
+  sessionId: z.string().min(1),
+  token: ProduceTokenResponseSchema,
+});
+
+export type GenerateTokenImageRequest = z.infer<typeof GenerateTokenImageRequestSchema>;
+
+export const GenerateTokenImageResponseSchema = z.object({
+  imageUrl: z.string(),
+  tokenType: z.string(),
+  metadata: TokenMetadataSchema,
+});
+
+export type GenerateTokenImageResponse = z.infer<typeof GenerateTokenImageResponseSchema>;

@@ -177,6 +177,7 @@ ONLY reference fields from this explicit list:
 {computedContextFields}
 
 ⛔ If a field is not in the list above, you CANNOT reference it.
+⛔ Do NOT use message fields (public or private) or winner flags in preconditions. Use dedicated readiness flags or game.gameEnded instead, and set gameEnded when you set winners.
 !___ END-CACHE ___!
 
 Now analyze the game specification and produce your transitions plan following the format specified above.
@@ -372,6 +373,7 @@ ONLY reference fields from this list in JsonLogic \`var\` expressions:
 {computedContextFields}
 
 ⛔ If a field is not in the list, you CANNOT use it.
+⛔ Do NOT use message fields (public or private) or winner flags in preconditions. Use readiness flags or game.gameEnded instead, and set gameEnded when you set winners.
 !___ END-CACHE ___!
 
 !___ CACHE:artifacts-executor ___!

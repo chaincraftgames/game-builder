@@ -160,5 +160,7 @@ export async function specDiff(state: typeof GameDesignState.State) {
   return {
     specDiff: diffSummary,
     currentSpec: updatedSpec,
+    pendingSpecChanges: [], // Clear accumulated changes only after full success
+    forceSpecGeneration: false, // Reset force flag on successful completion
   };
 }

@@ -4,7 +4,8 @@
  * Transforms game specification into runtime artifacts:
  * 1. extract_schema - Generate state schema
  * 2. extract_transitions - Identify phase transitions
- * 3. generate_instructions - Create phase-specific instructions
+ * 3. extract_instructions - Create phase-specific instructions
+ * 4. extract_produced_tokens - Identify persistent tokens to produce
  */
 
 import { StateGraph, START, END } from "@langchain/langgraph";
@@ -13,6 +14,7 @@ import { SpecProcessingState } from "#chaincraft/ai/simulate/graphs/spec-process
 import { schemaExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/index.js";
 import { transitionsExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/index.js";
 import { instructionsExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/index.js";
+import { producedTokensExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-produced-tokens/index.js";
 import { createValidationNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/validate-transitions/index.js";
 import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
 
@@ -32,6 +34,7 @@ export async function createSpecProcessingGraph(
   const schemaSubgraph = createExtractionSubgraph(schemaExtractionConfig);
   const transitionsSubgraph = createExtractionSubgraph(transitionsExtractionConfig);
   const instructionsSubgraph = createExtractionSubgraph(instructionsExtractionConfig);
+  const producedTokensSubgraph = createExtractionSubgraph(producedTokensExtractionConfig);
 
   // Create validation node for transitions
   const validationNode = createValidationNode();
@@ -50,6 +53,10 @@ export async function createSpecProcessingGraph(
     const result = await instructionsSubgraph.invoke(state, config);
     return result;
   });
+  workflow.addNode("extract_produced_tokens", async (state, config) => {
+    const result = await producedTokensSubgraph.invoke(state, config);
+    return result;
+  });
 
   // Define flow with validation error checks
   // Route START directly to schema extraction
@@ -65,16 +72,19 @@ export async function createSpecProcessingGraph(
       const hasTransitions = state.stateTransitions && state.stateTransitions.length > 0;
       const hasPlayerPhaseInstructions = state.playerPhaseInstructions && Object.keys(state.playerPhaseInstructions || {}).length > 0;
       const hasTransitionInstructions = state.transitionInstructions && Object.keys(state.transitionInstructions || {}).length > 0;
+      const hasProducedTokens = state.producedTokensConfiguration && state.producedTokensConfiguration.length > 0;
 
       if (!hasSchema) return "schema";
       if (!hasTransitions) return atomic ? "schema" : "transitions";
       if (!hasPlayerPhaseInstructions || !hasTransitionInstructions) return atomic ? "schema" : "instructions";
+      if (!hasProducedTokens) return atomic ? "schema" : "produced_tokens";
       return "end";
     },
     {
       schema: "extract_schema" as any,
       transitions: "extract_transitions" as any,
       instructions: "extract_instructions" as any,
+      produced_tokens: "extract_produced_tokens" as any,
       end: END,
     }
   );
@@ -113,8 +123,24 @@ export async function createSpecProcessingGraph(
     }
   );
   
-  // After instructions: always end
-  workflow.addEdge("extract_instructions" as any, END);
+  // After instructions: check for errors before continuing to tokens
+  workflow.addConditionalEdges(
+    "extract_instructions" as any,
+    (state) => {
+      if (state.instructionsValidationErrors && state.instructionsValidationErrors.length > 0) {
+        console.error("[SpecProcessingGraph] Instructions extraction failed validation, stopping pipeline");
+        return "end";
+      }
+      return "continue";
+    },
+    {
+      continue: "extract_produced_tokens" as any,
+      end: END,
+    }
+  );
+  
+  // After produced tokens: always end
+  workflow.addEdge("extract_produced_tokens" as any, END);
 
   console.log("[SpecProcessingGraph] Graph compiled successfully");
   return workflow.compile({ checkpointer });

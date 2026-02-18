@@ -3,6 +3,10 @@ import "dotenv/config.js";
 import { z } from "zod";
 
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
+import {
+  generateImageDirect,
+  TOKEN_IMAGE_CONFIG,
+} from "#chaincraft/ai/image-gen/image-gen-service.js";
 import { createSpecProcessingGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/index.js";
 import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js";
 import { createRuntimeGraph } from "#chaincraft/ai/simulate/graphs/runtime-graph/index.js";
@@ -21,6 +25,8 @@ import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
 import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
 import { InMemoryStore } from "@langchain/langgraph";
+import { ProducedTokenConfiguration, ProducedTokensArtifact, ProducedTokensArtifactSchema } from "./schema.js";
+import { parse } from "path";
 
 /**
  * Replace player aliases (player1, player2, etc.) with real UUIDs in message text.
@@ -121,6 +127,7 @@ export interface SpecArtifacts {
   stateTransitions: string;
   playerPhaseInstructions: Record<string, string>;
   transitionInstructions: Record<string, string>;
+  producedTokensConfiguration?: string;
   specNarratives?: Record<string, string>;
 }
 
@@ -157,6 +164,7 @@ export async function getCachedSpecArtifacts(
     stateTransitions: channelValues.stateTransitions,
     playerPhaseInstructions: channelValues.playerPhaseInstructions,
     transitionInstructions: channelValues.transitionInstructions,
+    producedTokensConfiguration: channelValues.producedTokensConfiguration,
   };
 }
 
@@ -195,6 +203,16 @@ export class ValidationError extends RuntimeError {
     super(message);
     this.name = "ValidationError";
   }
+}
+
+export interface TokenMetadata {
+  tokenType: string;
+  gameId: string;
+  gameVersion: number;
+}
+export interface TokenContent {
+  metadata: TokenMetadata;
+  data: Record<string, any>;
 }
 
 /**
@@ -269,6 +287,81 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
 }
 
 /**
+ * Helper function to store artifacts in runtime graph checkpoint.
+ * Used by both pre-generated and generated artifact paths.
+ */
+async function storeArtifactsInRuntimeGraph(
+  sessionId: string,
+  artifacts: SpecArtifacts,
+  gameId?: string,
+  gameSpecificationVersion?: number,
+): Promise<void> {
+  const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
+  const runtimeConfig = createSimulationGraphConfig(sessionId);
+
+  console.log(
+    "[simulate] Storing artifacts in runtime graph for session:",
+    sessionId,
+  );
+
+  const storePayload: Record<string, any> = {
+    gameRules: artifacts.gameRules,
+    stateSchema: artifacts.stateSchema,
+    stateTransitions: artifacts.stateTransitions,
+    playerPhaseInstructions: artifacts.playerPhaseInstructions,
+    transitionInstructions: artifacts.transitionInstructions,
+    producedTokensConfiguration: artifacts.producedTokensConfiguration || "",
+    specNarratives: artifacts.specNarratives,
+    gameId: gameId || "",
+    gameSpecificationVersion: gameSpecificationVersion || 0,
+  };
+
+  await runtimeGraph.invoke(storePayload, runtimeConfig);
+
+  console.log("[simulate] Artifacts stored successfully in runtime graph");
+}
+
+function describeTokens(producedTokensArtifact?: ProducedTokensArtifact): 
+    Record<string, string> | undefined {
+  if (!producedTokensArtifact) {
+    return undefined;
+  }
+  const tokensWithDescriptions: Record<string, string> = {};
+  for (const token of producedTokensArtifact.tokens) {
+    tokensWithDescriptions[token.tokenType] = token.description;
+  }
+  return tokensWithDescriptions;
+}
+
+/**
+ * Helper function to safely parse producedTokensConfiguration JSON string.
+ * Returns undefined if the string is empty or invalid JSON.
+ */
+function parseProducedTokensConfig(
+  configString?: string,
+): ProducedTokensArtifact | undefined {
+  if (!configString || configString.trim() === "") {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(configString);
+  } catch (error) {
+    console.error("[simulate] Failed to JSON.parse producedTokensConfiguration:", error);
+    return undefined;
+  }
+  const producedTokensConfig = ProducedTokensArtifactSchema.safeParse(parsed);
+  if (!producedTokensConfig.success) {
+    console.error(
+      "[simulate] Failed to parse producedTokensConfiguration:", 
+      producedTokensConfig.error
+    );
+    return undefined;
+  }
+  return producedTokensConfig.data;
+}
+
+/**
  * Creates a simulation by processing game specification and storing artifacts.
  *
  * @param sessionId - The ID of the game session.  The same id should be used for
@@ -278,28 +371,30 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
  * workflow. If not provided, the specification must be provided directly.
  * @param gameSpecificationVersion - Optional: The version number of the specification
  * to use. If omitted, uses latest version.
- * @param gameSpecification - Optional override: if provided, uses this spec directly
- * instead of retrieving from design workflow.  Deprecated in favor of gameId.  Do not
- * use.
- * @param preGeneratedArtifacts - Optional pre-generated artifacts (for testing)
- * @returns The extracted game rules
+ * @param options - Optional configuration including spec overrides and pre-generated artifacts
+ * @returns The extracted game rules, narratives, and produced tokens configuration
  */
-export type CreateSimulationOptions = {
+export interface CreateSimulationOptions {
   overrideSpecification?: string;
   preGeneratedArtifacts?: SpecArtifacts;
   specNarrativesOverride?: Record<string, string>;
   atomicArtifactRegen?: boolean;
 };
 
+export interface CreateSimulationResult {
+  gameRules: string;
+  /** Key is spec narrative key, value is the narrative text. */
+  specNarratives?: Record<string, string>;
+  /** Key is the token type, value is the token description. */
+  producedTokens?: Record<string, string>;
+}
+
 export async function createSimulation(
   sessionId: string,
   gameId?: string,
   gameSpecificationVersion?: number,
   options?: CreateSimulationOptions,
-): Promise<{
-  gameRules: string;
-  specNarratives?: Record<string, string>;
-}> {
+): Promise<CreateSimulationResult> {
   try {
     console.log("[simulate] Creating simulation for session %s", sessionId);
     const {
@@ -313,33 +408,19 @@ export async function createSimulation(
     if (preGeneratedArtifacts) {
       console.log("[simulate] Using pre-generated artifacts (test mode)");
 
-      // Store artifacts in runtime graph checkpoint using sessionId
-      const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
-      const runtimeConfig = createSimulationGraphConfig(sessionId);
-
-      console.log(
-        "[simulate] Storing pre-generated artifacts in runtime graph with sessionId:",
+      await storeArtifactsInRuntimeGraph(
         sessionId,
+        preGeneratedArtifacts,
+        gameId,
+        gameSpecificationVersion,
       );
-
-      await runtimeGraph.invoke(
-        {
-          gameRules: preGeneratedArtifacts.gameRules,
-          stateSchema: preGeneratedArtifacts.stateSchema,
-          stateTransitions: preGeneratedArtifacts.stateTransitions,
-          playerPhaseInstructions:
-            preGeneratedArtifacts.playerPhaseInstructions,
-          transitionInstructions: preGeneratedArtifacts.transitionInstructions,
-          specNarratives: preGeneratedArtifacts.specNarratives,
-        },
-        runtimeConfig,
-      );
-
-      console.log("[simulate] Pre-generated artifacts stored successfully");
 
       return {
         gameRules: preGeneratedArtifacts.gameRules,
         specNarratives: preGeneratedArtifacts.specNarratives,
+        producedTokens: describeTokens(
+          parseProducedTokensConfig(preGeneratedArtifacts.producedTokensConfiguration)
+        )
       };
     }
 
@@ -497,6 +578,7 @@ export async function createSimulation(
           typeof specResult.transitionInstructions === "object"
             ? (specResult.transitionInstructions as Record<string, string>)
             : {},
+        producedTokensConfiguration: String(specResult.producedTokensConfiguration || ""),
         // Persist spec narratives alongside artifacts so runtime checkpoints include them
         specNarratives: narrativesToUse || undefined,
       };
@@ -507,10 +589,6 @@ export async function createSimulation(
     }
 
     // Step 2: Store artifacts in runtime graph checkpoint using sessionId
-    // Get cached runtime graph for this session
-    const runtimeGraph = await runtimeGraphCache.getGraph(sessionId);
-    const runtimeConfig = createSimulationGraphConfig(sessionId);
-
     console.log(
       "[simulate] Storing artifacts in runtime graph with sessionId:",
       sessionId,
@@ -523,27 +601,12 @@ export async function createSimulation(
       );
     }
 
-    // Store artifacts by invoking runtime graph with the artifacts
-    // Don't pass isInitialized or players - this routes to END and saves artifacts to checkpoint
-    const storePayload: Record<string, any> = {
-      gameRules: artifacts.gameRules,
-      stateSchema: artifacts.stateSchema,
-      stateTransitions: artifacts.stateTransitions,
-      playerPhaseInstructions: artifacts.playerPhaseInstructions,
-      transitionInstructions: artifacts.transitionInstructions,
-    };
-
-    // Ensure we include specNarratives in the runtime checkpoint. Prefer persisted narratives
-    // from artifacts, but fall back to the override used when creating the simulation.
-    storePayload.specNarratives =
-      artifacts.specNarratives || narrativesToUse || undefined;
-
-    const storeResult = await runtimeGraph.invoke(storePayload, runtimeConfig);
-
-    console.log("[simulate] Artifact storage invoke completed, result:", {
-      hasGameRules: !!storeResult.gameRules,
-      hasStateSchema: !!storeResult.stateSchema,
-    });
+    await storeArtifactsInRuntimeGraph(
+      sessionId,
+      artifacts,
+      gameId,
+      versionToUse,
+    );
 
     console.log(
       "[simulate] Runtime graph initialized with artifacts for session %s",
@@ -554,6 +617,9 @@ export async function createSimulation(
       gameRules: artifacts.gameRules,
       // Expose specNarratives on the result for testability
       specNarratives: artifacts.specNarratives || narrativesToUse || undefined,
+      producedTokens: describeTokens(
+        parseProducedTokensConfig(artifacts.producedTokensConfiguration)
+      ),
     };
   } catch (error) {
     handleError("Failed to create simulation", error);
@@ -670,16 +736,37 @@ export async function processAction(
 /**
  * Retrieves the current state of the game, including player messages,
  * without modifying the game state.
- * @param gameId The ID of the game/conversation
+ * @param sessionId The ID of the game/conversation
  * @returns The current simulation state response with player messages
  */
-export async function getSimulationState(gameId: string): Promise<SimResponse> {
+/**
+ * Retrieves the raw parsed game state object for testing and assertion purposes.
+ * Returns the `{ game, players }` structure directly from the LangGraph checkpoint.
+ * @param sessionId The ID of the game session
+ */
+export async function getGameState(
+  sessionId: string,
+): Promise<{ game: any; players: any } | undefined> {
+  const saver = await getSaver(sessionId, getConfig("simulation-graph-type"));
+  const config = { configurable: { thread_id: sessionId } };
+  const checkpoint = await saver.getTuple(config);
+  if (!checkpoint?.checkpoint?.channel_values) {
+    return undefined;
+  }
+  const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
+  if (!state.gameState || state.gameState === "") {
+    return undefined;
+  }
+  return JSON.parse(state.gameState);
+}
+
+export async function getSimulationState(sessionId: string): Promise<SimResponse> {
   try {
-    console.log("[simulate] Getting game state for %s", gameId);
+    console.log("[simulate] Getting game state for %s", sessionId);
 
     // Load state directly from checkpoint without invoking graph
-    const saver = await getSaver(gameId, getConfig("simulation-graph-type"));
-    const config = { configurable: { thread_id: gameId } };
+    const saver = await getSaver(sessionId, getConfig("simulation-graph-type"));
+    const config = { configurable: { thread_id: sessionId } };
 
     const checkpoint = await saver.getTuple(config);
     if (!checkpoint || !checkpoint.checkpoint) {
@@ -689,12 +776,12 @@ export async function getSimulationState(gameId: string): Promise<SimResponse> {
     const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
     const simResponse = getRuntimeResponse(state);
 
-    console.log("[simulate] Retrieved game state for %s", gameId);
+    console.log("[simulate] Retrieved game state for %s", sessionId);
     return simResponse;
   } catch (error) {
     console.error(
       "[simulate] Error in getSimulationState for %s: %o",
-      gameId,
+      sessionId,
       error,
     );
     handleError("Failed to get player messages", error);
@@ -702,40 +789,172 @@ export async function getSimulationState(gameId: string): Promise<SimResponse> {
   }
 }
 
-/**
- * Retrieves the full canonical game state for testing and debugging.
- * Returns the parsed game state object with game and player fields.
- * @param gameId The ID of the game/conversation
- * @returns The parsed game state object { game: {...}, players: {...} }
- */
-export async function getGameState(
-  gameId: string,
-): Promise<{ game: any; players: any }> {
+export async function produceToken(
+  sessionId: string,
+  tokenType: string,
+  playerId: string,
+): Promise<TokenContent> {
   try {
-    console.log("[simulate] Getting full game state for %s", gameId);
+    console.log(
+      "[simulate] Producing token for session %s, type %s, player %s",
+      sessionId,
+      tokenType,
+      playerId,
+    );
 
-    // Load state directly from checkpoint without invoking graph
-    const saver = await getSaver(gameId, getConfig("simulation-graph-type"));
-    const config = { configurable: { thread_id: gameId } };
+    // Normalize player ID to lowercase for consistent handling
+    const normalizedPlayerId = playerId.toLowerCase();
+
+    // Load complete state from checkpoint (runtime state + artifacts)
+    const saver = await getSaver(sessionId, getConfig("simulation-graph-type"));
+    const config = { configurable: { thread_id: sessionId } };
 
     const checkpoint = await saver.getTuple(config);
-    if (!checkpoint?.checkpoint?.channel_values) {
-      throw new Error("No checkpoint found for game");
+    if (!checkpoint || !checkpoint.checkpoint) {
+      throw new Error("No game state found for this session.");
     }
 
     const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
-    if (!state.gameState) {
-      throw new Error("No gameState in checkpoint");
+
+    // Get gameId and version from state
+    const gameId = state.gameId || sessionId; // Fall back to sessionId if not set
+    const gameVersion = state.gameSpecificationVersion || 1;
+
+    // Parse produced tokens configuration to find the requested token type
+    if (!state.producedTokensConfiguration) {
+      throw new Error("No token configuration found for this game.");
     }
 
-    const parsedState = JSON.parse(state.gameState);
-    console.log("[simulate] Retrieved full game state for %s", gameId);
-    return parsedState;
+    const tokenConfig = parseProducedTokensConfig(state.producedTokensConfiguration);
+    const tokenDefinition = tokenConfig?.tokens?.find(
+      (t: any) => t.tokenType === tokenType,
+    );
+
+    if (!tokenDefinition) {
+      throw new Error(`Token type '${tokenType}' is not produced by this game.`);
+    }
+
+    // Parse game state to extract player data
+    if (!state.gameState) {
+      throw new Error("No game state available.");
+    }
+
+    const gameState = JSON.parse(state.gameState);
+    const { players } = gameState;
+
+    // Get player mapping to resolve aliases
+    const playerMapping = deserializePlayerMapping(state.playerMapping || "{}");
+    
+    // Find the player's data (might be stored by alias or UUID)
+    let playerData = players[normalizedPlayerId];
+    if (!playerData) {
+      // Try to find by alias (player1, player2, etc.)
+      const alias = Object.keys(playerMapping).find(
+        (k) => playerMapping[k] === normalizedPlayerId,
+      );
+      if (alias) {
+        playerData = players[alias];
+      }
+    }
+
+    if (!playerData) {
+      throw new Error(`Player '${normalizedPlayerId}' not found in game state.`);
+    }
+
+    // Extract token data based on tokenSource and fields
+    const tokenSource = tokenDefinition.tokenSource; // "player" or "game"
+    const fields = tokenDefinition.fields || [];
+
+    // Get source data (player state or game state)
+    const sourceData = tokenSource === "player" ? playerData : gameState.game;
+
+    // Extract only the specified fields
+    const data: Record<string, any> = {};
+    for (const field of fields) {
+      if (field in sourceData) {
+        data[field] = sourceData[field];
+      }
+    }
+
+    // Build token content with metadata
+    const tokenContent: TokenContent = {
+      metadata: {
+        tokenType,
+        gameId,
+        gameVersion,
+      },
+      data,
+    };
+
+    console.log(
+      "[simulate] Token produced successfully for player %s, type %s",
+      normalizedPlayerId,
+      tokenType,
+    );
+
+    return tokenContent;
   } catch (error) {
-    console.error("[simulate] Error in getGameState for %s: %o", gameId, error);
-    handleError("Failed to get game state", error);
+    handleError("Failed to produce token", error);
     return Promise.reject(error);
   }
+}
+
+/**
+ * Generate an image for a produced token.
+ * Accepts a previously produced TokenContent. Looks up the token description
+ * from the session's token configuration using the tokenType in metadata,
+ * then uses the description + token data as input to direct image generation.
+ */
+export async function generateTokenImage(
+  sessionId: string,
+  token: TokenContent,
+): Promise<{ imageUrl: string; tokenType: string; metadata: TokenMetadata }> {
+  const { tokenType } = token.metadata;
+
+  // Load token configuration to get the description
+  const saver = await getSaver(sessionId, getConfig("simulation-graph-type"));
+  const config = { configurable: { thread_id: sessionId } };
+  const checkpoint = await saver.getTuple(config);
+
+  if (!checkpoint || !checkpoint.checkpoint) {
+    throw new Error("No game state found for this session.");
+  }
+
+  const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
+  const tokenConfig = parseProducedTokensConfig(state.producedTokensConfiguration);
+  const tokenDefinition = tokenConfig?.tokens?.find(
+    (t: any) => t.tokenType === tokenType,
+  );
+
+  if (!tokenDefinition) {
+    throw new Error(`Token type '${tokenType}' not found in configuration.`);
+  }
+
+  // Format token data as readable key-value pairs for the prompt
+  const tokenDataStr = Object.entries(token.data)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join("\n");
+
+  console.log(
+    "[simulate] Generating token image for type %s, description: %s, data: %s",
+    tokenType,
+    tokenDefinition.description,
+    tokenDataStr,
+  );
+
+  const imageUrl = await generateImageDirect(
+    {
+      token_description: tokenDefinition.description,
+      token_data: tokenDataStr,
+    },
+    TOKEN_IMAGE_CONFIG,
+  );
+
+  return {
+    imageUrl,
+    tokenType,
+    metadata: token.metadata,
+  };
 }
 
 const handleError = (message: string, error: unknown): never => {

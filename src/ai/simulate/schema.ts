@@ -29,19 +29,19 @@ c) would break the game or violate fairness without this specific private messag
     .nullable()
     .optional()
     .describe(
-      "Whether the player is currently allowed to take actions. If omitted, defaults to match actionRequired. Only set explicitly for games with optional actions."
+      "Whether the player is currently allowed to take actions. If omitted, defaults to match actionRequired. Only set explicitly for games with optional actions.",
     ),
   actionRequired: z
     .boolean()
     .default(false)
     .describe(
-      "If true, the game cannot proceed to the next turn or phase until this player takes an action."
+      "If true, the game cannot proceed to the next turn or phase until this player takes an action.",
     ),
   isGameWinner: z
     .boolean()
     .default(false)
     .describe(
-      "Whether this player has won the game. Set to true when player meets victory conditions. Used to compute game.winningPlayers array."
+      "Whether this player has won the game. Set to true when player meets victory conditions. Used to compute game.winningPlayers array.",
     ),
 });
 
@@ -51,7 +51,7 @@ export const baseGameStateSchema = z.object({
       currentPhase: z
         .string()
         .describe(
-          "Current phase (round, turn, etc.) of the game (must match a phase from transitions artifact)"
+          "Current phase (round, turn, etc.) of the game (must match a phase from transitions artifact)",
         ),
       gameEnded: z
         .boolean()
@@ -73,7 +73,9 @@ export const baseGameStateSchema = z.object({
           timestamp: z.string().describe("ISO timestamp when error occurred"),
         })
         .nullish()
-        .describe("Error state if game encountered a fatal error (omit or set null when no error)"),
+        .describe(
+          "Error state if game encountered a fatal error (omit or set null when no error)",
+        ),
       publicMessage: z
         .string()
         .optional()
@@ -81,7 +83,7 @@ export const baseGameStateSchema = z.object({
       winningPlayers: z
         .array(z.string())
         .describe(
-          "Array of player IDs who have won the game (empty if no winners yet)"
+          "Array of player IDs who have won the game (empty if no winners yet)",
         ),
     })
     .describe(`Game-level state containing all shared game progress fields`),
@@ -96,29 +98,32 @@ const baseSchemaJson = zodToJsonSchema(baseGameStateSchema, "gameState");
 // Post-process to use patternProperties for player keys
 // This ensures the AI generates player keys like "player1", "player2", etc.
 // rather than arbitrary keys, which helps with consistent mapping
-if (baseSchemaJson && typeof baseSchemaJson === 'object' && 
-    'properties' in baseSchemaJson && 
-    baseSchemaJson.properties && 
-    typeof baseSchemaJson.properties === 'object' &&
-    'players' in baseSchemaJson.properties) {
+if (
+  baseSchemaJson &&
+  typeof baseSchemaJson === "object" &&
+  "properties" in baseSchemaJson &&
+  baseSchemaJson.properties &&
+  typeof baseSchemaJson.properties === "object" &&
+  "players" in baseSchemaJson.properties
+) {
   const playersSchema = (baseSchemaJson.properties as any).players;
-  if (playersSchema && typeof playersSchema === 'object') {
+  if (playersSchema && typeof playersSchema === "object") {
     // Convert from additionalProperties to patternProperties with player[1-9][0-9]* pattern
     // This enforces player1, player2, ... (starting at 1, not 0)
-    if ('additionalProperties' in playersSchema) {
+    if ("additionalProperties" in playersSchema) {
       const playerStateSchema = playersSchema.additionalProperties;
       // Preserve the AI's ability to add custom fields to player state
       // by ensuring additionalProperties is allowed on the player object itself
-      if (typeof playerStateSchema === 'object' && playerStateSchema !== null) {
+      if (typeof playerStateSchema === "object" && playerStateSchema !== null) {
         // Make sure the player state schema allows additional properties
         // so the AI can extend it with game-specific fields
-        if (!('additionalProperties' in playerStateSchema)) {
+        if (!("additionalProperties" in playerStateSchema)) {
           (playerStateSchema as any).additionalProperties = true;
         }
       }
       delete playersSchema.additionalProperties;
       playersSchema.patternProperties = {
-        '^player[1-9][0-9]*$': playerStateSchema  // player1, player2, ..., player10, etc. (NOT player0)
+        "^player[1-9][0-9]*$": playerStateSchema, // player1, player2, ..., player10, etc. (NOT player0)
       };
       playersSchema.additionalProperties = false; // Reject keys that don't match pattern
     }
@@ -144,7 +149,7 @@ const JsonLogicValidator = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `Unsupported JsonLogic operations: ${unsupportedOps.join(
-          ", "
+          ", ",
         )}. Only standard json-logic-js operations are allowed: ==, !=, >, <, >=, <=, and, or, !, if, +, -, *, /, %, max, min, map, filter, all, none, some, merge, in, cat, substr, var, missing, missing_some, log. Custom operations: allPlayers, anyPlayer, lookup, length (for dynamic array/object access and string/array length)`,
       });
     }
@@ -155,18 +160,18 @@ export const TransitionPreconditionSchema = z.object({
     .string()
     .describe("Stable id for the precondition, e.g. 'allSubmitted'"),
   logic: JsonLogicValidator.describe(
-    "JsonLogic predicate object or null for non-deterministic/custom checks"
+    "JsonLogic predicate object or null for non-deterministic/custom checks",
   ),
   deterministic: z
     .boolean()
     .describe(
-      "Whether this predicate can be evaluated deterministically by the router"
+      "Whether this predicate can be evaluated deterministically by the router",
     ),
   explain: z
     .string()
     .max(500)
     .describe(
-      "One-line explanation of the predicate purpose for auditing/debugging. Aim for under 200 chars but may use up to 500 for complex mechanics."
+      "One-line explanation of the predicate purpose for auditing/debugging. Aim for under 200 chars but may use up to 500 for complex mechanics.",
     ),
 });
 
@@ -185,13 +190,13 @@ export const TransitionSchema = z.object({
   checkedFields: z
     .array(z.string())
     .describe(
-      "Exact dot-path fields the router should inspect; allow simple '[*]' wildcard"
+      "Exact dot-path fields the router should inspect; allow simple '[*]' wildcard",
     ),
   // Preconditions expressed as JsonLogic objects and metadata
   preconditions: z
     .array(TransitionPreconditionSchema)
     .describe(
-      "Array of preconditions. Prefer deterministic JsonLogic predicates when possible."
+      "Array of preconditions. Prefer deterministic JsonLogic predicates when possible.",
     ),
   humanSummary: z
     .string()
@@ -211,13 +216,13 @@ export const TransitionsArtifactSchema = z.object({
     z
       .string()
       .describe(
-        'An identifier for a game state such as "bidding, playing, day/night phase, scoring".  Phases may be visited multiple times during gameplay'
-      )
+        'An identifier for a game state such as "bidding, playing, day/night phase, scoring".  Phases may be visited multiple times during gameplay',
+      ),
   ),
   phaseMetadata: z
     .array(PhaseMetadataSchema)
     .describe(
-      "Metadata for each phase indicating whether it requires player input"
+      "Metadata for each phase indicating whether it requires player input",
     ),
   transitions: z
     .array(TransitionSchema)
@@ -232,7 +237,7 @@ export type PhaseMetadata = z.infer<typeof PhaseMetadataSchema>;
 export type TransitionsArtifact = z.infer<typeof TransitionsArtifactSchema>;
 export const TransitionsArtifactSchemaJson = zodToJsonSchema(
   TransitionsArtifactSchema,
-  "TransitionsArtifact"
+  "TransitionsArtifact",
 );
 
 // ============================================================================
@@ -259,13 +264,13 @@ export const MechanicsGuidanceSchema = z.object({
   rules: z
     .array(z.string())
     .describe(
-      "Ordered list of game rules/mechanics to apply (e.g., ['Rock beats scissors', 'Scissors beats paper', 'Paper beats rock'])"
+      "Ordered list of game rules/mechanics to apply (e.g., ['Rock beats scissors', 'Scissors beats paper', 'Paper beats rock'])",
     ),
   computation: z
     .string()
     .optional()
     .describe(
-      "Description of what needs to be computed/decided using these rules"
+      "Description of what needs to be computed/decided using these rules",
     ),
 });
 
@@ -276,7 +281,7 @@ export const RngConfigSchema = z.object({
   operations: z
     .array(z.string())
     .describe(
-      "List of random operations needed (e.g., ['event_type', 'severity_roll', 'affected_player'])"
+      "List of random operations needed (e.g., ['event_type', 'severity_roll', 'affected_player'])",
     ),
   guidance: z
     .string()
@@ -292,7 +297,7 @@ export const PreconditionCheckSchema = z.object({
   id: z
     .string()
     .describe(
-      "Stable identifier for this check (e.g., 'wrongPhase', 'invalidChoice')"
+      "Stable identifier for this check (e.g., 'wrongPhase', 'invalidChoice')",
     ),
   logic: z
     .any()
@@ -300,7 +305,7 @@ export const PreconditionCheckSchema = z.object({
   errorMessage: z
     .string()
     .describe(
-      "Error message to return if this check fails (logic evaluates to false)"
+      "Error message to return if this check fails (logic evaluates to false)",
     ),
 });
 
@@ -308,7 +313,7 @@ export const ValidationConfigSchema = z.object({
   checks: z
     .array(PreconditionCheckSchema)
     .describe(
-      "Ordered array of precondition checks. First check that fails determines the error message returned."
+      "Ordered array of precondition checks. First check that fails determines the error message returned.",
     ),
 });
 
@@ -320,20 +325,22 @@ export const PlayerActionInstructionSchema = z.object({
   actionName: z.string().describe("Human-readable action name"),
 
   // Optional validation
-  validation: ValidationConfigSchema.nullable().optional().describe(
-    "JsonLogic preconditions and error messages"
-  ),
+  validation: ValidationConfigSchema.nullable()
+    .optional()
+    .describe("JsonLogic preconditions and error messages"),
 
   // Optional mechanics guidance
-  mechanicsGuidance: MechanicsGuidanceSchema.nullable().optional().describe(
-    "Game rules/mechanics for LLM to apply (only if action involves game logic)"
-  ),
+  mechanicsGuidance: MechanicsGuidanceSchema.nullable()
+    .optional()
+    .describe(
+      "Game rules/mechanics for LLM to apply (only if action involves game logic)",
+    ),
 
   // State changes (may contain {{templates}})
   stateDelta: z
     .array(StateDeltaOpSchema)
     .describe(
-      "Array of stateDelta operations, may contain {{template}} variables"
+      "Array of stateDelta operations, may contain {{template}} variables",
     ),
 
   // Messages (may contain {{templates}})
@@ -354,20 +361,20 @@ export const AutomaticTransitionInstructionSchema = z.object({
   transitionName: z.string().describe("Human-readable transition name"),
 
   // Optional mechanics guidance (for computing winners, outcomes, etc.)
-  mechanicsGuidance: MechanicsGuidanceSchema.nullable().optional().describe(
-    "Game rules/mechanics for LLM to apply"
-  ),
+  mechanicsGuidance: MechanicsGuidanceSchema.nullable()
+    .optional()
+    .describe("Game rules/mechanics for LLM to apply"),
 
   // Optional RNG configuration
-  rngConfig: RngConfigSchema.nullable().optional().describe(
-    "Random number generation requirements"
-  ),
+  rngConfig: RngConfigSchema.nullable()
+    .optional()
+    .describe("Random number generation requirements"),
 
   // State changes (may contain {{templates}})
   stateDelta: z
     .array(StateDeltaOpSchema)
     .describe(
-      "Array of stateDelta operations, may contain {{template}} variables"
+      "Array of stateDelta operations, may contain {{template}} variables",
     ),
 
   // Messages (may contain {{templates}})
@@ -404,13 +411,13 @@ export const InstructionsArtifactSchema = z.object({
   playerPhases: z
     .record(PlayerPhaseInstructionsSchema)
     .describe(
-      "Map of phase name to instructions for phases that require player input"
+      "Map of phase name to instructions for phases that require player input",
     ),
 
   transitions: z
     .record(AutomaticTransitionInstructionSchema)
     .describe(
-      "Map of transition ID to instructions for all automatic transitions"
+      "Map of transition ID to instructions for all automatic transitions",
     ),
 
   metadata: z.object({
@@ -447,25 +454,69 @@ export type InstructionsArtifact = z.infer<typeof InstructionsArtifactSchema>;
 // Instruction JSON schemas for prompt injection
 export const PlayerActionInstructionSchemaJson = zodToJsonSchema(
   PlayerActionInstructionSchema,
-  "PlayerActionInstruction"
+  "PlayerActionInstruction",
 );
 export const AutomaticTransitionInstructionSchemaJson = zodToJsonSchema(
   AutomaticTransitionInstructionSchema,
-  "AutomaticTransitionInstruction"
+  "AutomaticTransitionInstruction",
 );
 export const PlayerPhaseInstructionsSchemaJson = zodToJsonSchema(
   PlayerPhaseInstructionsSchema,
-  "PlayerPhaseInstructions"
+  "PlayerPhaseInstructions",
 );
 export const InstructionsArtifactSchemaJson = zodToJsonSchema(
   InstructionsArtifactSchema,
-  "InstructionsArtifact"
+  "InstructionsArtifact",
+);
+
+// ============================================================================
+// TOKEN CONFIGURATION ARTIFACT SCHEMAS
+// ============================================================================
+export enum TokenSource {
+  Game = "game",
+  Player = "player",
+}
+
+export const ProducedTokenConfigurationSchema = z.object({
+  tokenType: z
+    .string()
+    .describe("Token type name, e.g. 'character', 'item', 'achievement'"),
+  description: z.string().describe("Description of what this token represents"),
+  tokenSource: z
+    .nativeEnum(TokenSource)
+    .describe(
+      "The state root that this token is generated from (e.g. game state or player state)",
+    ),
+  fields: z
+    .array(z.string())
+    .describe("List of state fields to include in the token"),
+});
+
+export type ProducedTokenConfiguration = z.infer<
+  typeof ProducedTokenConfigurationSchema
+>;
+
+export const ProducedTokensArtifactSchema = z.object({
+  tokens: z
+    .array(ProducedTokenConfigurationSchema)
+    .describe(
+      "Array of token configurations for tokens that can be generated/saved during gameplay",
+    ),
+});
+
+export type ProducedTokensArtifact = z.infer<typeof ProducedTokensArtifactSchema>;
+
+export const ProducedTokensArtifactSchemaJson = zodToJsonSchema(
+  ProducedTokensArtifactSchema,
+  "ProducedTokensArtifact",
 );
 
 /**
  * Serialize schema (JSON Schema or legacy format)
  */
-export function serializeSchema(schema: JSONSchemaObject | SchemaField[]): string {
+export function serializeSchema(
+  schema: JSONSchemaObject | SchemaField[],
+): string {
   return JSON.stringify(schema);
 }
 
@@ -475,12 +526,12 @@ export function serializeSchema(schema: JSONSchemaObject | SchemaField[]): strin
  */
 export function deserializeSchema(schemaJson: string): z.ZodObject<any> {
   const parsed = JSON.parse(schemaJson);
-  
+
   // Detect format: JSON Schema has "type" property, legacy has array with "name" properties
-  const schema = Array.isArray(parsed) 
-    ? parsed as SchemaField[]
-    : parsed as JSONSchemaObject;
-  
+  const schema = Array.isArray(parsed)
+    ? (parsed as SchemaField[])
+    : (parsed as JSONSchemaObject);
+
   const baseSchema = buildStateSchema(schema);
 
   if (!(baseSchema instanceof z.ZodObject)) {

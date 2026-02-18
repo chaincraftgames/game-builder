@@ -162,8 +162,6 @@ export function createSpecExecute(model: ModelWithOptions) {
       lastSpecUpdate: new Date().toISOString(),
       lastSpecMessageCount: state.messages.length,
       specUpdateNeeded: false, // Reset the flag
-      pendingSpecChanges: [], // Clear pending plans after execution
-      forceSpecGeneration: false, // Reset force flag
       narrativesNeedingUpdate: markers, // Populate markers for narrative generation
     };
   } catch (error) {

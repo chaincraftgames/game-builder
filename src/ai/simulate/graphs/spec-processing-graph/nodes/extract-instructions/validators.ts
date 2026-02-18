@@ -361,9 +361,9 @@ function validateStateDelta(
 }
 
 /**
- * Validate initialization completeness - all fields used in preconditions must be initialized
+ * Validate precondition coverage - all fields used in preconditions must be written by some stateDelta op
  */
-export async function validateInitializationCompleteness(
+export async function validatePreconditionsCanPass(
   state: SpecProcessingStateType,
   store: BaseStore,
   threadId: string
@@ -383,15 +383,6 @@ export async function validateInitializationCompleteness(
   const artifact: InstructionsArtifact = typeof executionOutput === 'string' 
     ? JSON.parse(executionOutput)
     : executionOutput;
-
-  // Router context fields computed at runtime
-  const ROUTER_CONTEXT_FIELDS = new Set([
-    'allPlayersCompletedActions',
-    'playersCount',
-    'playerCount',
-    'allPlayersReady',
-    'anyPlayerReady',
-  ]);
 
   // Parse transitions
   let transitions: any;
@@ -421,62 +412,70 @@ export async function validateInitializationCompleteness(
   });
 
   if (preconditionFields.size === 0) return [];
+  // Router context fields computed at runtime
+  const ROUTER_CONTEXT_FIELDS = new Set([
+    'allPlayersCompletedActions',
+    'playersCount',
+    'playerCount',
+    'allPlayersReady',
+    'anyPlayerReady',
+  ]);
 
-  // Find init transition
-  const initTransition = transitionList.find((t: any) => t.fromPhase === 'init');
-  if (!initTransition) {
-    return [];
-  }
+  // Collect all fields written by any stateDelta (transitions + player actions)
+  const writtenFields = new Set<string>();
 
-  // Get init instructions
-  const initInstructions = artifact.transitions[initTransition.id];
-  if (!initInstructions) {
-    return [`Init transition "${initTransition.id}" has no instructions in artifact`];
-  }
+  const addPath = (path: string) => {
+    if (!path || typeof path !== 'string') return;
+    writtenFields.add(path);
+    const normalizedPath = path
+      .replace(/\.\{\{[^}]+\}\}\./g, '[*].')
+      .replace(/\.player\d+\./g, '[*].')
+      .replace(/players\.\*/g, 'players[*]')
+      .replace(/\[\d+\]/g, '');
+    writtenFields.add(normalizedPath);
+  };
 
-  // Extract initialized fields
-  const initializedFields = new Set<string>();
-  if (initInstructions.stateDelta && Array.isArray(initInstructions.stateDelta)) {
-    initInstructions.stateDelta.forEach((op: any) => {
-      if (op.path && typeof op.path === 'string') {
-        let normalizedPath = op.path
-          .replace(/\.\{\{[^}]+\}\}\./g, '[*].')
-          .replace(/\.player\d+\./g, '[*].')
-          .replace(/players\.\*/g, 'players[*]');
-
-        initializedFields.add(op.path);
-        initializedFields.add(normalizedPath);
-
-        const baseArrayPath = op.path.replace(/\[\d+\]$/, '');
-        if (baseArrayPath !== op.path) {
-          initializedFields.add(baseArrayPath);
-          const normalizedBaseArrayPath = baseArrayPath
-            .replace(/\.\{\{[^}]+\}\}\./g, '[*].')
-            .replace(/\.player\d+\./g, '[*].')
-            .replace(/players\.\*/g, 'players[*]');
-          initializedFields.add(normalizedBaseArrayPath);
+  // Transition stateDelta ops
+  if (artifact.transitions) {
+    Object.values(artifact.transitions).forEach((t: any) => {
+      (t?.stateDelta || []).forEach((op: any) => {
+        addPath(op.path);
+        addPath(op.fromPath);
+        addPath(op.toPath);
+        if (op.field && op.op === 'setForAllPlayers') {
+          addPath(`players[*].${op.field}`);
         }
-      }
+      });
     });
   }
 
-  // Check uninitialized fields
-  const uninitializedFields: string[] = [];
-  preconditionFields.forEach((field: string) => {
-    if (ROUTER_CONTEXT_FIELDS.has(field)) return;
-    
-    if (initializedFields.has(field)) return;
-
-    const normalizedField = field.replace(/\[\d+\]/g, '.*').replace(/\.\d+\./g, '.*.');
-    if (initializedFields.has(normalizedField)) return;
-
-    uninitializedFields.push(field);
+  // Player action stateDelta ops
+  Object.values(artifact.playerPhases || {}).forEach((phase: any) => {
+    (phase?.playerActions || []).forEach((action: any) => {
+      (action?.stateDelta || []).forEach((op: any) => {
+        addPath(op.path);
+        addPath(op.fromPath);
+        addPath(op.toPath);
+        if (op.field && op.op === 'setForAllPlayers') {
+          addPath(`players[*].${op.field}`);
+        }
+      });
+    });
   });
 
-  uninitializedFields.forEach((field: string) => {
+  // Check coverage
+  const missingFields: string[] = [];
+  preconditionFields.forEach((field: string) => {
+    if (ROUTER_CONTEXT_FIELDS.has(field)) return;
+    if (writtenFields.has(field)) return;
+    const normalizedField = field.replace(/\[\d+\]/g, '').replace(/\.\d+\./g, '.');
+    if (writtenFields.has(normalizedField)) return;
+    missingFields.push(field);
+  });
+
+  missingFields.forEach((field: string) => {
     errors.push(
-      `Field "${field}" is used in transition preconditions but is never initialized by the init transition. ` +
-      `Add a stateDelta operation in the init transition to set ${field} to an appropriate initial value.`
+      `Field "${field}" is used in transition preconditions but is never written by any stateDelta operation.`
     );
   });
 

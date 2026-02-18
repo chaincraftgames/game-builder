@@ -57,7 +57,19 @@ export function transitionsExecutorNode(model: ModelWithOptions) {
     // Extract fields from schema for explicit field list
     const schemaFields = JSON.parse(String(state.stateSchema ?? "[]"));
     const availableFields = extractSchemaFields(schemaFields);
-    const fieldsListForPrompt = Array.from(availableFields).sort().map(f => `  • ${f}`).join('\n');
+    // Exclude message/winner fields from precondition candidates to avoid gating on UI text or derived winners
+    const filteredFields = Array.from(availableFields).filter((f) => {
+      const disallowed = new Set([
+        "game.publicMessage",
+        "game.winningPlayers",
+        "players.privateMessage",
+        "players[*].privateMessage",
+        "players.isGameWinner",
+        "players[*].isGameWinner",
+      ]);
+      return !disallowed.has(f);
+    });
+    const fieldsListForPrompt = filteredFields.sort().map(f => `  • ${f}`).join('\n');
     const computedContextForPrompt = formatComputedContextForPrompt();
 
     // Generate transitions from plan

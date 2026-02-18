@@ -37,7 +37,8 @@ Use markers for extensive narrative style guidance and examples:
 - Marker will be expanded with full guidance later
 `;
 
-export const SYSTEM_PROMPT = `!___ CACHE:spec-execute-guidelines ___!
+export const SYSTEM_PROMPT = `
+!___ CACHE:spec-execute-guidelines ___!
 You are writing a SKELETON game specification that focuses on gameplay requirements.
 
 A skeleton spec describes WHAT happens in the game (player experience, outcomes, rules) and uses MARKERS for lengthy narrative guidance.
@@ -59,12 +60,27 @@ Write requirements needed for: game setup, player actions, action outcomes, info
 - When game ends: "First to win 3 rounds wins the match"
 - Fairness rules: "Players have 90 seconds; timeout = auto-generated weapon"
 - Narrative requirements: "Narrative must mention all weapons and declare winner clearly"
+- Optional NFT support (if applicable): Include an "## NFTs" section listing each NFT content 
+type as a subsection with bullets indicating production/consumption capability. Example format:
+  \`\`\`
+  ## NFTs
+  
+  ### Character Data
+  - Can be produced by this game
+  - Can be consumed by this game
+  
+  ### Item Data
+  - Can be produced by this game
+  \`\`\`
+  Do not describe fields, mechanics, or implementation details
 
 ❌ **Exclude (spec-processing will handle):**
 - Data structures: "Player state has fields: roundsWon, weaponName..."
 - Validation details: "Weapon name must match regex ^[a-zA-Z0-9 -']+$"
 - Phase logic: "Transition to RESOLUTION when all submitted OR timer expires"
 - Algorithms: "Assign R/P/S using weighted randomization with rebalancing..."
+- NFT implementation details or save/load flows: if prior messages mention saving/loading characters, only acknowledge support is handled by the engine; do not specify steps, storage, or fields
+- State persistence implementation: when/how state is saved or loaded
 
 **Quality Standards:**
 - Be specific: Use exact numbers, not "some", "usually", "about"

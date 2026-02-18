@@ -12,12 +12,20 @@ import {
   GetSimulationStateRequest,
   GetSimulationStateRequestSchema,
   GetSimulationStateResponse,
+  ProduceTokenRequest,
+  ProduceTokenResponse,
+  ProduceTokenRequestSchema,
+  GenerateTokenImageRequest,
+  GenerateTokenImageResponse,
+  GenerateTokenImageRequestSchema,
 } from "#chaincraft/api/simulate/schemas.js";
 import {
   createSimulation,
   initializeSimulation,
   processAction,
   getSimulationState,
+  produceToken,
+  generateTokenImage,
 } from "#chaincraft/ai/simulate/simulate-workflow.js";
 
 export async function handleCreateSimulation(
@@ -52,6 +60,7 @@ export async function handleCreateSimulation(
 
     return {
       gameRules: response.gameRules,
+      producedTokens: response.producedTokens,
     };
   } catch (error) {
     console.error("Error in createSimulation:", error);
@@ -157,6 +166,52 @@ export async function handleGetSimulationState(
     };
   } catch (error) {
     console.error("Error in getSimulationState:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+export async function handleProduceToken(
+  request: FastifyRequest<{ Body: ProduceTokenRequest }>,
+  reply: FastifyReply,
+): Promise<ProduceTokenResponse> {
+  const result = ProduceTokenRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { sessionId, playerId, tokenType } = result.data;
+    const response = await produceToken(sessionId, tokenType, playerId);
+
+    return response;
+  } catch (error) {
+    console.error("Error in produceToken:", error);
+    reply.code(500).send({ error: "Internal server error" });
+    return Promise.reject();
+  }
+}
+
+export async function handleGenerateTokenImage(
+  request: FastifyRequest<{ Body: GenerateTokenImageRequest }>,
+  reply: FastifyReply,
+): Promise<GenerateTokenImageResponse> {
+  const result = GenerateTokenImageRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { sessionId, token } = result.data;
+    const response = await generateTokenImage(sessionId, token);
+
+    return response;
+  } catch (error) {
+    console.error("Error in generateTokenImage:", error);
     reply.code(500).send({ error: "Internal server error" });
     return Promise.reject();
   }
