@@ -62,6 +62,58 @@ Don't create phases that only exist to trigger one automatic transition. Merge t
 - ❌ Wrong: phase_a → [trivial transition] → phase_b → [does actual work] → phase_c
 - ✅ Right: phase_a → [does all work] → phase_c
 
+Also avoid creating a separate verification phase just to confirm that work was done.
+If a phase performs work and then transitions out, the work and the transition happen together —
+don't add a follow-on phase that just checks "did the work complete?".
+
+### 6. Preconditions Reflect Phase Type (CRITICAL)
+
+Phases fall into two categories. Choose preconditions based on which type you have:
+
+**Player-input phases** (requiresPlayerInput: true):
+- Players submit data; the phase waits for them to finish
+- Transition OUT fires when players have completed their required actions
+- Preconditions: check currentPhase + player readiness (e.g., allPlayersCompletedActions == true)
+- The data players submitted already exists — preconditions can check it
+
+**System-execution phases** (requiresPlayerInput: false, non-init, non-finished):
+- The ENGINE does work during this phase (compute outcomes, generate content, resolve mechanics)
+- The transition OUT fires to trigger that work and then advance to the next phase
+- Preconditions: check ONLY currentPhase and any INPUT data the work requires that was set by a PREVIOUS phase
+- ❌ NEVER add preconditions for data this transition will PRODUCE — that data doesn't exist yet
+
+The key question: "Does this data exist BEFORE the transition fires, or is it created BY this transition?"
+- Exists before → safe to use in a precondition
+- Created by → belongs in the instruction's stateDelta, NOT a precondition
+
+\`\`\`json
+// ❌ Wrong: precondition checks the value this transition will generate
+// (The computed result does not exist until the transition executes)
+{{
+  "id": "resolve_and_advance",
+  "fromPhase": "resolution",
+  "toPhase": "scoring",
+  "preconditionHints": [
+    {{ "explain": "game.currentPhase == 'resolution'" }},
+    {{ "explain": "game.resolvedOutcome != null" }}  // ← WRONG: this is produced by this transition
+  ]
+}}
+
+// ✅ Right: precondition checks only phase and inputs already present
+{{
+  "id": "resolve_and_advance",
+  "fromPhase": "resolution",
+  "toPhase": "scoring",
+  "humanSummary": "Compute outcome from player choices, then advance to scoring",
+  "preconditionHints": [
+    {{ "explain": "game.currentPhase == 'resolution'" }}
+    // game.resolvedOutcome will be SET by the instruction's stateDelta
+  ]
+}}
+\`\`\`
+
+Remember: the humanSummary field is how you describe the work that happens. The instruction generator reads it and produces the stateDelta. Preconditions just control WHEN the transition fires — not WHAT it produces.
+
 ### 5. Avoid Duplicate Player-Specific Phases
 If multiple players take the same action in sequence, DO NOT create separate phases per player.
 Instead, use a SINGLE parameterized phase with dynamic player identification.
@@ -205,6 +257,14 @@ Preconditions check state that ALREADY EXISTS before transition fires.
 Example (round_scored transition):
 - ✅ Correct: currentPhase == "scoring" AND currentRound == 1
 - ❌ Wrong: Check if scores updated (transition WRITES scores!)
+
+**System-execution phases** (phases where the engine computes or generates something):
+- Preconditions should check ONLY: currentPhase and any INPUT data from a PRIOR phase
+- ❌ Never add preconditions for values this transition will produce — they don't exist yet
+- If a planner hint references a value that this transition generates, move it to humanSummary/stateDelta, not a precondition
+
+If you find yourself writing a precondition like "computed result exists" or "generated content is non-null",
+that is a postcondition of this transition — it belongs in the instruction stateDelta, not here.
 
 ### 3. Deterministic Preconditions (CRITICAL)
 All preconditions must be deterministic using only supported JsonLogic operations.

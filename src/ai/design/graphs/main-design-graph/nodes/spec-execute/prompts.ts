@@ -39,6 +39,16 @@ Use markers for extensive narrative style guidance and examples:
 
 export const SYSTEM_PROMPT = `
 !___ CACHE:spec-execute-guidelines ___!
+
+**⚠️ CRITICAL — CROSS-SESSION PERSISTENCE IS NOT A GAME FEATURE:**
+Saving, loading, persisting, or reusing ANY game data (characters, items, achievements, etc.)
+across game sessions is handled ENTIRELY by the game engine. The specification must NEVER
+describe save/load flows, save decisions, token persistence, token collections, token management,
+loading saved data, or using tokens in future games — regardless of what the changePlan says.
+If the changePlan includes detailed save/load/tokenization mechanics, IGNORE that detail and
+reduce it to ONLY the ## NFTs section (declaring data type and content — see format below).
+Do NOT create game phases, player actions, or sections about saving or loading.
+
 You are writing a SKELETON game specification that focuses on gameplay requirements.
 
 A skeleton spec describes WHAT happens in the game (player experience, outcomes, rules) and uses MARKERS for lengthy narrative guidance.
@@ -60,26 +70,50 @@ Write requirements needed for: game setup, player actions, action outcomes, info
 - When game ends: "First to win 3 rounds wins the match"
 - Fairness rules: "Players have 90 seconds; timeout = auto-generated weapon"
 - Narrative requirements: "Narrative must mention all weapons and declare winner clearly"
-- Optional NFT support (if applicable): Include an "## NFTs" section listing each NFT content 
-type as a subsection with bullets indicating production/consumption capability. Example format:
+- Optional NFT/token support (if applicable): Include an "## NFTs" section listing each NFT content 
+type as a subsection with bullets for:
+  1. Whether this game can produce and/or consume this NFT type
+  2. A brief description of what player-provided content the NFT contains
+  NFT types can be characters, items, achievements, scores, or any other game data.
+  Example:
   \`\`\`
   ## NFTs
   
   ### Character Data
   - Can be produced by this game
   - Can be consumed by this game
+  - Contains: player-provided character name and description
   
-  ### Item Data
+  ### Achievement Badge
   - Can be produced by this game
+  - Contains: achievement name and criteria met
+  
+  ### Crafted Item
+  - Can be produced by this game
+  - Can be consumed by this game
+  - Contains: item name, type, and player-provided customization
   \`\`\`
-  Do not describe fields, mechanics, or implementation details
+  **STOP HERE for NFTs.** Do NOT describe saving, loading, persistence, token management,
+  collections, or any mechanics around NFTs/tokens. The game engine handles all save/load flows
+  automatically. The spec should ONLY declare what NFT types exist and what content they hold.
 
 ❌ **Exclude (spec-processing will handle):**
 - Data structures: "Player state has fields: roundsWon, weaponName..."
 - Validation details: "Weapon name must match regex ^[a-zA-Z0-9 -']+$"
 - Phase logic: "Transition to RESOLUTION when all submitted OR timer expires"
 - Algorithms: "Assign R/P/S using weighted randomization with rebalancing..."
-- NFT implementation details or save/load flows: if prior messages mention saving/loading characters, only acknowledge support is handled by the engine; do not specify steps, storage, or fields
+- **ALL NFT/token save/load mechanics for ANY data type** — NEVER include sections about saving
+  game data (characters, items, achievements, scores, or anything else) as tokens/NFTs, loading
+  tokens, token persistence, token collections, token management, reusing saved data, or using
+  tokens in future games. This applies regardless of whether the plan or user calls them "tokens",
+  "NFTs", "saves", "tokenization", "badges", or "collectibles" — they are all the same thing
+  and the game engine handles all save/load/persistence automatically.
+  The ONLY spec content allowed is the ## NFTs section (see ✅ above) declaring each NFT type and
+  what player-provided content it contains. If the changePlan includes detailed token/save/load
+  mechanics, reduce them to just the ## NFTs declaration.
+  Do NOT generate sections like "Character Tokenization", "Saving Characters", "Loading Tokens",
+  "Token Management", "Token Persistence", "Using Tokens in Future Games", "Achievement Saving",
+  "Item Collection", or anything similar.
 - State persistence implementation: when/how state is saved or loaded
 
 **Quality Standards:**

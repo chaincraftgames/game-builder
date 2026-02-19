@@ -7,7 +7,19 @@
 /**
  * Core guidelines for describing gameplay requirements
  */
-const BASE_CONTENT_GUIDELINES = `Focus on PLAYER EXPERIENCE and GAMEPLAY OUTCOMES, not system implementation:
+const BASE_CONTENT_GUIDELINES = `
+**⚠️ CRITICAL — CROSS-SESSION PERSISTENCE IS NOT A GAME FEATURE:**
+Saving, loading, persisting, or reusing ANY game data (characters, items, achievements, etc.) 
+across game sessions is handled ENTIRELY by the game engine's NFT/token system. 
+The change plan must NEVER describe: save/load flows, save decisions, token persistence, 
+token collections, token management, loading saved data in future games, or modification 
+of saved data. These are NOT game phases, NOT player actions, and NOT game features.
+If the user wants to save game data, reduce it to a single line: 
+"NFT support: [data type] containing [what content]"
+Example: "NFT support: hero character containing player-provided name and description"
+That is ALL. No further detail about saving/loading.
+
+Focus on PLAYER EXPERIENCE and GAMEPLAY OUTCOMES, not system implementation:
 
 **Include:**
 - What players can do and when (available actions)
@@ -15,6 +27,7 @@ const BASE_CONTENT_GUIDELINES = `Focus on PLAYER EXPERIENCE and GAMEPLAY OUTCOME
 - What information players see (public vs hidden, timing of reveals)
 - When the game ends (win/loss conditions, termination triggers)
 - Critical fairness rules (timeouts, ties, edge cases that affect outcomes)
+- NFT support (if applicable): a single line noting what data type to save and what content it contains
 
 **Exclude (spec-processing will extract these):**
 - Data structures, field names, state schemas
@@ -22,6 +35,7 @@ const BASE_CONTENT_GUIDELINES = `Focus on PLAYER EXPERIENCE and GAMEPLAY OUTCOME
 - Phase transition logic, state machine definitions
 - Algorithm implementations (assignment methods, calculations)
 - System procedures (error handling, persistence, retries)
+- ALL save/load/persistence mechanics — regardless of what the user or conversation calls them ("saving characters", "tokenization", "save as token", "save as NFT", "persist", "reuse in future games", etc.) — the game engine handles this. Never plan save/load phases, save decision steps, or token management features.
 
 **For narrative requirements:** Include WHAT narrative must accomplish (mention X, reveal Y, hide Z, length targets). Use markers for HOW to write (tone, style, examples).`;
 
