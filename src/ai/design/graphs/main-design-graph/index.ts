@@ -138,13 +138,11 @@ function routeAfterSpecDiff(
  * Creates and compiles the main design workflow graph.
  * 
  * @param checkpointer - Checkpoint saver for state persistence
- * @param constraintsRegistry - Game design constraints
  * @param mechanicsRegistry - Available game mechanics
  * @returns Compiled graph
  */
 export async function createMainDesignGraph(
   checkpointer: BaseCheckpointSaver,
-  constraintsRegistry: string,
   mechanicsRegistry: string = "No specific mechanics registry provided."
 ) {
   const workflow = new StateGraph(GameDesignState);
@@ -158,7 +156,6 @@ export async function createMainDesignGraph(
   // Create nodes
   const conversationalAgent = await createConversationalAgent(
     conversationalModel,
-    constraintsRegistry,
     mechanicsRegistry
   );
   const specPlan = createSpecPlan(specPlanModel);

@@ -18,14 +18,6 @@ describe("Main Design Graph - Integration", () => {
   beforeAll(async () => {
     checkpointer = new MemorySaver();
     
-    const constraintsRegistry = `
-# Game Design Constraints
-
-- Games should be turn-based
-- Clear win/loss conditions required
-- Must specify player count range
-    `.trim();
-    
     const mechanicsRegistry = `
 # Available Mechanics
 
@@ -36,7 +28,6 @@ describe("Main Design Graph - Integration", () => {
     
     graph = await createMainDesignGraph(
       checkpointer,
-      constraintsRegistry,
       mechanicsRegistry
     );
   }, 30000); // Allow time for model setup
@@ -194,7 +185,6 @@ describe("Main Design Graph - Lazy Spec Generation", () => {
     const checkpointer = new MemorySaver();
     graph = await createMainDesignGraph(
       checkpointer,
-      "Test constraints",
       "Test mechanics"
     );
   }, 30000);
