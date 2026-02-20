@@ -163,6 +163,7 @@ export async function handleGetSimulationState(
       playerStates,
       gameEnded: response.gameEnded,
       winningPlayers: response.winningPlayers,
+      producedTokens: response.producedTokens,
       gameError: response.gameError,
     };
   } catch (error) {
