@@ -30,7 +30,6 @@ import {
 import { imageGenTool, rawImageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
-import { getConstraintsRegistry } from "./design-data.js";
 import {
   logApplicationEvent,
   logSecretStatus,
@@ -547,7 +546,7 @@ async function createDesignGraph(
   >
 > {
   const saver = await getSaver(conversationId, graphType);
-  return await createMainDesignGraph(saver, getConstraintsRegistry(), "");
+  return await createMainDesignGraph(saver);
 }
 
 async function _processMessage(

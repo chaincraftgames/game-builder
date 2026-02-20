@@ -22,6 +22,7 @@ import {
   GAME_TITLE_TAG,
   formatFewShotExamples 
 } from "../prompts.js";
+import { CONSTRAINTS_TEXT } from "#chaincraft/ai/design/constraints.js";
 import type { GameDesignSpecification, GamepieceMetadata } from "#chaincraft/ai/design/game-design-state.js";
 
 // Helper function to create test state with all required fields
@@ -70,16 +71,6 @@ const MOCK_MECHANICS_REGISTRY = `
 - Area Control: Players compete for control of board spaces and territories
 - Resource Management: Players collect, spend, and optimize resources
 - Drafting: Players select cards or items from a shared pool in turn order
-`;
-
-const MOCK_CONSTRAINTS_REGISTRY = `
-NOT SUPPORTED:
-- Real-time action games requiring simultaneous play
-- Games requiring precise timing or dexterity
-
-SUPPORTED WITH LIMITATIONS:
-- Complex card interactions (may require manual clarification)
-- Large board sizes (performance may vary)
 `;
 
 describe("Conversational Agent - Tag Parsing", () => {
@@ -167,7 +158,6 @@ describe("Conversational Agent - Integration", () => {
       // Create agent instance
       agent = await createConversationalAgent(
         model,
-        MOCK_CONSTRAINTS_REGISTRY,
         MOCK_MECHANICS_REGISTRY
       );
     } catch (error) {
@@ -320,12 +310,147 @@ describe("Conversational Agent - Integration", () => {
   }, 30000);
 });
 
+describe("Conversational Agent - Constraint Enforcement", () => {
+  // These tests use the REAL constraints registry (from constraints.ts) so they
+  // validate the prompt + few-shot examples against actual production constraints.
+
+  let model: any;
+
+  beforeAll(async () => {
+    model = await setupDesignModel();
+  });
+
+  test("top-down shooter: NOT SUPPORTED — should flag and not set update flags", async () => {
+    // Violations: real-time graphics, autonomous enemy actions, timing-based gameplay
+    const agent = await createConversationalAgent(
+      model,
+      CONSTRAINTS_TEXT,
+      MOCK_MECHANICS_REGISTRY
+    );
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage(
+          "I want to make a top-down shooter where enemies move around the screen and the player dodges bullets in real time"
+        )
+      ],
+    });
+
+    const result = await agent(state);
+    const content = typeof result.messages[0].content === "string"
+      ? result.messages[0].content
+      : JSON.stringify(result.messages[0].content);
+
+    console.log("\n=== TOP-DOWN SHOOTER CONSTRAINT TEST ===");
+    console.log(content);
+    console.log("spec flag:", result.specUpdateNeeded, "| metadata flag:", result.metadataUpdateNeeded);
+    console.log("=========================================\n");
+
+    // Agent must refuse to proceed with the unsupported design
+    expect(result.specUpdateNeeded).toBe(false);
+    expect(result.metadataUpdateNeeded).toBe(false);
+
+    // Response must identify the specific violated mechanics
+    const lower = content.toLowerCase();
+    const mentionsViolation =
+      lower.includes("not supported") ||
+      lower.includes("can't") ||
+      lower.includes("cannot") ||
+      lower.includes("real-time") ||
+      lower.includes("real time") ||
+      lower.includes("constraint");
+    expect(mentionsViolation).toBe(true);
+  }, 30000);
+
+  test("match-3 puzzle game: NOT SUPPORTED — should flag cascading/animated state changes", async () => {
+    // Violations: tiles drop and cascade automatically without player input,
+    // graphics update asynchronously (animations after each match)
+    const agent = await createConversationalAgent(
+      model,
+      CONSTRAINTS_TEXT,
+      MOCK_MECHANICS_REGISTRY
+    );
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage(
+          "I want to build a match-3 game like Candy Crush where tiles fall and cascade automatically when matches are made"
+        )
+      ],
+    });
+
+    const result = await agent(state);
+    const content = typeof result.messages[0].content === "string"
+      ? result.messages[0].content
+      : JSON.stringify(result.messages[0].content);
+
+    console.log("\n=== MATCH-3 CONSTRAINT TEST ===");
+    console.log(content);
+    console.log("spec flag:", result.specUpdateNeeded, "| metadata flag:", result.metadataUpdateNeeded);
+    console.log("================================\n");
+
+    // Must not proceed with design
+    expect(result.specUpdateNeeded).toBe(false);
+    expect(result.metadataUpdateNeeded).toBe(false);
+
+    // Must call out the unsupported mechanics
+    const lower = content.toLowerCase();
+    const mentionsViolation =
+      lower.includes("not supported") ||
+      lower.includes("can't") ||
+      lower.includes("cannot") ||
+      lower.includes("automatic") ||
+      lower.includes("cascade") ||
+      lower.includes("constraint") ||
+      lower.includes("without player input");
+    expect(mentionsViolation).toBe(true);
+  }, 30000);
+
+  test("deck-building card battler: SUPPORTED — should proceed normally and set spec flag", async () => {
+    // A deck-building card battler (e.g. Dominion, Slay the Spire-style turn-based) is
+    // fully turn-based and text-representable. The agent must NOT flag this as unsupported
+    // and should engage with the design, setting spec_update_needed.
+    const agent = await createConversationalAgent(
+      model,
+      CONSTRAINTS_TEXT,
+      MOCK_MECHANICS_REGISTRY
+    );
+
+    const state = createTestState({
+      messages: [
+        new HumanMessage(
+          "I want to build a deck-building card battler where two players take turns playing cards from their hand to attack each other and buy new cards to add to their decks. First player to defeat their opponent wins."
+        )
+      ],
+    });
+
+    const result = await agent(state);
+    const content = typeof result.messages[0].content === "string"
+      ? result.messages[0].content
+      : JSON.stringify(result.messages[0].content);
+
+    console.log("\n=== DECK-BUILDER SUPPORTED TEST ===");
+    console.log(content);
+    console.log("spec flag:", result.specUpdateNeeded, "| metadata flag:", result.metadataUpdateNeeded);
+    console.log("====================================\n");
+
+    // Must engage with the design — should not refuse or flag as unsupported
+    const lower = content.toLowerCase();
+    const wronglyRefused =
+      (lower.includes("not supported") || lower.includes("cannot be implemented")) &&
+      !lower.includes("limitation");   // "limitation" is okay; outright refusal is not
+    expect(wronglyRefused).toBe(false);
+
+    // Should capture the concept immediately and set spec flag
+    expect(result.specUpdateNeeded).toBe(true);
+  }, 30000);
+});
+
 describe("Conversational Agent - Edge Cases", () => {
   test("should handle constraint violations", async () => {
     const model = await setupDesignModel();
     const agent = await createConversationalAgent(
       model,
-      MOCK_CONSTRAINTS_REGISTRY,
       MOCK_MECHANICS_REGISTRY
     );
 
@@ -350,7 +475,6 @@ describe("Conversational Agent - Edge Cases", () => {
     const model = await setupDesignModel();
     const agent = await createConversationalAgent(
       model,
-      MOCK_CONSTRAINTS_REGISTRY,
       MOCK_MECHANICS_REGISTRY
     );
 
