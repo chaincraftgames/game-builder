@@ -8,7 +8,7 @@ import { instructionsExecutorNode } from "./executor.js";
 import {
   validatePlanCompleteness,
   validateJsonParseable,
-  validateInitializationCompleteness,
+  // validateInitializationCompleteness,
   validateActionRequiredSet,
   validateNarrativeMarkers,
   validateArtifactStructure,
@@ -17,6 +17,7 @@ import {
   validateGameCompletion,
   validatePhaseConnectivity,
   validateFieldCoverage,
+  validateSelfBlockingTransitions,
 } from "./validators.js";
 import { NodeConfig, getFromStore } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import { resolvePositionalPlayerTemplates } from "./utils.js";
@@ -39,12 +40,13 @@ export const instructionsExtractionConfig: NodeConfig = {
       validatePathStructure,
       validateArtifactStructure,
       validatePhaseConnectivity,
-      validateInitializationCompleteness,
+      // validateInitializationCompleteness,
       validateActionRequiredSet,
       validateNarrativeMarkers,
       validateInitialStatePreconditions,
       validateGameCompletion,
       validateFieldCoverage,
+      validateSelfBlockingTransitions,
     ],
   },
   

@@ -91,10 +91,16 @@ export const GameDesignState = Annotation.Root({
   // Spec Gen Batching
   pendingSpecChanges: Annotation<SpecPlan[]>({
     reducer: (x, y) => {
-      // If y is an empty array and x exists, this is a clear operation - replace
+      // If not provided, preserve checkpoint value
+      if (y === undefined) {
+        return x || [];
+      }
+
+      // If explicitly provided as empty, clear
       if (y.length === 0 && x && x.length > 0) {
         return [];
       }
+
       // Otherwise append (normal accumulation)
       return [...(x || []), ...y];
     },

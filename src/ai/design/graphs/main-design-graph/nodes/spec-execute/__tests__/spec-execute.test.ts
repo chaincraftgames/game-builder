@@ -28,6 +28,8 @@ function createTestState(overrides: {
   pendingSpecChanges?: SpecPlan[];
   specVersion?: number;
   narrativeStyleGuidance?: string;
+  specNarratives?: Record<string, string>;
+  narrativesNeedingUpdate?: string[];
 } = {}) {
   return {
     messages: overrides.messages || [],
@@ -50,8 +52,8 @@ function createTestState(overrides: {
     lastSpecMessageCount: undefined,
     metadataPlan: undefined,
     narrativeStyleGuidance: overrides.narrativeStyleGuidance || undefined,
-    specNarratives: undefined,
-    narrativesNeedingUpdate: [],
+    specNarratives: overrides.specNarratives || undefined,
+    narrativesNeedingUpdate: overrides.narrativesNeedingUpdate || [],
     pendingSpecChanges: overrides.pendingSpecChanges || [],
     forceSpecGeneration: false,
     consolidationThreshold: 5,
@@ -776,7 +778,7 @@ A survival horror game where players navigate 8 rooms to escape.
 ## Turn Structure
 Each turn represents entering a new room with choices.
 
-<!-- NARRATIVE:TONE_STYLE -->
+!___ NARRATIVE:TONE_STYLE ___!
 
 ## Victory
 Reach turn 8 with health > 0.`,
@@ -794,6 +796,8 @@ Reach turn 8 with health > 0.`,
 4. **Using Items**: Players can use items during their turn before making a choice`
     };
 
+    // Pre-populate specNarratives as if TONE_STYLE was already generated in a prior run.
+    // narrativesNeedingUpdate is empty - this is a mechanics-only change with no explicit narrative requests.
     const state = createTestState({
       messages: [
         new HumanMessage("Add an inventory system with items like health kits and keys"),
@@ -802,6 +806,10 @@ Reach turn 8 with health > 0.`,
       pendingSpecChanges: [specPlan],
       currentSpec: existingSpec,
       narrativeStyleGuidance: "Dark, gothic horror tone set in 1920s.",
+      specNarratives: {
+        TONE_STYLE: "Dark, atmospheric gothic horror set in the 1920s. Evoke dread through shadow and silence rather than explicit violence. Use period-appropriate language and imagery.",
+      },
+      narrativesNeedingUpdate: [], // no explicit narrative updates requested
     });
 
     const result = await executeSpec(state);
@@ -810,6 +818,7 @@ Reach turn 8 with health > 0.`,
     console.log("Summary:", result.currentSpec.summary);
     console.log("\nDesign Specification:");
     console.log(result.currentSpec.designSpecification);
+    console.log("\nnarrativesNeedingUpdate:", result.narrativesNeedingUpdate);
     console.log("===============================\n");
 
     // Verify update
@@ -822,12 +831,68 @@ Reach turn 8 with health > 0.`,
     expect(spec.toLowerCase()).toMatch(/inventory|item/);
     expect(spec.toLowerCase()).toMatch(/health kit|lantern|key/);
     
-    // Should preserve existing markers
-    expect(spec).toMatch(/!___ NARRATIVE:/);
+    // Should preserve existing marker in the skeleton
+    expect(spec).toMatch(/!___ NARRATIVE:TONE_STYLE ___!/);
     
     // Should preserve existing rules
     expect(spec.toLowerCase()).toMatch(/health|sanity/);
-    
-    console.log("Marker count:", (spec.match(/<!-- NARRATIVE:/g) || []).length);
+
+    // KEY ASSERTION: TONE_STYLE already had generated content and was not explicitly
+    // requested for update, so spec-execute must NOT re-queue it.
+    // Note: the LLM may introduce new markers when regenerating (e.g. GENERATION_GUIDE),
+    // which is correct behaviour - new markers should be queued, existing ones should not.
+    expect(result.narrativesNeedingUpdate).not.toContain("TONE_STYLE");
+
+    console.log("Marker count:", (spec.match(/!___ NARRATIVE:/g) || []).length);
+  }, 90000);
+
+  test("should queue narratives that are explicitly requested even if already generated", async () => {
+    const existingSpec: GameDesignSpecification = {
+      summary: "A survival horror game in a haunted mansion",
+      playerCount: { min: 1, max: 4 },
+      designSpecification: `# Mansion Escape
+
+## Turn Structure
+Each turn represents entering a new room with choices.
+
+!___ NARRATIVE:TONE_STYLE ___!
+
+## Victory
+Reach turn 8 with health > 0.`,
+      version: 1,
+    };
+
+    const specPlan: SpecPlan = {
+      summary: "A survival horror game in a haunted mansion",
+      playerCount: { min: 1, max: 4 },
+      changes: "Update the narrative tone to be more Victorian gothic and less 1920s pulp horror."
+    };
+
+    // Simulates spec-plan having detected a narrative style change and queued TONE_STYLE for regeneration.
+    const state = createTestState({
+      messages: [
+        new HumanMessage("Make the tone more Victorian gothic"),
+      ],
+      title: "Mansion Escape",
+      pendingSpecChanges: [specPlan],
+      currentSpec: existingSpec,
+      narrativeStyleGuidance: "Victorian gothic, gaslit streets, Dickensian atmosphere.",
+      specNarratives: {
+        TONE_STYLE: "[old content - 1920s pulp horror style]",
+      },
+      narrativesNeedingUpdate: ["TONE_STYLE"], // explicitly queued by spec-plan
+    });
+
+    const result = await executeSpec(state);
+
+    console.log("\n=== EXPLICITLY REQUESTED NARRATIVE UPDATE ===");
+    console.log("narrativesNeedingUpdate:", result.narrativesNeedingUpdate);
+    console.log("=============================================\n");
+
+    expect(result.currentSpec).toBeDefined();
+
+    // KEY ASSERTION: Even though TONE_STYLE already has content, it was explicitly
+    // requested for update by spec-plan, so it must be re-queued.
+    expect(result.narrativesNeedingUpdate).toContain("TONE_STYLE");
   }, 90000);
 });

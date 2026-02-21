@@ -27,10 +27,9 @@ let isInitialized = false;
 // Get database backend from environment variable
 function getDatabaseBackend(): DatabaseBackend {
   const dbType = process.env.CHECKPOINT_DB_TYPE?.toLowerCase();
-  if (dbType === "postgres" || dbType === "postgresql") {
-    return "postgres";
-  }
-  return "sqlite"; // Default to SQLite
+  const backend = (dbType === "postgres" || dbType === "postgresql") ? "postgres" : "sqlite";
+  console.log(`[checkpoint-memory] getDatabaseBackend: CHECKPOINT_DB_TYPE=${dbType || 'undefined'}, selected=${backend}`);
+  return backend;
 }
 
 async function initialize() {
@@ -64,8 +63,10 @@ async function getOrCreateDatabase(graphType: string): Promise<DatabaseState> {
 
     if (backend === "sqlite") {
       state.dbPath = path.join(process.cwd(), "data", `${graphType}-memory.db`);
+      console.log(`[checkpoint-memory] Created database state for graphType=${graphType}, backend=sqlite, dbPath=${state.dbPath}`);
     } else {
       state.connectionString = process.env.POSTGRES_CONNECTION_STRING;
+      console.log(`[checkpoint-memory] Created database state for graphType=${graphType}, backend=postgres, hasConnectionString=${!!state.connectionString}`);
     }
 
     databases.set(graphType, state);
@@ -154,11 +155,13 @@ export async function getSaver(
 export async function listThreadIds(graphType: string): Promise<string[]> {
   await initialize();
   
+  console.log(`[checkpoint-memory] listThreadIds called for graphType=${graphType}`);
   const db = await getOrCreateDatabase(graphType);
   const saver = await getSaver('list-threads', graphType); // Ensure saver is initialized
   const ids = new Set<string>();
   
   if (db.backend === "postgres") {
+    console.log(`[checkpoint-memory] Using postgres backend to list threads`);
     // For PostgreSQL: query distinct thread_ids directly (much more efficient than loading checkpoints)
     const pool = (saver as any).pool as Pool;
     const result = await pool.query(
@@ -168,16 +171,22 @@ export async function listThreadIds(graphType: string): Promise<string[]> {
       ids.add(row.thread_id);
     }
   } else {
+    console.log(`[checkpoint-memory] Using sqlite backend to list threads from dbPath=${db.dbPath}`);
     // For SQLite: use limited checkpoint list
-    for await (const checkpoint of saver.list({}, { limit: 100 })) {
+    let count = 0;
+    for await (const checkpoint of saver.list({}, {})) {
       const threadId = checkpoint.config?.configurable?.thread_id;
       if (threadId) {
         ids.add(threadId);
+        count++;
       }
     }
+    console.log(`[checkpoint-memory] Scanned ${count} checkpoints, found ${ids.size} unique thread_ids`);
   }
   
-  return Array.from(ids).sort();
+  const result = Array.from(ids).sort();
+  console.log(`[checkpoint-memory] listThreadIds result: ${result.length} threads`);
+  return result;
 }
 
 export async function deleteThread(

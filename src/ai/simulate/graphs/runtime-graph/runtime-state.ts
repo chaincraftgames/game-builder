@@ -12,6 +12,17 @@ import { Annotation } from "@langchain/langgraph";
 export type RuntimeStateType = typeof RuntimeState.State;
 
 export const RuntimeState = Annotation.Root({
+  // Metadata about the game specification used
+  gameId: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => "",
+  }),
+
+  gameSpecificationVersion: Annotation<number>({
+    reducer: (_, y) => y,
+    default: () => 0,
+  }),
+  
   // Inputs
   players: Annotation<string[]>({
     reducer: (x, y) => [...new Set([...x, ...y])],
@@ -51,6 +62,11 @@ export const RuntimeState = Annotation.Root({
   specNarratives: Annotation<Record<string, string>>({
     reducer: (_, y) => y,
     default: () => ({}),
+  }),
+
+  producedTokensConfiguration: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => "",
   }),
 
   // Runtime state

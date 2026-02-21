@@ -153,7 +153,22 @@ export function createSpecExecute(model: ModelWithOptions) {
       version: newVersion,
     };
     
-    // 9. Return state updates
+    // 9. Determine which narrative markers actually need (re)generation.
+    //    - New markers: present in the skeleton but not yet in specNarratives (first-time generation)
+    //    - Explicit updates: markers already queued by spec-plan due to a style change or user request
+    //    Markers that already have content and were NOT explicitly requested are preserved as-is.
+    const existingNarratives = state.specNarratives || {};
+    const newMarkers = markers.filter(m => !(m in existingNarratives));
+    const explicitUpdates = state.narrativesNeedingUpdate || [];
+    const markersToGenerate = [...new Set([...explicitUpdates, ...newMarkers])];
+
+    if (markersToGenerate.length > 0) {
+      console.log(`[spec-execute] Narratives to generate: [${markersToGenerate.join(', ')}] (${newMarkers.length} new, ${explicitUpdates.length} explicit update(s))`);
+    } else {
+      console.log('[spec-execute] All narrative markers already generated and no explicit updates requested - skipping narrative generation');
+    }
+
+    // 10. Return state updates
     console.log('[spec-execute] Node completed successfully - returning state updates');
     return {
       currentSpec: spec,
@@ -162,9 +177,7 @@ export function createSpecExecute(model: ModelWithOptions) {
       lastSpecUpdate: new Date().toISOString(),
       lastSpecMessageCount: state.messages.length,
       specUpdateNeeded: false, // Reset the flag
-      pendingSpecChanges: [], // Clear pending plans after execution
-      forceSpecGeneration: false, // Reset force flag
-      narrativesNeedingUpdate: markers, // Populate markers for narrative generation
+      narrativesNeedingUpdate: markersToGenerate,
     };
   } catch (error) {
       console.error('[spec-execute] ========== CRITICAL ERROR ==========');

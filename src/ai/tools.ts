@@ -9,9 +9,22 @@ import fetch from "node-fetch";
 // });
 
 /**
+ * Configuration for Leonardo image generation.
+ */
+export interface LeonardoConfig {
+  apiKey?: string;
+  modelId?: string;
+  width?: number;
+  height?: number;
+  numImages?: number;
+  /** Optional LoRA elements. If provided, used as-is instead of hardcoded model check. */
+  userElements?: Array<{ userLoraId: number; weight: number }>;
+}
+
+/**
  * Leonardo API wrapper for LangChain.
  */
-class LeonardoAPIWrapper extends Tool {
+export class LeonardoAPIWrapper extends Tool {
   name = "leonardo";
   description =
     "A tool that generates images based on text prompts using Leonardo AI";
@@ -21,6 +34,7 @@ class LeonardoAPIWrapper extends Tool {
   private width: number;
   private height: number;
   private numImages: number;
+  private userElements?: Array<{ userLoraId: number; weight: number }>;
 
   constructor({
     apiKey = process.env.LEONARDO_API_KEY,
@@ -28,7 +42,8 @@ class LeonardoAPIWrapper extends Tool {
     width = 1024,
     height = 768,
     numImages = 1,
-  } = {}) {
+    userElements,
+  }: LeonardoConfig = {}) {
     super();
 
     if (!apiKey) {
@@ -40,6 +55,7 @@ class LeonardoAPIWrapper extends Tool {
     this.width = width;
     this.height = height;
     this.numImages = numImages;
+    this.userElements = userElements;
   }
 
   /** @ignore */
@@ -71,10 +87,7 @@ class LeonardoAPIWrapper extends Tool {
           presetStyle: "DYNAMIC",
           prompt,
           width: this.width,
-          userElements:
-            this.modelId === "b24e16ff-06e3-43eb-8d33-4416c2d75876"
-              ? [{ userLoraId: 59955, weight: 0.8 }]
-              : undefined, // Only use LoRA for cartridge model
+          userElements: this.userElements,
           negative_prompt: negativePrompt,
         }),
       };
@@ -92,9 +105,10 @@ class LeonardoAPIWrapper extends Tool {
       );
 
       if (response.status !== 200) {
-        console.log("[Leonardo Tool] Response:", response.statusText);
+        const errorBody = await response.text();
+        console.log("[Leonardo Tool] Response:", response.statusText, "Body:", errorBody);
         throw new Error(
-          `[Leonardo Tool] Failed to create image generation request: ${response.statusText}`
+          `[Leonardo Tool] Failed to create image generation request: ${response.statusText} - ${errorBody}`
         );
       }
 
@@ -188,6 +202,7 @@ export const imageGenTool = new LeonardoAPIWrapper({
   width: 1024,
   height: 768,
   numImages: 1,
+  userElements: [{ userLoraId: 59955, weight: 0.8 }],
   // Use environment variable for API key
   apiKey: process.env.CHAINCRAFT_GAMEBUILDER_LEO_IMAGEGEN_API_KEY,
 });

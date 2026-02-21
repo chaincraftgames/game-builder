@@ -5,7 +5,7 @@
  * Extracts summary, playerCount, and detailed change plan from conversation.
  */
 
-import { BaseMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
@@ -45,7 +45,7 @@ function extractRelevantMessages(
  */
 function formatConversationHistory(messages: BaseMessage[]): string {
   return messages.map(msg => {
-    const role = msg._getType() === 'human' ? 'User' : 'Design Assistant';
+    const role = msg instanceof HumanMessage ? 'User' : 'Design Assistant';
     return `${role}: ${msg.content}`;
   }).join('\n\n');
 }

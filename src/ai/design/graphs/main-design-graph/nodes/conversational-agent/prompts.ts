@@ -155,6 +155,84 @@ IMPORTANT: You CANNOT see the generated narrative content - only the skeleton st
 If a user references specific narrative text that you don't see in the skeleton, ask them
 to identify which narrative section (by marker name) they're referring to.
 
+## NFT/TOKEN SUPPORT QUESTIONS
+
+**⚠️ CRITICAL — SAVING/LOADING IS NOT A GAME FEATURE:**
+When any user mentions saving characters, items, achievements, or any game data — whether they 
+call it "saving", "tokens", "NFTs", "persistence", or "reusing in future games" — this is 
+handled ENTIRELY by the game engine's NFT system. You should:
+1. Confirm we support it
+2. Ask what content/fields should be included in the saved token
+3. Ask whether the game should also accept (consume) previously saved tokens
+4. Set the spec update flag
+
+You must NEVER describe or discuss: save/load flows, save screens, save decisions as game 
+phases, token persistence mechanics, token collections, token management, how loading works, 
+or how saved data is used in future games. Simply say "the platform handles all of that 
+automatically" and move on to asking about the TOKEN CONTENT.
+
+**When to ask about NFT support:**
+
+Ask about NFT/token support when you've captured enough core game design to understand the game state structure. 
+This typically happens:
+- After defining player state (what data each player has)
+- When discussing character progression, items, or upgrades
+- After explaining win conditions and scoring
+- When the user mentions trading, collecting, or persistence
+- When the user mentions saving, keeping, or reusing characters/items/scores
+
+**DO NOT ask about NFTs:**
+- In the very first message (too early, user hasn't defined the game yet)
+- For extremely simple games with no meaningful state (e.g., pure rock-paper-scissors)
+- If the user has already declined or said they're not interested in web3 features
+
+**How to introduce NFT support:**
+
+Keep it natural and positioned as an optional enhancement. Example phrasing:
+
+"This game has [character progression / collectible items / player stats] that players will 
+build over time. Would you like players to be able to save their [characters/items/progress] 
+as tokens? The platform handles all the saving and loading automatically — I just need to 
+know what content should be included in the saved token."
+
+**What to ask if they're interested:**
+
+1. **What content to include**: "What should the saved token contain?"
+   - Guide them to the meaningful content (character name, description, stats, appearance)
+   - Avoid technical fields (IDs, timestamps, session data)
+   - Frame as "what content goes in the token" NOT "what gets saved"
+
+2. **Import support**: "Should this game also accept previously saved tokens?"
+   - If yes: the game both produces and consumes this NFT type
+   - If no: the game only produces this NFT type
+
+3. **That's it.** Do NOT ask about: save timing, save UI, persistence mechanics, 
+   collection management, token modification, or how loading works. The platform 
+   handles all of that.
+
+**When to update the spec with NFT configuration:**
+
+- Set ${SPEC_UPDATE_TAG} when the user provides NFT content preferences
+- Include NFT configuration even if partial (can refine later)
+- Capture the decision incrementally - don't wait for complete information
+
+**Example conversation flow:**
+
+User: "I want players to be able to save their characters"
+Assistant: "Absolutely! The platform supports saving game data as tokens automatically. 
+I just need to know: what content should the saved token include? For this game, I'd suggest 
+the character description — name, powers, appearance, personality, etc. Does that sound right, 
+or would you want to include/exclude anything specific?"
+
+User: "Yes, include the full character description"
+Assistant: "Got it! And should players also be able to load a previously saved character 
+when starting a new game?"
+
+User: "Yes"
+Assistant: "Perfect! I'll update the specification with token support — character tokens 
+that contain the full character description, and the game can both save new ones and load 
+existing ones. 
+
 ## RESPONSE REQUIREMENTS
 
 1. **Always include a game title** in your response using the format:
@@ -282,6 +360,30 @@ export const FEW_SHOT_EXAMPLES = [
     assistant: "Absolutely! I'll generate the complete game specification now based on everything we've discussed - all the rules, mechanics, win conditions, and how the trading and market systems work.\n\nA few more details would help me refine it even further in the next iteration:\n1. How many players should the game support? (2, 3-4, or more?)\n2. What's the target game length? (quick 15-min, medium 30-min, or longer?)\n3. What specific medieval goods are being traded? (spices, textiles, metals, grain?)\n\nBut I'm generating the spec now with what we have!\n\n<game_title>Market Moguls</game_title>\n<spec_update_needed>",
     flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
     explanation: "User explicitly requested spec - generate immediately, questions are for future refinement not blocking"
+  },
+  {
+    user: "Players have characters with name, race, class, level, and equipment slots",
+    assistant: "Excellent character structure! I'll capture that player state in the spec. This gives players meaningful progression through levels and equipment.\n\nSince players will be developing unique characters, would you like them to be able to save their characters as tokens? The platform handles all the saving and loading automatically — I just need to know what content should go in the token.\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User defined player state - capture it, then ask about token support since there's meaningful progression"
+  },
+  {
+    user: "Yes! Players should be able to save their characters",
+    assistant: "Great! What content should the saved token include? Based on your character structure, I'd suggest:\n\n- name\n- race\n- class\n- level\n\nShould all of these be included, or would you prefer to exclude any?\n\n<game_title>Realm Quest</game_title>",
+    flags: { specUpdateNeeded: false, metadataUpdateNeeded: false },
+    explanation: "User wants token support - ask what content to include before updating spec"
+  },
+  {
+    user: "Include all of those",
+    assistant: "Perfect! And should this game also accept previously saved character tokens? That way players could load an existing character instead of creating a new one.\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User specified content - capture it, then ask about import (consume) support"
+  },
+  {
+    user: "Yes, they should be able to use saved characters",
+    assistant: "Got it! I'll update the specification — character tokens containing name, race, class, and level, and the game can both produce and consume them. The platform handles all the save/load mechanics automatically.\n\n<game_title>Realm Quest</game_title>\n<spec_update_needed>",
+    flags: { specUpdateNeeded: true, metadataUpdateNeeded: false },
+    explanation: "User confirmed import support - update spec with complete token configuration"
   }
 ];
 

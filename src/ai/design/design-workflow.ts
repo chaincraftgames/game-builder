@@ -1,6 +1,5 @@
 import "dotenv/config.js";
 
-import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { Checkpoint, CompiledStateGraph } from "@langchain/langgraph";
 import {
   AIMessage,
@@ -15,19 +14,13 @@ import {
 } from "#chaincraft/ai/design/game-design-state.js";
 import {
   gameTitleTag,
-  imageDesignPrompt,
   produceFullGameDesignPrompt,
-  imageGenPrompt,
-  rawImageGenPrompt,
-  rawImageNegativePrompt,
 } from "#chaincraft/ai/design/game-design-prompts.js";
 import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
-import { OverloadedError } from "#chaincraft/ai/error.js";
 import {
   isActiveConversation as _isActiveConversation,
   registerConversationId,
 } from "#chaincraft/ai/conversation.js";
-import { imageGenTool, rawImageGenTool } from "#chaincraft/ai/tools.js";
 import { GraphCache } from "#chaincraft/ai/graph-cache.js";
 import { getConfig } from "#chaincraft/config.js";
 import {
@@ -35,7 +28,11 @@ import {
   logSecretStatus,
 } from "#chaincraft/util/safe-logging.js";
 import { createMainDesignGraph } from "./graphs/main-design-graph/index.js";
-import { setupDesignModel } from "#chaincraft/ai/model-config.js";
+import {
+  generateImageWithDescription,
+  CARTRIDGE_IMAGE_CONFIG,
+  RAW_IMAGE_CONFIG,
+} from "#chaincraft/ai/image-gen/image-gen-service.js";
 
 // Log safe application startup info
 logApplicationEvent("design-workflow", "initializing", {
@@ -49,17 +46,12 @@ logSecretStatus(
 );
 
 const graphType = getConfig("design-graph-type");
+console.log(`[design-workflow] Initialized with graphType='${graphType}'`);
 
 const designGraphCache = new GraphCache(
   createDesignGraph,
   parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100")
 );
-
-const imageGenSystemMessage =
-  SystemMessagePromptTemplate.fromTemplate(imageGenPrompt);
-
-const rawImageGenSystemMessage =
-  SystemMessagePromptTemplate.fromTemplate(rawImageGenPrompt);
 
 const gameTitleRegex = new RegExp(
   `.*?${gameTitleTag}(.*?)${gameTitleTag.replace("<", "</")}`,
@@ -123,89 +115,12 @@ export async function generateImage(
 
   const { specification: { summary }, title } = specAndTitle;
 
-  // Setup model with design defaults (includes tracer callbacks)
-  const modelWithOptions = await setupDesignModel();
+  const contextText = `<game_design_specification>\n${summary}\n</game_design_specification>`;
+  const templateVars = { game_title: title };
 
-  const imageDesign = await modelWithOptions
-    .invokeWithMessages(
-      [
-        new SystemMessage(imageDesignPrompt),
-        new HumanMessage(
-          `<game_design_specification>
-        ${summary}
-        </game_design_specification>`
-        ),
-      ],
-      {
-        agent: "image-design-generator",
-        workflow: "design",
-      }
-    )
-    .catch((error) => {
-      if (error.type && error.type == "overloaded_error") {
-        throw new OverloadedError(error.message);
-      } else {
-        throw error;
-      }
-    });
-  if (!imageDesign.content) {
-    throw new Error("Failed to generate image description: no content");
-  }
+  const config = imageType === "raw" ? RAW_IMAGE_CONFIG : CARTRIDGE_IMAGE_CONFIG;
 
-  // Step 2: Choose the appropriate prompt and tool based on image type
-  if (imageType === "raw") {
-    // Use raw image generation
-    const rawImagePrompt = await rawImageGenSystemMessage.format({
-      image_description: imageDesign.content.toString().substring(0, 600),
-      game_title: title,
-    });
-
-    const imageUrl = await rawImageGenTool
-      .invoke(rawImagePrompt.content, {
-        callbacks: modelWithOptions.getCallbacks(),
-        metadata: {
-          agent: "raw-image-generator",
-          workflow: "design",
-        },
-        negativePrompt: rawImageNegativePrompt,
-      })
-      .catch((error) => {
-        if (error.type && error.type == "overloaded_error") {
-          throw new OverloadedError(error.message);
-        } else {
-          throw error;
-        }
-      });
-    if (!imageUrl) {
-      throw new Error("Failed to generate raw image: no image URL");
-    }
-    return imageUrl;
-  } else {
-    // Use legacy cartridge image generation
-    const imageGenPrompt = await imageGenSystemMessage.format({
-      image_description: imageDesign.content.toString().substring(0, 600),
-      game_title: title,
-    });
-    const imageUrl = await imageGenTool
-      .invoke(imageGenPrompt.content, {
-        callbacks: modelWithOptions.getCallbacks(),
-        metadata: {
-          agent: "cartridge-image-generator",
-          workflow: "design",
-        },
-      })
-      .catch((error) => {
-        if (error.type && error.type == "overloaded_error") {
-          throw new OverloadedError(error.message);
-        } else {
-          throw error;
-        }
-      });
-    if (!imageUrl) {
-      throw new Error("Failed to generate legacy image: no image URL");
-    }
-    return imageUrl;
-  }
+  return generateImageWithDescription(contextText, templateVars, config);
 }
 
 
