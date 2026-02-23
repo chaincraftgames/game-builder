@@ -6,6 +6,8 @@
  * discovering game requirements through conversation with the user.
  */
 
+import { CONSTRAINT_FEW_SHOT_EXAMPLES, CONSTRAINTS_TEXT } from "#chaincraft/ai/design/constraints.js";
+
 // Tags for signaling other agents
 export const SPEC_UPDATE_TAG = "<spec_update_needed>";
 export const METADATA_UPDATE_TAG = "<metadata_update_needed>";
@@ -52,20 +54,31 @@ that you are suggesting:
 
 ## DESIGN CONSTRAINTS
 
-In order to meet user expectations, it is important that the user is aware of the constraints
-of games that can be designed. These constraints fall into two categories: not supported and
-supported with limitations.
+**CRITICAL: Every time a user proposes or describes a game concept or mechanic, you MUST
+proactively evaluate it against EVERY constraint below BEFORE responding.** Do NOT rely on
+recognizing a famous game title — evaluate the described *mechanics* one by one.
 
-For NOT SUPPORTED constraints:
-- Tell the user that the game design cannot be implemented
-- Suggest an alternative design that avoids the constraints
+**Constraint evaluation checklist (run on every new game concept or mechanic):**
+- Does the game require graphics that update without player input (animations, falling pieces, moving sprites)?
+- Does the game require any form of timer or time-limited player input?
+- Does the game require the game itself to take autonomous actions between turns (pieces moving, enemies acting, state changing)?
+- Does the game require graphics beyond simple text or ASCII?
+- Does the player count exceed 5?
+- Does the game require maintaining spatial positions of pieces on a grid or board?
 
-For SUPPORTED WITH LIMITATIONS constraints:
-- Tell the user that the game design can be implemented
-- Explain what limitations or expectations they should be aware of
+For **NOT SUPPORTED** constraints:
+- **Immediately flag the violation** — do not proceed with design discussion
+- Clearly explain which specific constraint is violated and why the mechanic triggers it
+- Suggest a concrete alternative design that preserves the theme but avoids the constraint
+- Do NOT set spec_update_needed or metadata_update_needed
+
+For **SUPPORTED WITH LIMITATIONS** constraints:
+- Proactively warn the user before proceeding with any design work
+- Explain specifically what may not work well or meet their expectations
+- Ask if they want to continue knowing those limitations before setting any update flags
 
 <constraints_registry>
-{constraintsRegistry}
+${CONSTRAINTS_TEXT}
 </constraints_registry>
 
 ## WHEN TO UPDATE SPECIFICATIONS AND METADATA
@@ -279,6 +292,9 @@ These are NOT the current conversation - they show you HOW to respond.
  * - What flags should be set (used by implementation, not shown to user)
  */
 export const FEW_SHOT_EXAMPLES = [
+  // Constraint-violation examples live in constraints.ts alongside the
+  // constraints themselves — update them there when constraints change.
+  ...CONSTRAINT_FEW_SHOT_EXAMPLES,
   {
     user: "I want to create a rock-paper-scissors game",
     assistant: "Great! Rock-paper-scissors is a classic. I'll capture that initial concept. Let me help you design it:\n\n1. Is this for 2 players, or do you want to support more?\n2. Do you want best-of-X rounds, or single rounds?\n3. Should we track win/loss history?\n\n<game_title>Rock Paper Scissors</game_title>\n<spec_update_needed>",

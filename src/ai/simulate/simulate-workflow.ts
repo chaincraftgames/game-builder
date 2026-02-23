@@ -172,6 +172,7 @@ export interface SimResponse {
   publicMessage?: string;
   playerStates: PlayerStates;
   gameEnded: boolean;
+  producedTokens?: Record<string, string>;
   gameError?: {
     errorType:
       | "deadlock"
@@ -775,6 +776,25 @@ export async function getSimulationState(sessionId: string): Promise<SimResponse
 
     const state = checkpoint.checkpoint.channel_values as RuntimeStateType;
     const simResponse = getRuntimeResponse(state);
+
+    // Add producedTokens from artifact if available
+    if (state.producedTokensConfiguration) {
+      try {
+        const artifact = JSON.parse(state.producedTokensConfiguration);
+        const producedTokens: Record<string, string> = {};
+
+        // Convert array of token configs to map of tokenType -> description
+        if (artifact.tokens && Array.isArray(artifact.tokens)) {
+          for (const token of artifact.tokens) {
+            producedTokens[token.tokenType] = token.description;
+          }
+        }
+
+        simResponse.producedTokens = producedTokens;
+      } catch (parseError) {
+        console.error("[simulate] Failed to parse producedTokensConfiguration:", parseError);
+      }
+    }
 
     console.log("[simulate] Retrieved game state for %s", sessionId);
     return simResponse;

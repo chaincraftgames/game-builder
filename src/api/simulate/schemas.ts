@@ -21,6 +21,7 @@ export const SimResponseSchema = z.object({
   playerStates: PlayerStatesSchema,
   gameEnded: z.boolean(),
   winningPlayers: z.array(z.string()).optional(), // Array of player IDs who won the game
+  producedTokens: z.record(z.string()).optional(), // token type -> description
   gameError: z
     .object({
       errorType: z.enum([

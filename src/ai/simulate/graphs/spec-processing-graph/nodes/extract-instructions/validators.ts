@@ -703,6 +703,27 @@ function normalizePath(path: string): string {
 }
 
 /**
+ * Extract normalized field paths written by a single stateDelta operation.
+ * Handles set, setForAllPlayers, increment, append, merge, delete, transfer, rng.
+ */
+function getWrittenFieldsFromOp(op: any): string[] {
+  if (!op) return [];
+  if (op.op === 'setForAllPlayers' && op.field) {
+    return [normalizePath(`players[*].${op.field}`)];
+  }
+  if (op.op === 'transfer') {
+    const fields: string[] = [];
+    if (op.fromPath) fields.push(normalizePath(op.fromPath));
+    if (op.toPath) fields.push(normalizePath(op.toPath));
+    return fields;
+  }
+  if (op.path && typeof op.path === 'string') {
+    return [normalizePath(op.path)];
+  }
+  return [];
+}
+
+/**
  * Validate field coverage: Check that all fields used in transition preconditions
  * are set by at least one stateDelta operation somewhere in the instructions.
  * 
@@ -851,6 +872,108 @@ export async function validateFieldCoverage(
 
   // Return empty array - warnings are logged but don't block validation
   return [];
+}
+
+/**
+ * Validate that no transition is self-blocking: a transition whose precondition
+ * checks a field that is ONLY ever set by that same transition's own stateDelta
+ * can never fire — it's a guaranteed runtime deadlock.
+ *
+ * Returns hard errors for guaranteed deadlocks (field written nowhere else).
+ * Logs warnings for suspicious cases where another transition also writes the field
+ * (which may still be valid depending on execution order).
+ */
+export async function validateSelfBlockingTransitions(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string
+): Promise<string[]> {
+  const errors: string[] = [];
+
+  // 1. Get instructions artifact
+  const executionOutput = await getFromStore(
+    store,
+    ["instructions", "execution", "output"],
+    threadId
+  );
+  if (!executionOutput) return [];
+
+  let artifact: InstructionsArtifact;
+  try {
+    artifact = typeof executionOutput === 'string'
+      ? JSON.parse(executionOutput)
+      : executionOutput;
+  } catch (e) {
+    return [];
+  }
+
+  // 2. Parse transitions artifact
+  let transitions: TransitionsArtifact;
+  try {
+    transitions = typeof state.stateTransitions === 'string'
+      ? JSON.parse(state.stateTransitions)
+      : state.stateTransitions;
+  } catch (e) {
+    return [];
+  }
+  if (!transitions.transitions || !Array.isArray(transitions.transitions)) return [];
+
+  // 3. Build map: normalizedField -> Set<transitionId> for every field written anywhere
+  const fieldWrittenBy = new Map<string, Set<string>>();
+  for (const [transitionId, instruction] of Object.entries(artifact.transitions || {})) {
+    for (const op of instruction.stateDelta || []) {
+      for (const field of getWrittenFieldsFromOp(op)) {
+        if (!fieldWrittenBy.has(field)) fieldWrittenBy.set(field, new Set());
+        fieldWrittenBy.get(field)!.add(transitionId);
+      }
+    }
+  }
+
+  // 4. For each transition, find checkedFields only written by that same transition
+  for (const transition of transitions.transitions) {
+    if (!transition.checkedFields || transition.checkedFields.length === 0) continue;
+    if (!transition.preconditions || transition.preconditions.length === 0) continue;
+
+    const instruction = artifact.transitions[transition.id];
+    if (!instruction?.stateDelta || instruction.stateDelta.length === 0) continue;
+
+    // Normalized fields written by THIS transition's stateDelta
+    const writtenByThis = new Set<string>();
+    for (const op of instruction.stateDelta) {
+      for (const field of getWrittenFieldsFromOp(op)) {
+        writtenByThis.add(field);
+      }
+    }
+    if (writtenByThis.size === 0) continue;
+
+    // Check each field read by preconditions
+    for (const checkedField of transition.checkedFields) {
+      const normalized = normalizePath(checkedField);
+      if (!writtenByThis.has(normalized)) continue;
+
+      // This transition both checks and sets the same field
+      const allWriters = fieldWrittenBy.get(normalized) ?? new Set();
+      const otherWriters = [...allWriters].filter(id => id !== transition.id);
+
+      if (otherWriters.length === 0) {
+        errors.push(
+          `Transition '${transition.id}' is self-blocking: field '${checkedField}' is checked ` +
+          `by a precondition but is only ever set by this transition's own stateDelta. ` +
+          `The transition can never fire because the precondition can never be satisfied before it runs. ` +
+          `Fix: move the stateDelta op that sets '${checkedField}' to the predecessor transition ` +
+          `that fires immediately before '${transition.id}' (i.e., the transition that targets phase '${transition.fromPhase}').`
+        );
+      } else {
+        console.warn(
+          `[extract_instructions][validation] Transition '${transition.id}' both checks and sets ` +
+          `field '${checkedField}'. Other transitions also set this field: [${otherWriters.join(', ')}]. ` +
+          `Verify one of those always fires before '${transition.id}'.`
+        );
+      }
+    }
+  }
+
+  return errors;
 }
 
 /**

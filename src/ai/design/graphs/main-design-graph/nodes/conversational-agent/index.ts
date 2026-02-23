@@ -45,13 +45,11 @@ export function stripInternalTags(response: string): string {
 /**
  * Creates the conversational design agent.
  * 
- * @param constraintsRegistry - Game design constraints and requirements
  * @param mechanicsRegistry - Available game mechanics
  * @returns Async function that processes state and returns updates
  */
 export async function createConversationalAgent(
   model: ModelWithOptions,
-  constraintsRegistry: string,
   mechanicsRegistry: string
 ) {
   return async (state: typeof GameDesignState.State) => {
@@ -64,7 +62,6 @@ export async function createConversationalAgent(
     // 2. Create cached system message with variable substitution
     const systemMessage = createCachedSystemMessage(SYSTEM_PROMPT, {
       mechanicsRegistry,
-      constraintsRegistry,
       fewShotExamples: formatFewShotExamples(),
       narrativeContext
     });
