@@ -22,6 +22,56 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 const ValidationErrorsKey = "validation_errors";
 
 /**
+ * Wrap a planner or executor node function so that any thrown error is
+ * caught, written to the store as a validation error, and the node
+ * returns `{}` instead of crashing.  This lets the downstream
+ * validate → retry/commit routing handle the failure gracefully.
+ */
+function createSafeNodeWrapper(
+  namespace: string,
+  stage: "plan" | "execution",
+  nodeFunction: (
+    state: SpecProcessingStateType,
+    config?: GraphConfigWithStore,
+  ) => Promise<Partial<SpecProcessingStateType>>,
+) {
+  return async (
+    state: SpecProcessingStateType,
+    config?: GraphConfigWithStore,
+  ): Promise<Partial<SpecProcessingStateType>> => {
+    try {
+      return await nodeFunction(state, config);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[${namespace}_${stage}] Node threw an error (caught by safe wrapper): ${errorMessage}`,
+      );
+
+      // Write the error to the store so the validator/routing sees it
+      const store = config?.store;
+      const threadId = config?.configurable?.thread_id || "default";
+      if (store) {
+        try {
+          await putToStore(
+            store,
+            [namespace, stage, ValidationErrorsKey],
+            threadId,
+            [`${namespace} ${stage} failed: ${errorMessage}`],
+          );
+        } catch (storeError) {
+          console.error(
+            `[${namespace}_${stage}] Failed to write error to store:`,
+            storeError,
+          );
+        }
+      }
+      return {};
+    }
+  };
+}
+
+/**
  * Create a validator node from a list of validator functions.
  *
  * Runs all validators against the state and store, collects errors,
@@ -53,11 +103,21 @@ export function createValidatorNode(
       `[${namespace}_${stage}_validator] Running ${validators.length} validators`,
     );
 
-    // Run all validators
+    // Run all validators — catch individual validator throws so one
+    // broken validator doesn't abort the entire graph run.
     const allErrors: string[] = [];
     for (const validator of validators) {
-      const errors = await validator(state, store, threadId);
-      allErrors.push(...errors);
+      try {
+        const errors = await validator(state, store, threadId);
+        allErrors.push(...errors);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error(
+          `[${namespace}_${stage}_validator] Validator threw an error: ${errorMessage}`,
+        );
+        allErrors.push(`Validator error: ${errorMessage}`);
+      }
     }
 
     // Store errors in InMemoryStore for routing
@@ -146,7 +206,19 @@ export function createCommitNode(
     }
 
     // No validation errors - commit successful artifacts and clear stale errors
-    const updates = await commitFunction(store, state, threadId);
+    let updates: Partial<SpecProcessingStateType>;
+    try {
+      updates = await commitFunction(store, state, threadId);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[${namespace}_commit] Commit function threw: ${errorMessage}`,
+      );
+      return {
+        [`${namespace}ValidationErrors`]: [`Commit failed: ${errorMessage}`],
+      } as Partial<SpecProcessingStateType>;
+    }
 
     console.debug(
       `[${namespace}_commit] Commit complete, clearing stale validation errors`,
@@ -176,11 +248,15 @@ export function createExtractionSubgraph(nodeConfig: NodeConfig) {
   }
   const graph = new StateGraph(SpecProcessingState);
 
-  // Create planner nodes (optional)
+  // Create planner nodes (optional) — wrapped in safe error handler
   let plannerNode: any = undefined;
   let planValidatorNode: any = undefined;
   if (planner) {
-    plannerNode = planner.node(planner.model);
+    plannerNode = createSafeNodeWrapper(
+      namespace,
+      "plan",
+      planner.node(planner.model),
+    );
     planValidatorNode = createValidatorNode(
       namespace,
       "plan",
@@ -188,11 +264,15 @@ export function createExtractionSubgraph(nodeConfig: NodeConfig) {
     );
   }
 
-  // Create executor nodes
+  // Create executor nodes — wrapped in safe error handler
   let executorNode: any = undefined;
   let executorValidatorNode: any = undefined;
   // if (executor) {
-  executorNode = executor.node(executor.model);
+  executorNode = createSafeNodeWrapper(
+    namespace,
+    "execution",
+    executor.node(executor.model),
+  );
   executorValidatorNode = createValidatorNode(
     namespace,
     "execution",

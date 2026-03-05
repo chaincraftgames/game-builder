@@ -2,7 +2,7 @@
  * Validation functions for schema extraction
  */
 
-import { PlannerField } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js";
+import { GameStateField } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js";
 import { SpecProcessingStateType } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js";
 import { getFromStore } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import { BaseStore } from "@langchain/langgraph";
@@ -11,8 +11,8 @@ import { BaseStore } from "@langchain/langgraph";
  * Parse executor output to extract field definitions
  * Preserves all field properties from executor output
  */
-export function extractExecutorFields(executorOutput: string): PlannerField[] {
-  const fields: PlannerField[] = [];
+export function extractExecutorFields(executorOutput: string): GameStateField[] {
+  const fields: GameStateField[] = [];
   
   try {
     // Look for Fields: ```json [...] ``` markdown code block in executor output
@@ -275,9 +275,9 @@ export async function validateFieldTypes(
 }
 
 /**
- * Validate that all planner-identified fields are present in executor schema
+ * Validate that all identified fields are present in executor schema
  */
-export async function validatePlannerFieldsInSchema(
+export async function validateGameStateFieldsInSchema(
   state: SpecProcessingStateType,
   store: BaseStore,
   threadId: string
@@ -293,15 +293,15 @@ export async function validatePlannerFieldsInSchema(
   }
   
   try {
-    const plannerFields = extractExecutorFields(plannerOutput);
+    const stateFields = extractExecutorFields(plannerOutput);
     const response = JSON.parse(executionOutput);
     const executorSchema = response.stateSchema;
     
-    if (!executorSchema || plannerFields.length === 0) {
+    if (!executorSchema || stateFields.length === 0) {
       return errors;
     }
     
-    for (const field of plannerFields) {
+    for (const field of stateFields) {
       const fieldPath = field.path === 'game' ? 'game' : 'player';
       
       // Extract bare field name by stripping path prefix if present

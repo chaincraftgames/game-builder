@@ -5,14 +5,14 @@
  */
 
 import { z } from "zod";
-import type { PlannerField } from "./schema.js";
+import type { GameStateField } from "./schema.js";
 
 /**
  * Convert Zod schema to field definitions
  * Recursively walks the schema and extracts field metadata
  */
-export function zodSchemaToFields(schema: z.ZodObject<any>): PlannerField[] {
-  const fields: PlannerField[] = [];
+export function zodSchemaToFields(schema: z.ZodObject<any>): GameStateField[] {
+  const fields: GameStateField[] = [];
   
   const shape = schema.shape;
   
@@ -41,13 +41,13 @@ export function zodSchemaToFields(schema: z.ZodObject<any>): PlannerField[] {
 }
 
 /**
- * Convert a single Zod field to PlannerField format
+ * Convert a single Zod field to GameStateField format
  */
 function zodFieldToField(
   name: string,
   schema: z.ZodTypeAny,
   path: 'game' | 'player'
-): PlannerField | null {
+): GameStateField | null {
   // Unwrap optional, nullable, default wrappers
   let unwrapped = schema;
   while (

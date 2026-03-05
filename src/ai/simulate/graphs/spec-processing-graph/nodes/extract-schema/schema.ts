@@ -1,9 +1,10 @@
 import z from "zod";
 
 /**
- * Planner field definition
+ * Game state field definition.
+ * Describes a single field in the game state schema (game-level or player-level).
  */
-export interface PlannerField {
+export interface GameStateField {
   name: string;
   type: string;
   path: 'game' | 'player';

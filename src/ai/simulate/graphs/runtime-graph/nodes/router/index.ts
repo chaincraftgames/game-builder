@@ -129,10 +129,14 @@ export function router() {
         }
         
         console.log(`[router] Routing to initialize via transition: ${initTransition.id} (${firstPhase} -> ${initTransition.toPhase})`);
+        // Pre-resolve RNG ops so execute_changes receives concrete values.
+        // Without this, template variables like {{activePlayer}} that depend on
+        // RNG results cannot be resolved by the LLM, causing init deadlocks.
+        const resolvedInstructions = processRngInstructions(instructions);
         return {
           currentPhase: firstPhase,
           nextPhase: initTransition.toPhase,
-          selectedInstructions: instructions,
+          selectedInstructions: resolvedInstructions,
           playerMapping, // Store the mapping in state
           requiresPlayerInput: false,
           transitionReady: true, // Ready to execute initialization transition

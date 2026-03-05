@@ -231,7 +231,7 @@ const ARTIFACT_CREATION_DEFAULTS = {
 
 /**
  * Default configuration for schema extraction
- * Falls back to SIMULATION_MODEL_NAME if not specified (override recommended with Sonnet)
+ * Falls back to SIMULATION_MODEL_NAME if not specified
  */
 const SIM_SCHEMA_EXTRACTION_DEFAULTS = {
   ...ARTIFACT_CREATION_DEFAULTS,
@@ -264,6 +264,32 @@ const SIM_INSTRUCTIONS_DEFAULTS = {
     process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
     "",
   maxTokens: 16384, // Required for comprehensive instruction planning output
+};
+
+/**
+ * Default configuration for the artifact editor coordinator node.
+ * Analyzes validation errors and produces structured change plans.
+ * Uses Haiku — input is well-structured and output is schema-constrained.
+ */
+const ARTIFACT_EDITOR_COORDINATOR_DEFAULTS = {
+  ...ARTIFACT_CREATION_DEFAULTS,
+  modelName:
+    process.env.CHAINCRAFT_ARTIFACT_EDITOR_COORDINATOR_MODEL ||
+    process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
+    "",
+};
+
+/**
+ * Default configuration for artifact editor nodes (edit-schema, edit-transitions, edit-instructions).
+ * Surgical fragment edits with tightly-typed Zod output schemas.
+ * Uses Haiku — proven in spike tests at ~$0.006/call, 7s.
+ */
+const ARTIFACT_EDITOR_DEFAULTS = {
+  ...ARTIFACT_CREATION_DEFAULTS,
+  modelName:
+    process.env.CHAINCRAFT_ARTIFACT_EDITOR_MODEL ||
+    process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
+    "",
 };
 
 /**
@@ -526,6 +552,22 @@ export const setupSpecInstructionsModel = createSetupFunction(
  * Uses Sonnet 4 by default for concise, high-quality narrative guidance with caching support
  */
 export const setupNarrativeModel = createSetupFunction(SPEC_NARRATIVE_DEFAULTS);
+
+/**
+ * Setup model for artifact editor coordinator node
+ * Haiku by default — well-structured diagnostic task with schema-constrained output
+ */
+export const setupArtifactEditorCoordinatorModel = createSetupFunction(
+  ARTIFACT_EDITOR_COORDINATOR_DEFAULTS
+);
+
+/**
+ * Setup model for artifact editor nodes (schema/transitions/instructions editors)
+ * Haiku by default — surgical fragment edits with tight Zod schemas
+ */
+export const setupArtifactEditorModel = createSetupFunction(
+  ARTIFACT_EDITOR_DEFAULTS
+);
 
 /**
  * Invoke the model with a prompt (backward compatible API)

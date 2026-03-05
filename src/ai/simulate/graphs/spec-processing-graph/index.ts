@@ -4,8 +4,11 @@
  * Transforms game specification into runtime artifacts:
  * 1. extract_schema - Generate state schema
  * 2. extract_transitions - Identify phase transitions
- * 3. extract_instructions - Create phase-specific instructions
- * 4. extract_produced_tokens - Identify persistent tokens to produce
+ * 3. validate_transitions - Structural validation
+ * 4. repair_transitions - (if errors) Artifact editor fixes transitions
+ * 5. extract_instructions - Create phase-specific instructions
+ * 6. repair_artifacts - (if errors) Artifact editor cross-artifact repair
+ * 7. extract_produced_tokens - Identify persistent tokens to produce
  */
 
 import { StateGraph, START, END } from "@langchain/langgraph";
@@ -17,6 +20,7 @@ import { instructionsExtractionConfig } from "#chaincraft/ai/simulate/graphs/spe
 import { producedTokensExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-produced-tokens/index.js";
 import { createValidationNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/validate-transitions/index.js";
 import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
+import { createRepairTransitionsNode, createRepairArtifactsNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/repair-artifacts/index.js";
 
 /**
  * Creates and compiles the spec processing graph.
@@ -39,6 +43,10 @@ export async function createSpecProcessingGraph(
   // Create validation node for transitions
   const validationNode = createValidationNode();
 
+  // Create repair nodes (artifact editor wrappers)
+  const repairTransitionsNode = createRepairTransitionsNode();
+  const repairArtifactsNode = createRepairArtifactsNode();
+
   // Add nodes to graph - subgraphs need to receive config with store
   workflow.addNode("extract_schema", async (state, config) => {
     const result = await schemaSubgraph.invoke(state, config);
@@ -49,10 +57,12 @@ export async function createSpecProcessingGraph(
     return result;
   });
   workflow.addNode("validate_transitions", validationNode);
+  workflow.addNode("repair_transitions", repairTransitionsNode);
   workflow.addNode("extract_instructions", async (state, config) => {
     const result = await instructionsSubgraph.invoke(state, config);
     return result;
   });
+  workflow.addNode("repair_artifacts", repairArtifactsNode);
   workflow.addNode("extract_produced_tokens", async (state, config) => {
     const result = await producedTokensSubgraph.invoke(state, config);
     return result;
@@ -107,12 +117,28 @@ export async function createSpecProcessingGraph(
   
   workflow.addEdge("extract_transitions" as any, "validate_transitions" as any);
   
-  // After transitions validation: check for errors before continuing
+  // After transitions validation: repair if errors, otherwise continue
   workflow.addConditionalEdges(
     "validate_transitions" as any,
     (state) => {
       if (state.transitionsValidationErrors && state.transitionsValidationErrors.length > 0) {
-        console.error("[SpecProcessingGraph] Transitions extraction failed validation, stopping pipeline");
+        console.warn(`[SpecProcessingGraph] Transitions validation found ${state.transitionsValidationErrors.length} error(s), routing to repair`);
+        return "repair";
+      }
+      return "continue";
+    },
+    {
+      continue: "extract_instructions" as any,
+      repair: "repair_transitions" as any,
+    }
+  );
+
+  // After transitions repair: continue if fixed, stop if still broken
+  workflow.addConditionalEdges(
+    "repair_transitions" as any,
+    (state) => {
+      if (state.transitionsValidationErrors && state.transitionsValidationErrors.length > 0) {
+        console.error("[SpecProcessingGraph] Transitions repair failed, stopping pipeline");
         return "end";
       }
       return "continue";
@@ -123,12 +149,28 @@ export async function createSpecProcessingGraph(
     }
   );
   
-  // After instructions: check for errors before continuing to tokens
+  // After instructions: repair if errors, otherwise continue to tokens
   workflow.addConditionalEdges(
     "extract_instructions" as any,
     (state) => {
       if (state.instructionsValidationErrors && state.instructionsValidationErrors.length > 0) {
-        console.error("[SpecProcessingGraph] Instructions extraction failed validation, stopping pipeline");
+        console.warn(`[SpecProcessingGraph] Instructions validation found ${state.instructionsValidationErrors.length} error(s), routing to repair`);
+        return "repair";
+      }
+      return "continue";
+    },
+    {
+      continue: "extract_produced_tokens" as any,
+      repair: "repair_artifacts" as any,
+    }
+  );
+
+  // After artifacts repair: continue if fixed, stop if still broken
+  workflow.addConditionalEdges(
+    "repair_artifacts" as any,
+    (state) => {
+      if (state.instructionsValidationErrors && state.instructionsValidationErrors.length > 0) {
+        console.error("[SpecProcessingGraph] Artifact repair failed, stopping pipeline");
         return "end";
       }
       return "continue";
