@@ -1,19 +1,13 @@
 /**
- * Artifact Editor Coordinator
- * 
- * Diagnostic agent that analyzes validation errors and produces
- * a structured ChangePlan identifying which artifacts need changes.
- * 
- * The coordinator reasons about WHAT to fix, not HOW — domain-specific
- * knowledge (stateDelta syntax, JsonLogic, etc.) stays in the editors.
+ * Coordinator Node — System Prompt
+ *
+ * The coordinator analyzes validation errors and produces a structured
+ * ChangePlan identifying which artifacts need changes and in what order.
  */
 
-import { ChangePlanSchema, type ChangePlan, type CoordinatorInput } from './types.js';
-import type { ModelWithOptions } from '#chaincraft/ai/model-config.js';
-
-// ─── System Prompt ───
-
-export const COORDINATOR_SYSTEM_PROMPT = `You are a game artifact diagnostic agent. Your job is to analyze validation errors from game artifact extraction and produce a change plan.
+export const COORDINATOR_SYSTEM_PROMPT = `
+You are a game artifact diagnostic agent. Your job is to analyze validation errors from 
+game artifact extraction and produce a change plan.
 
 ## Artifact Types
 
@@ -101,6 +95,38 @@ Changes to Schema may require cascading changes to Transitions and/or Instructio
 - Artifacts affected: instructions only
 - Confidence: MEDIUM (reextract is heavier but necessary when instructions are empty)
 
+## Schema Operations (schemaOps)
+
+When your plan includes schema changes (artifact="schema"), you MUST also populate the \`schemaOps\` array with structured operations. Schema changes are applied deterministically — no LLM is used.
+
+Supported operations:
+- **addField**: Add a new field to the schema. Requires: scope, field, type, description.
+- **removeField**: Remove an existing field from the schema. Requires: scope, field.
+
+Scopes:
+- **game**: Game-level state field (shared across all players).
+- **player**: Per-player state field (each player gets their own copy).
+
+Example — Pattern 2 fix (denormalization with new schema field):
+\`\`\`json
+{
+  "schemaOps": [
+    { "op": "addField", "scope": "game", "field": "battleWinnerId", "type": "string", "description": "ID of player whose character won the battle" }
+  ]
+}
+\`\`\`
+
+Example — Pattern 6 fix (missing field referenced in transitions):
+\`\`\`json
+{
+  "schemaOps": [
+    { "op": "addField", "scope": "player", "field": "completeCharacterProfile", "type": "string", "description": "Full character profile after game fills missing details" }
+  ]
+}
+\`\`\`
+
+Every \`schemaOps\` entry must correspond to a change with \`artifact="schema"\` in the \`changes\` array. The \`changes\` entry provides the human-readable description and error tracking; the \`schemaOps\` entry provides the machine-executable operation.
+
 ## Rules
 
 1. Produce the MINIMUM set of changes to resolve all errors
@@ -111,92 +137,5 @@ Changes to Schema may require cascading changes to Transitions and/or Instructio
 6. For cross-artifact fixes (Pattern 2), list all affected artifacts as separate changes in dependency order
 7. Each change description should say WHAT to change in natural language, not HOW (the editor knows the syntax)
 8. When instructions are empty ({}) but transitions exist, use 'reextract' for instructions — there's nothing to patch
-9. Read the game specification carefully — it defines the game's intent. Not all validation warnings require code changes (e.g., isGameWinner warnings for no-winner games).`;
-
-
-// ─── User Prompt Builder ───
-
-function buildCoordinatorUserPrompt(input: CoordinatorInput): string {
-  // Build instruction coverage summary
-  let instructionCoverage: string;
-  const transInstr = input.transitionInstructions;
-  const playerInstr = input.playerPhaseInstructions;
-
-  if (transInstr === '{}' && playerInstr === '{}') {
-    instructionCoverage = 'EMPTY — no transition instructions and no player phase instructions generated';
-  } else {
-    const parts: string[] = [];
-    if (transInstr && transInstr !== '{}') {
-      try {
-        const parsed = JSON.parse(transInstr);
-        parts.push(`Transition instructions: ${Object.keys(parsed).join(', ')}`);
-      } catch {
-        parts.push(`Transition instructions: present (unparseable)`);
-      }
-    } else {
-      parts.push('Transition instructions: EMPTY');
-    }
-    if (playerInstr && playerInstr !== '{}') {
-      try {
-        const parsed = JSON.parse(playerInstr);
-        parts.push(`Player phase instructions: ${Object.keys(parsed).join(', ')}`);
-      } catch {
-        parts.push(`Player phase instructions: present (unparseable)`);
-      }
-    } else {
-      parts.push('Player phase instructions: EMPTY');
-    }
-    instructionCoverage = parts.join('\n');
-  }
-
-  // Build transitions summary
-  let transitionsSummary: string;
-  try {
-    const transitions = JSON.parse(input.stateTransitions);
-    const phases = transitions.phases?.join(', ') || 'unknown';
-    const transIds = transitions.transitions?.map((t: any) => 
-      `${t.id} (${t.fromPhase} → ${t.toPhase})`
-    ).join('\n  ') || 'unknown';
-    transitionsSummary = `Phases: ${phases}\nTransitions:\n  ${transIds}`;
-  } catch {
-    transitionsSummary = input.stateTransitions || 'unknown';
-  }
-
-  return `GAME SPECIFICATION:
-${input.gameSpecification}
-
-VALIDATION ERRORS:
-${input.validationErrors.map((e, i) => `${i + 1}. ${e}`).join('\n')}
-
-CURRENT ARTIFACTS:
-Schema fields: ${input.schemaFields}
-
-${transitionsSummary}
-
-Instruction coverage: ${instructionCoverage}
-
-Produce a ChangePlan to resolve all validation errors.`;
-}
-
-
-// ─── Coordinator Invocation ───
-
-export async function invokeCoordinator(
-  model: ModelWithOptions,
-  input: CoordinatorInput,
-): Promise<ChangePlan> {
-  const userPrompt = buildCoordinatorUserPrompt(input);
-
-  const result = await model.invokeWithSystemPrompt(
-    COORDINATOR_SYSTEM_PROMPT,
-    userPrompt,
-    { agent: 'artifact-editor-coordinator' },
-    ChangePlanSchema,
-  );
-
-  // invokeWithSystemPrompt with schema returns parsed object
-  return result as ChangePlan;
-}
-
-// Export for testing
-export { buildCoordinatorUserPrompt };
+9. Read the game specification carefully — it defines the game's intent. Not all validation warnings require code changes (e.g., isGameWinner warnings for no-winner games).
+10. When any change has artifact="schema", you MUST populate schemaOps with the corresponding structured operations. Schema editing is deterministic — the schemaOps array is the only way schema changes are applied.`;

@@ -277,7 +277,7 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
  * Create validation node
  */
 export function createValidationNode() {
-  return async (state: SpecProcessingStateType): Promise<SpecProcessingStateType> => {
+  return async (state: SpecProcessingStateType): Promise<Partial<SpecProcessingStateType>> => {
     console.debug('[validate_transitions] Validating generated transitions');
     
     const result = validateTransitions(state);
@@ -291,12 +291,14 @@ export function createValidationNode() {
     }
     
     if (!result.valid) {
-      const errorMessages = result.issues
+      const errors = result.issues
         .filter(i => i.severity === 'error')
-        .map(i => i.message)
-        .join('; ');
+        .map(i => i.message);
       
-      throw new Error(`Transition validation failed: ${errorMessages}`);
+      console.warn(`[validate_transitions] Validation failed with ${errors.length} error(s), routing to repair`);
+      return {
+        transitionsValidationErrors: errors,
+      };
     }
     
     if (result.issues.some(i => i.severity === 'warning')) {
@@ -305,6 +307,8 @@ export function createValidationNode() {
       console.debug('[validate_transitions] Validation passed');
     }
     
-    return state;
+    return {
+      transitionsValidationErrors: null,
+    };
   };
 }

@@ -1,11 +1,37 @@
 /**
  * Artifact Editor Types
- * 
- * Minimal types for the coordinator spike. Will be expanded
- * as we build fragment editors and the full subgraph.
+ *
+ * Zod schemas and TypeScript types for the coordinator's structured output
+ * and the coordinator's input interface. Used by the coordinator node and
+ * referenced by tests.
  */
 
 import { z } from 'zod';
+
+// ─── Schema Operations (deterministic, applied by edit_schema node) ───
+
+export const SchemaOpSchema = z.object({
+  op: z.enum(['addField', 'removeField']).describe(
+    'addField = add a new field to the schema. ' +
+    'removeField = remove an existing field from the schema.'
+  ),
+  scope: z.enum(['game', 'player']).describe(
+    'Which schema scope to modify. ' +
+    'game = game-level state field. player = per-player state field.'
+  ),
+  field: z.string().describe(
+    'The field name to add or remove (e.g. "battleWinnerId", "completeCharacterProfile")'
+  ),
+  type: z.string().optional().describe(
+    'Field type (required for addField). ' +
+    'e.g. "string", "number", "boolean", "object", "array"'
+  ),
+  description: z.string().optional().describe(
+    'Human-readable description/purpose for the field (used for addField)'
+  ),
+});
+
+export type SchemaOp = z.infer<typeof SchemaOpSchema>;
 
 // ─── Coordinator Output Schema ───
 
@@ -43,12 +69,17 @@ export const ChangePlanSchema = z.object({
     'Ordered list of changes. Apply in order. Schema changes before ' +
     'transitions, transitions before instructions.'
   ),
+  schemaOps: z.array(SchemaOpSchema).optional().describe(
+    'Structured schema operations for deterministic application. ' +
+    'Required when any change has artifact="schema". ' +
+    'Applied in order before any LLM-based edits.'
+  ),
 });
 
 export type ArtifactChange = z.infer<typeof ArtifactChangeSchema>;
 export type ChangePlan = z.infer<typeof ChangePlanSchema>;
 
-// ─── Coordinator Input ───
+// ─── Coordinator Input (used by tests that invoke the coordinator directly) ───
 
 export interface CoordinatorInput {
   gameSpecification: string;

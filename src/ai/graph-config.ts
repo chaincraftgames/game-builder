@@ -35,6 +35,7 @@ const GRAPH_TRACER_PROJECTS = {
   design: process.env.CHAINCRAFT_DESIGN_TRACER_PROJECT_NAME || "chaincraft-design",
   simulation: process.env.CHAINCRAFT_SIMULATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
   artifactCreation: process.env.CHAINCRAFT_ARTIFACT_CREATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
+  artifactEditor: process.env.CHAINCRAFT_ARTIFACT_EDITOR_TRACER_PROJECT_NAME || "chaincraft-artifact-editor",
   play: process.env.CHAINCRAFT_PLAY_TRACER_PROJECT_NAME || "chaincraft-play",
 };
 
@@ -60,6 +61,15 @@ export function createSimulationGraphCallbacks(): any[] {
  */
 export function createArtifactCreationGraphCallbacks(): any[] {
   return createTracerCallbacks(GRAPH_TRACER_PROJECTS.artifactCreation);
+}
+
+/**
+ * Create callbacks for artifact editor graphs
+ * Used by: artifact-editor-graph when invoked standalone (sim assistant, error fix).
+ * When invoked as a subgraph under spec-processing, parent callbacks propagate automatically.
+ */
+export function createArtifactEditorGraphCallbacks(): any[] {
+  return createTracerCallbacks(GRAPH_TRACER_PROJECTS.artifactEditor);
 }
 
 /**
@@ -128,6 +138,30 @@ export function createArtifactCreationGraphConfig(
   return {
     configurable: { thread_id: threadId },
     callbacks: createArtifactCreationGraphCallbacks(),
+    ...(store && { store }),
+    ...additionalConfig,
+  };
+}
+
+/**
+ * Create a graph configuration with callbacks for artifact editor workflows
+ * Use for standalone invocations (sim assistant, error-triggered fixes).
+ * When the editor runs as a subgraph under spec-processing, the parent's
+ * artifact-creation callbacks propagate automatically — no config needed.
+ * 
+ * @param threadId - Unique identifier for the graph execution thread
+ * @param store - Optional LangGraph store for persistence
+ * @param additionalConfig - Optional additional configuration properties
+ * @returns Complete graph configuration ready for graph.invoke()
+ */
+export function createArtifactEditorGraphConfig(
+  threadId: string,
+  store?: any,
+  additionalConfig?: Record<string, any>
+): GraphConfig {
+  return {
+    configurable: { thread_id: threadId },
+    callbacks: createArtifactEditorGraphCallbacks(),
     ...(store && { store }),
     ...additionalConfig,
   };
