@@ -16,6 +16,7 @@ import {
   isDebugEnabled,
   getFromStore,
   NodeConfig,
+  incrementAttemptCount,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import { END, START, StateGraph } from "@langchain/langgraph";
 
@@ -59,6 +60,10 @@ function createSafeNodeWrapper(
             threadId,
             [`${namespace} ${stage} failed: ${errorMessage}`],
           );
+          // Increment attempt count so retry routing respects maxAttempts.
+          // The executor's own incrementAttemptCount never runs when it throws,
+          // so we must do it here to prevent infinite retry loops.
+          await incrementAttemptCount(store, namespace, stage, threadId);
         } catch (storeError) {
           console.error(
             `[${namespace}_${stage}] Failed to write error to store:`,
@@ -97,6 +102,37 @@ export function createValidatorNode(
 
     if (!store) {
       throw new Error(`[${namespace}_${stage}_validator] Store not configured`);
+    }
+
+    // Check if the preceding node (executor/planner) recorded an error via
+    // the safe wrapper — e.g. a Zod structured-output validation failure.
+    // If so, surface that as the sole validation error instead of running
+    // individual validators that will all fail with "no data in store."
+    try {
+      const priorErrors = await getFromStore(
+        store,
+        [namespace, stage, ValidationErrorsKey],
+        threadId,
+      );
+      if (Array.isArray(priorErrors) && priorErrors.length > 0) {
+        console.warn(
+          `[${namespace}_${stage}_validator] Preceding node reported ${priorErrors.length} error(s) — skipping validators`,
+        );
+        priorErrors.forEach((error: string, index: number) => {
+          console.warn(`  ${index + 1}. ${error}`);
+        });
+
+        // Re-store (already stored, but keeps logic consistent)
+        await putToStore(
+          store,
+          [namespace, stage, ValidationErrorsKey],
+          threadId,
+          priorErrors,
+        );
+        return {};
+      }
+    } catch {
+      // No prior errors recorded — proceed with validators normally
     }
 
     console.debug(

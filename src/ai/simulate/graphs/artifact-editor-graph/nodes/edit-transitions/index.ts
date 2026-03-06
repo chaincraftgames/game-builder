@@ -80,7 +80,7 @@ export async function editTransition(
   input: FragmentEditInput,
 ): Promise<FragmentEditOutput> {
   try {
-    const systemPrompt = buildEditorSystemPrompt(TRANSITIONS_EDITOR_SYSTEM_PROMPT, input);
+    const systemPrompt = await buildEditorSystemPrompt(TRANSITIONS_EDITOR_SYSTEM_PROMPT, input);
     const result = await model.invokeWithSystemPrompt(
       systemPrompt,
       '',

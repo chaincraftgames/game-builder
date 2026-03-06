@@ -650,16 +650,46 @@ const invokeWithSchema = async (
   if (result?.parsed === null || result?.parsed === undefined) {
     // Extract raw content for debugging
     const rawContent = result?.raw?.content;
+    let rawInput: Record<string, any> | null = null;
     let contentText = "Unable to extract raw content";
     
     if (Array.isArray(rawContent) && rawContent.length > 0) {
       // Anthropic format: content is array of blocks
       const toolUse = rawContent.find((block: any) => block.type === "tool_use");
       if (toolUse?.input) {
+        rawInput = toolUse.input;
         contentText = JSON.stringify(toolUse.input, null, 2);
       }
     } else if (typeof rawContent === "string") {
       contentText = rawContent;
+    }
+
+    // Auto-repair: some providers double-serialize object/array fields as
+    // JSON strings. Try to JSON.parse any string-valued top-level fields
+    // and re-validate with the schema before giving up.
+    if (rawInput && schema?.safeParse) {
+      const repaired = { ...rawInput };
+      let didRepair = false;
+      for (const [key, value] of Object.entries(repaired)) {
+        if (typeof value === "string" && (value.startsWith("{") || value.startsWith("["))) {
+          try {
+            repaired[key] = JSON.parse(value);
+            didRepair = true;
+          } catch {
+            // Not valid JSON — leave as-is
+          }
+        }
+      }
+      if (didRepair) {
+        const retryResult = schema.safeParse(repaired);
+        if (retryResult.success) {
+          const agent = invokeOptions?.metadata?.agent || "unknown";
+          console.warn(
+            `[${agent}] Auto-repaired double-serialized fields in structured output`,
+          );
+          return retryResult.data;
+        }
+      }
     }
     
     const agent = invokeOptions?.metadata?.agent || "unknown";

@@ -84,7 +84,10 @@ Changes to Schema may require cascading changes to Transitions and/or Instructio
 
 ### Pattern 9: Mixed literal+template path segments
 - Error: "Path segment mixes literal text with template variables"
-- Fix: Patch the specific stateDelta op to use proper path structure
+- Root cause: Path uses bracket notation with templates (e.g., "players[{{winnerId}}]") or concatenates literal+template in one segment (e.g., "scoreP{{id}}")
+- Fix: Patch the specific stateDelta op to use DOT notation for all template variable segments
+  - Before: "players[{{winnerId}}].isGameWinner" → After: "players.{{winnerId}}.isGameWinner"
+  - Before: "game.roundWinsP{{playerId}}" → After: "players.{{playerId}}.roundsWon"
 - Artifacts affected: instructions only
 - Confidence: HIGH
 

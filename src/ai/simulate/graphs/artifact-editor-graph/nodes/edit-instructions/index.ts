@@ -78,7 +78,7 @@ export async function editTransitionInstruction(
   input: FragmentEditInput,
 ): Promise<FragmentEditOutput> {
   try {
-    const systemPrompt = buildEditorSystemPrompt(INSTRUCTIONS_EDITOR_SYSTEM_PROMPT, input);
+    const systemPrompt = await buildEditorSystemPrompt(INSTRUCTIONS_EDITOR_SYSTEM_PROMPT, input);
     const result = await model.invokeWithSystemPrompt(
       systemPrompt,
       '',
@@ -99,7 +99,7 @@ export async function editPlayerPhaseInstruction(
   input: FragmentEditInput,
 ): Promise<FragmentEditOutput> {
   try {
-    const systemPrompt = buildEditorSystemPrompt(INSTRUCTIONS_EDITOR_SYSTEM_PROMPT, input);
+    const systemPrompt = await buildEditorSystemPrompt(INSTRUCTIONS_EDITOR_SYSTEM_PROMPT, input);
     const result = await model.invokeWithSystemPrompt(
       systemPrompt,
       '',
