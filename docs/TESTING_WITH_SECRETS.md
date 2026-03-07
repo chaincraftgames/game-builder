@@ -183,6 +183,76 @@ Network access to `api.anthropic.com` may be blocked. Check:
 
 For Copilot environment: Ensure `api.anthropic.com` is on the allow list
 
+## Pre-Commit Hook: Catching Secrets Before They're Staged
+
+Add a pre-commit hook to your local repository to automatically scan staged changes for API key patterns before every commit.
+
+### Setup
+
+```bash
+# Create the pre-commit hook file
+cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/bash
+# Scan staged changes for common API key patterns
+
+PATTERNS=(
+  'sk-ant-'           # Anthropic API keys
+  'ANTHROPIC_API_KEY=[^y]'  # Assigned non-placeholder value
+  'LANGSMITH_API_KEY=[^y]'
+  'CHAINCRAFT_DISCORD_BOT_TOKEN=[^y]'
+)
+
+FOUND=0
+for pattern in "${PATTERNS[@]}"; do
+  if git diff --cached | grep -qE "\+.*${pattern}"; then
+    echo "⛔ Potential secret detected in staged changes (pattern: ${pattern})"
+    FOUND=1
+  fi
+done
+
+if [ "$FOUND" -eq 1 ]; then
+  echo ""
+  echo "To inspect the staged diff:"
+  echo "  git diff --cached"
+  echo ""
+  echo "If this is a false positive, use: git commit --no-verify"
+  exit 1
+fi
+EOF
+
+chmod +x .git/hooks/pre-commit
+```
+
+### Manual Inspection
+
+You can also inspect staged changes manually before committing:
+
+```bash
+# Show the full staged diff
+git diff --cached
+
+# Search specifically for Anthropic key patterns
+git diff --cached | grep -E '\+.*sk-ant-'
+
+# Search for any line that assigns a real-looking value to a key variable
+git diff --cached | grep -iE '\+.*(API_KEY|SECRET|TOKEN)\s*=\s*[^y][^o]'
+```
+
+### Testing the Hook
+
+```bash
+# Verify the hook runs correctly on a safe commit
+git add README.md
+git commit -m "test: verify pre-commit hook passes"
+
+# Verify the hook catches a fake secret (will be rejected, then clean up)
+echo 'ANTHROPIC_API_KEY=sk-ant-test123' > test_secret_delete_me.txt
+git add test_secret_delete_me.txt
+# Expected: hook prints "⛔ Potential secret detected" and aborts the commit
+git restore --staged test_secret_delete_me.txt
+rm test_secret_delete_me.txt
+```
+
 ## Best Practices
 
 ### Security

@@ -1,5 +1,51 @@
 # Security Guidelines for Logging
 
+## API Key and Secret File Safety
+
+### ⚠️ Never Commit `.env` Files with Real API Keys
+
+The `.env.example` file is a **template** that is safe to commit because it contains only placeholder values. The `.env` file you create from it contains your **real credentials** and must **never** be committed to the repository.
+
+| File | Contains | Safe to commit? |
+|------|----------|-----------------|
+| `.env.example` | Placeholder values only | ✅ Yes |
+| `.env` | Your real API keys and secrets | ❌ Never |
+
+### Verify `.gitignore` Protection
+
+Before adding credentials to `.env`, confirm that `.gitignore` already protects it:
+
+```bash
+# Check that .env is ignored
+grep -n '\.env' .gitignore
+# Expected output should include a line matching: .env
+```
+
+You can also do a dry-run check before any commit:
+
+```bash
+# Confirm .env would NOT be staged
+git status --short .env
+# If .env is properly ignored, this should print nothing
+```
+
+### Recommended Local Setup
+
+```bash
+# 1. Copy the example file
+cp .env.example .env
+
+# 2. Add your real Anthropic API key
+echo 'ANTHROPIC_API_KEY=sk-ant-your-actual-key-here' >> .env
+
+# 3. Restrict file permissions so only you can read it
+chmod 600 .env
+```
+
+See [TESTING_WITH_SECRETS.md](./docs/TESTING_WITH_SECRETS.md) for full local development setup instructions.
+
+---
+
 ## Core Principle: **Never Log What You Don't Explicitly Know Is Safe**
 
 ### ❌ **NEVER Log These:**
