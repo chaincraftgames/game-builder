@@ -194,15 +194,17 @@ const SPEC_EXECUTE_DEFAULTS = {
 };
 
 /**
- * Default configuration for narrative generation in specs
+ * Default configuration for narrative generation in specs.
+ * Uses Haiku by default — narrative sections are short (100-200 words) and
+ * don't require the reasoning depth of Sonnet.
  */
 const SPEC_NARRATIVE_DEFAULTS = {
   ...DESIGN_DEFAULTS,
   modelName:
     process.env.CHAINCRAFT_SPEC_NARRATIVE_MODEL ||
-    process.env.CHAINCRAFT_DESIGN_MODEL_NAME ||
+    process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
     "",
-  maxTokens: 4000,
+  maxTokens: 2000,
 };
 
 /**
@@ -549,7 +551,7 @@ export const setupSpecInstructionsModel = createSetupFunction(
 
 /**
  * Setup model specifically for narrative generation
- * Uses Sonnet 4 by default for concise, high-quality narrative guidance with caching support
+ * Uses Haiku by default for concise, cost-effective narrative guidance with caching support
  */
 export const setupNarrativeModel = createSetupFunction(SPEC_NARRATIVE_DEFAULTS);
 
