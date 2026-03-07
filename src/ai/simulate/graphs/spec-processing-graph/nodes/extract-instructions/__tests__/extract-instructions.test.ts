@@ -79,30 +79,30 @@ FINISHED:
     });
 
     const transitionsArtifact = JSON.stringify({
-      phases: ["choice", "reveal", "finished"],
+      phases: ["init", "choice", "reveal", "finished"],
       phaseMetadata: [
+        { phase: "init", requiresPlayerInput: false },
         { phase: "choice", requiresPlayerInput: true },
         { phase: "reveal", requiresPlayerInput: false },
         { phase: "finished", requiresPlayerInput: false }
       ],
       transitions: [
         {
+          id: "game-start",
+          fromPhase: "init",
+          toPhase: "choice",
+          condition: "Always",
+          checkedFields: [],
+          preconditions: [],
+          humanSummary: "Initialize game and move to first choice phase"
+        },
+        {
           id: "choices-complete",
           fromPhase: "choice",
           toPhase: "reveal",
           condition: "Both players have submitted choices",
-          checkedFields: ["players.p1.choice", "players.p2.choice"],
-          preconditions: [
-            {
-              id: "both-submitted",
-              logic: { "and": [
-                { "!=": [{ "var": "players.p1.choice" }, null] },
-                { "!=": [{ "var": "players.p2.choice" }, null] }
-              ]},
-              deterministic: true,
-              explain: "Both players have submitted their choices"
-            }
-          ],
+          checkedFields: [],
+          preconditions: [],
           humanSummary: "Move to reveal when both players submitted"
         },
         {
@@ -384,7 +384,8 @@ FINISHED:
         stateDeltaErrors.push(`${context}: Missing 'op' field`);
         return;
       }
-      if (!op.path) {
+      // 'transfer' uses fromPath/toPath; 'setForAllPlayers' uses 'field' — both skip the path check
+      if (op.op !== "transfer" && op.op !== "setForAllPlayers" && !op.path) {
         stateDeltaErrors.push(`${context}: Missing 'path' field`);
         return;
       }
@@ -416,13 +417,21 @@ FINISHED:
           if (!op.toPath) {
             stateDeltaErrors.push(`${context}: transfer op missing 'toPath' field`);
           }
-          if (!("value" in op)) {
-            stateDeltaErrors.push(`${context}: transfer op missing 'value' field`);
+          if (!("amount" in op)) {
+            stateDeltaErrors.push(`${context}: transfer op missing 'amount' field`);
           }
           break;
         case "merge":
           if (!("value" in op)) {
             stateDeltaErrors.push(`${context}: merge op missing 'value' field`);
+          }
+          break;
+        case "setForAllPlayers":
+          if (!op.field) {
+            stateDeltaErrors.push(`${context}: setForAllPlayers op missing 'field' field`);
+          }
+          if (!("value" in op)) {
+            stateDeltaErrors.push(`${context}: setForAllPlayers op missing 'value' field`);
           }
           break;
         default:
@@ -724,7 +733,206 @@ FINISHED:
       console.log(`✓ StateDelta smoke test passed: Applied ${testOp.op} operation successfully`);
     }
     
+    // 7. IMAGE CONTENT SPEC VALIDATION (NEGATIVE)
+    // The RPS game spec does NOT mention image generation, so all transitions
+    // should have null/undefined imageContentSpec
+    console.log("\n--- Image Content Spec Validation (Negative) ---");
+    for (const [transitionId, transition] of Object.entries(instructions.transitions)) {
+      expect(
+        transition.imageContentSpec === null || transition.imageContentSpec === undefined
+      ).toBe(true);
+      console.log(`✓ Transition '${transitionId}' has no imageContentSpec (expected: spec has no image gen language)`);
+    }
+    console.log(`✓ No transitions have imageContentSpec (game spec does not mention image generation)`);
+
     console.log("\n=== All Validations Passed ===");
     console.log("\n=== Extract Instructions Node Test Complete ===");
   }, 120000); // 120s timeout for two-phase LLM calls (planner + executor)
+
+  it("should include imageContentSpec when game spec explicitly requests image generation", async () => {
+    const subgraph = createExtractionSubgraph(instructionsExtractionConfig);
+    const gameSpecification = `
+Rock Paper Scissors is a game for 2 players that runs for 3 rounds.
+
+SETUP:
+- Game starts in "choice" phase
+- Both players have score of 0
+
+GAMEPLAY (Choice Phase):
+- Each player secretly submits their choice: rock, paper, or scissors
+- Once both players have submitted, game automatically transitions to reveal
+
+SCORING (Reveal Phase):
+- Choices are revealed to all players
+- Winner is determined using RPS rules:
+  * Rock beats scissors
+  * Scissors beats paper
+  * Paper beats rock
+  * Same choice = tie (no score change)
+- Winner gets 1 point added to score
+- Generate an image depicting the outcome of the round, showing the winning and losing moves in an epic battle scene.
+- If round < 3, game transitions back to choice phase for next round
+- If round = 3, game transitions to finished phase
+
+FINISHED:
+- Game ends
+- Player with highest score wins
+- Display an image depicting the final champion celebrating their victory.
+`;
+
+    const stateSchema = JSON.stringify({
+      type: "object",
+      properties: {
+        game: {
+          type: "object",
+          description: "Core game state",
+          properties: {
+            phase: { type: "string", description: "Current phase: choice, reveal, or finished" },
+            round: { type: "number", description: "Current round (1-3)" },
+            gameEnded: { type: "boolean", description: "Whether game has ended" },
+            publicMessage: { type: "string", description: "Public message to all players" }
+          },
+          required: ["phase", "round", "gameEnded"]
+        },
+        players: {
+          type: "object",
+          description: "Player state keyed by player ID",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Player name" },
+              choice: { type: ["string", "null"], description: "Player's choice (rock/paper/scissors)" },
+              score: { type: "number", description: "Player's current score" },
+              actionRequired: { type: "boolean", description: "Whether player action is required" },
+              illegalActionCount: { type: "number", description: "Count of illegal actions" },
+              privateMessage: { type: "string", description: "Private message to player" }
+            },
+            required: ["score", "actionRequired", "illegalActionCount"]
+          }
+        }
+      },
+      required: ["game", "players"]
+    });
+
+    const transitionsArtifact = JSON.stringify({
+      phases: ["init", "choice", "reveal", "finished"],
+      phaseMetadata: [
+        { phase: "init", requiresPlayerInput: false },
+        { phase: "choice", requiresPlayerInput: true },
+        { phase: "reveal", requiresPlayerInput: false },
+        { phase: "finished", requiresPlayerInput: false }
+      ],
+      transitions: [
+        {
+          id: "game-start",
+          fromPhase: "init",
+          toPhase: "choice",
+          condition: "Always",
+          checkedFields: [],
+          preconditions: [],
+          humanSummary: "Initialize game and move to first choice phase"
+        },
+        {
+          id: "choices-complete",
+          fromPhase: "choice",
+          toPhase: "reveal",
+          condition: "Both players have submitted choices",
+          checkedFields: [],
+          preconditions: [],
+          humanSummary: "Move to reveal when both players submitted"
+        },
+        {
+          id: "continue-game",
+          fromPhase: "reveal",
+          toPhase: "choice",
+          condition: "Round < 3",
+          checkedFields: ["game.round"],
+          preconditions: [
+            {
+              id: "more-rounds",
+              logic: { "<": [{ "var": "game.round" }, 3] },
+              deterministic: true,
+              explain: "Game has more rounds to play"
+            }
+          ],
+          humanSummary: "Start next round if game not complete"
+        },
+        {
+          id: "end-game",
+          fromPhase: "reveal",
+          toPhase: "finished",
+          condition: "Round = 3",
+          checkedFields: ["game.round"],
+          preconditions: [
+            {
+              id: "final-round",
+              logic: { "==": [{ "var": "game.round" }, 3] },
+              deterministic: true,
+              explain: "Game has reached final round"
+            }
+          ],
+          humanSummary: "End game after 3 rounds"
+        }
+      ]
+    });
+
+    const inputState = {
+      gameSpecification,
+      stateSchema,
+      stateTransitions: transitionsArtifact,
+      gameRules: "",
+    };
+
+    console.log("\n=== Executing Extract Instructions (Image Gen Positive Test) ===\n");
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-instructions-image-gen" }
+    });
+
+    expect(result.transitionInstructions).toBeDefined();
+    const transitionInstructionsMap = result.transitionInstructions!;
+
+    // Parse transitions
+    const parsedTransitions: Record<string, any> = {};
+    for (const [key, value] of Object.entries(transitionInstructionsMap)) {
+      parsedTransitions[key] = JSON.parse(value);
+    }
+
+    // Find transitions from reveal phase (these are the automatic transitions)
+    // The spec says to generate images at round outcome (reveal->choice or reveal->finished)
+    const revealTransitions = Object.entries(parsedTransitions).filter(
+      ([_, t]) => t.id === "continue-game" || t.id === "end-game"
+    );
+
+    console.log("\n--- Image Content Spec Validation (Positive) ---");
+    
+    // At least one transition from the reveal phase should have imageContentSpec
+    const transitionsWithImageSpec = revealTransitions.filter(
+      ([_, t]) => t.imageContentSpec && t.imageContentSpec !== null
+    );
+
+    console.log(`Found ${transitionsWithImageSpec.length} transitions with imageContentSpec:`);
+    for (const [id, t] of transitionsWithImageSpec) {
+      console.log(`  - ${id}: "${t.imageContentSpec}"`);
+    }
+
+    expect(transitionsWithImageSpec.length).toBeGreaterThan(0);
+    console.log(`✓ At least one reveal-phase transition has imageContentSpec (game spec explicitly requests image generation)`);
+
+    // Validate the imageContentSpec is a meaningful string, not empty
+    for (const [id, t] of transitionsWithImageSpec) {
+      expect(typeof t.imageContentSpec).toBe("string");
+      expect(t.imageContentSpec.length).toBeGreaterThan(10);
+      console.log(`✓ Transition '${id}' imageContentSpec is a meaningful description (${t.imageContentSpec.length} chars)`);
+    }
+
+    // Every transition with imageContentSpec must also have a public message
+    // (images always accompany a message, never appear alone)
+    for (const [id, t] of transitionsWithImageSpec) {
+      expect(t.messages?.public).toBeTruthy();
+      console.log(`✓ Transition '${id}' with imageContentSpec also has a public message`);
+    }
+
+    console.log("\n=== Image Gen Positive Test Complete ===");
+  }, 120000);
 });

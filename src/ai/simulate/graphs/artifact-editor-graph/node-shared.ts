@@ -5,6 +5,8 @@
  * shared user prompt builder used across all artifact editor graph nodes.
  */
 
+import { SystemMessagePromptTemplate } from '@langchain/core/prompts';
+
 /** Maximum number of coordinator → edit → revalidate cycles */
 export const MAX_EDIT_ATTEMPTS = 2;
 
@@ -109,14 +111,23 @@ export interface FragmentEditOutput {
 
 /**
  * Build a complete system prompt for a fragment edit.
- * Appends the per-call variable data (fragment, change, errors) after the
+ * Processes the base prompt through SystemMessagePromptTemplate.fromTemplate()
+ * to resolve template escape sequences (e.g., {{{{winnerId}}}} → {{winnerId}}),
+ * then appends the per-call variable data (fragment, change, errors) after the
  * static domain knowledge prefix, enabling prefix caching.
  */
-export function buildEditorSystemPrompt(
+export async function buildEditorSystemPrompt(
   baseSystemPrompt: string,
   input: FragmentEditInput,
-): string {
-  const parts: string[] = [baseSystemPrompt];
+): Promise<string> {
+  // Process domain-knowledge base prompt through the template engine to resolve
+  // escape sequences — the domain knowledge uses {{{{ }}}} escaping (for
+  // compatibility with SystemMessagePromptTemplate in extraction paths).
+  // Without this, the LLM would see quadruple braces instead of double.
+  const resolved = await SystemMessagePromptTemplate.fromTemplate(
+    baseSystemPrompt
+  ).format({});
+  const parts: string[] = [resolved.content as string];
 
   parts.push('');
   parts.push('## Edit Task');

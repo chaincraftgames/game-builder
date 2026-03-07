@@ -239,9 +239,12 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
   // Get player mapping for alias replacement in messages
   const playerMapping = deserializePlayerMapping(state.playerMapping || "{}");
 
-  // Replace player aliases with UUIDs in public message
-  const publicMessage = game?.publicMessage
-    ? replacePlayerAliasesWithUUIDs(game.publicMessage, playerMapping)
+  // Build public message from accumulated messages array (or fall back to legacy string field)
+  const rawPublicMessage = Array.isArray(game?.publicMessages) && game.publicMessages.length > 0
+    ? game.publicMessages.join('\n\n')
+    : (game?.publicMessage ?? undefined);
+  const publicMessage = rawPublicMessage
+    ? replacePlayerAliasesWithUUIDs(rawPublicMessage, playerMapping)
     : undefined;
 
   const gameEnded = game?.gameEnded ?? false;

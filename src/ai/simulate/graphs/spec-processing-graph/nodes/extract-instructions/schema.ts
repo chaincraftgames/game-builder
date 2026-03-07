@@ -40,6 +40,9 @@ export const AutomaticTransitionHintSchema = z.object({
   ),
   publicMessagePurpose: z.string().nullable().optional().describe("What public announcement all players should see (if any)."),
   privateMessagesPurpose: z.string().nullable().optional().describe("What individual private messages players should receive (if any)."),
+  imageContentSpec: z.string().nullable().optional().describe(
+    "Brief description of what image to generate for this transition. ONLY include if the game specification explicitly requests image generation for this moment. Null if the spec does not mention generating an image."
+  ),
 });
 
 export const PhaseInstructionsHintSchema = z.object({

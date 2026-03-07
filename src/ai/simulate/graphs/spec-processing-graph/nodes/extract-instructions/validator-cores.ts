@@ -53,7 +53,9 @@ function validatePathSegmentStructure(
     errors.push(
       `${context}: Path segment "${segment}" mixes literal text with template variables. ` +
       `Each segment must be EITHER a literal value OR a complete template variable. ` +
-      `Invalid: "scoreP{{id}}", Valid: "score" or "{{fieldName}}"`,
+      `Use dot notation for template variables, NEVER brackets. ` +
+      `Invalid: "scoreP{{id}}", "players[{{winnerId}}]". ` +
+      `Valid: "score", "{{fieldName}}", "players.{{winnerId}}.isGameWinner"`,
     );
   }
 }

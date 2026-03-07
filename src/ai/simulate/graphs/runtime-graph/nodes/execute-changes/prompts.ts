@@ -70,10 +70,22 @@ Return JSON object with these fields:
   "publicMessage": "Resolved public message if instructions specify one",
   "privateMessages": {{
     "p1": "Resolved private message for p1 if instructions specify one"
-  }}
+  }},
+  "imagePrompt": "Detailed image generation prompt (ONLY if instructions contain imageContentSpec)"
 }}
 
 **CRITICAL**: ALL template variables {{{{...}}}} must be resolved to literal values. The runtime cannot process templates - it only applies the resolved operations.
+
+# Image Generation
+
+If the selected instructions contain a non-null "imageContentSpec" field, include "imagePrompt" in your output:
+- Use the "imageContentSpec" as the basis for the prompt
+- Incorporate resolved values from the current turn (player names, winning move, outcome, etc.)
+- Describe ONLY the scene content in 2-3 sentences: subjects, actions, objects, spatial relationships, and key details
+- Do NOT include any style, mood, lighting, color palette, composition, camera angle, or art direction language — visual style is applied separately by the image pipeline
+- Example: if imageContentSpec is "winner celebrating victory" and player1 won with rock, produce something like: "A massive granite boulder rests atop a pair of shattered steel scissors. Metal fragments and broken blade pieces are scattered around the base of the rock. Behind the destruction, a second pair of scissors stands intact but retreating."
+
+If the instructions have no "imageContentSpec" (or it is null), omit "imagePrompt" entirely.
 !___ END-CACHE ___!
 
 !___ CACHE:phase-instructions ___!

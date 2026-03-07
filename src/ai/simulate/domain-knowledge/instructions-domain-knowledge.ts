@@ -56,10 +56,15 @@ Other examples:
 **Path Structure Requirements (CRITICAL)**:
 - Each path segment must be EITHER a literal OR a complete template variable
 - NEVER mix literals and templates within a single segment
-- Valid: "players.{{{{playerId}}}}.score" (each segment is atomic)
-- Invalid: "game.roundWinsP{{{{playerId}}}}" (mixes "roundWinsP" + template)
+- NEVER use bracket notation with template variables — always use dot notation
+- Valid: "players.{{{{playerId}}}}.score" (each segment is atomic, dot-separated)
+- Valid: "players.{{{{winnerId}}}}.isGameWinner" (dynamic player access via dots)
+- Invalid: "game.roundWinsP{{{{playerId}}}}" (mixes literal + template in one segment)
+- Invalid: "players[{{{{winnerId}}}}].isGameWinner" (bracket notation with template — use dots instead)
+- Invalid: "players[{{{{playerId}}}}]" (brackets around template variable)
 - If you need player-specific fields, structure the schema with nested player objects:
   Use "players.{{{{playerId}}}}.roundsWon" NOT "game.roundWinsP{{{{playerId}}}}"
+  Use "players.{{{{winnerId}}}}.isGameWinner" NOT "players[{{{{winnerId}}}}].isGameWinner"
 
 **Prefer Atomic Operations**: Break complex changes into simple atomic ops.
 

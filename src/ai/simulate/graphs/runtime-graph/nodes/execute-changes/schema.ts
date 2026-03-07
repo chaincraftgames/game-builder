@@ -26,6 +26,13 @@ export const executeChangesResponseSchema = z.object({
   privateMessages: z.record(z.string()).optional().describe(
     "Map of player IDs to private messages (only if instructions specify private messages)"
   ),
+
+  imagePrompt: z.string().optional().describe(
+    "Image generation prompt derived from imageContentSpec in transition instructions. " +
+    "Only include when the instructions contain a non-null imageContentSpec. " +
+    "Should be a detailed, visual description incorporating resolved template values (names, outcomes, etc.) " +
+    "suitable for an AI image generator. Omit entirely if instructions have no imageContentSpec."
+  ),
 });
 
 export type ExecuteChangesResponse = z.infer<typeof executeChangesResponseSchema>;
