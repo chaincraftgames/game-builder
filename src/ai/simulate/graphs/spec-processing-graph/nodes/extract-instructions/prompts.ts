@@ -28,6 +28,12 @@ Focus on:
 3. **mechanicsDescription**: Natural language rules (null if purely administrative)
 4. **requiresLLMValidation/requiresLLMReasoning**: Boolean flags
 5. **Message purposes**: Brief strings (null if no message needed)
+6. **imageContentSpec**: ONLY include if BOTH conditions are true: (a) the game specification
+   explicitly mentions generating or displaying an image (e.g., "display an image depicting
+   the final battle", "generate an image showing the round outcome"), AND (b) the transition
+   also produces a public message (publicMessagePurpose is not null). Images always accompany
+   a message — never set imageContentSpec on a transition that has no public message.
+   If the spec does not mention image generation, leave null for ALL transitions.
 
 # Critical Fields (mention in globalNotes)
 - **game.gameEnded**: At least one transition must set this to true
@@ -132,6 +138,15 @@ Before outputting, verify:
 
 If the phase list has "choicePhase", use "choicePhase" NOT "choice_phase".
 If the ID list has "both_players_submitted", use "both_players_submitted" NOT "both-submitted".
+
+# Image Generation
+
+If the planner hints include an imageContentSpec for a transition, carry it through ONLY if the
+transition also produces a public message (i.e., messages.public is set). Images always
+accompany a message — never set imageContentSpec on a transition that has no public message.
+Only include imageContentSpec when the game specification EXPLICITLY requests image generation for that moment.
+Do NOT invent image generation that the spec did not ask for. If no planner hints have imageContentSpec, omit the field entirely.
+This field is carried through to the runtime, where the execution LLM may use it to produce an image prompt.
 
 Now generate the complete instructions artifact.
 `;

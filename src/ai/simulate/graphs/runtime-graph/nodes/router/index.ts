@@ -398,7 +398,8 @@ function handleError(
   gameState.game.gameEnded = true;
   
   // Set public message to inform players
-  gameState.game.publicMessage = `Game Error: ${errorMessage}`;
+  gameState.game.publicMessages = [`Game Error: ${errorMessage}`];
+  gameState.game.publicMessage = `Game Error: ${errorMessage}`; // keep legacy field in sync
   
   console.error(`[router] ERROR: ${errorType} - ${errorMessage}`, errorContext);
   

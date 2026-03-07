@@ -3,9 +3,9 @@
  */
 
 /**
- * Planner prompt - Analyzes game specification to understand state structure
+ * Schema executor prompt - Analyzes game specification and extracts state fields
  */
-export const planSchemaTemplate = `
+export const executeSchemaTemplate = `
 !___ CACHE:universal-planner ___!
 You are a game design analyst planning the game state schema for a turn based game. 
 Using the provided game specification and the base schema, produce exactly two sections 
@@ -59,6 +59,13 @@ Rules for the planner output:
   random results. Examples: game.lastDiceRoll, game.monsterAttackRoll, game.deadlyScenario. 
   These fields allow random values to be generated once and referenced deterministically in 
   game logic.
+- ⚠️ NO IMAGE OR NARRATIVE STORAGE FIELDS: Do NOT create fields to store generated image 
+  URLs (e.g. "lastOutcomeImage", "roundImage") or narrative/narration text 
+  (e.g. "lastRoundNarration", "roundStory", "outcomeDescription"). Image generation and 
+  narrative output are handled entirely by the runtime through standard output channels: 
+  publicMessage for narrative text and the imageContentSpec → imagePrompt pipeline for 
+  images. Adding schema fields for these creates impossible template variables that the 
+  LLM cannot resolve at execution time.
 - ⚠️ CRITICAL: USE STANDARD PLAYER STATE FIELDS - The base schema provides "actionRequired" 
   (boolean) to indicate whether a player must take an action for the game to progress. 
   DO NOT create custom fields like "hasSubmitted", "hasMoved", "turnComplete", "choiceMade", 
@@ -108,111 +115,4 @@ Review the following detailed specification for a game:
 !___ END-CACHE ___!
 
 Now analyze the specification and produce your output following the format specified above (Natural summary and Fields array).
-`;
-
-/**
- * Executor prompt - Generates formal schema definition and example state
- */
-export const executeSchemaTemplate = `
-!___ CACHE:universal-executor ___!
-You are generating the formal game state schema, rules, and example state.
-
-You MUST generate a JSON response with exactly THREE required fields:
-
-FIELD 1 - gameRules (string, REQUIRED):
-A clear description of the game rules (how to play, phases, win conditions, etc.)
-
-FIELD 2 - state (object, REQUIRED):
-An example of the initial game state structure with "game" and "players" objects, 
-matching the updated schema exactly.
-
-FIELD 3 - stateSchema (object, REQUIRED):
-A JSON Schema object defining the complete game state structure. This should be a 
-standard JSON Schema (Draft 7) that extends the base schema with game-specific fields.
-
-The 'stateSchema' MUST be a valid JSON Schema object with this structure:
-
-{{
-  "type": "object",
-  "properties": {{
-    "game": {{
-      "type": "object",
-      "required": ["gameEnded", "publicMessage", /* other required game fields */],
-      "properties": {{
-        "gameEnded": {{ "type": "boolean", "description": "Whether the game has ended" }},
-        "publicMessage": {{ "type": "string", "description": "Message visible to all players" }},
-        /* Add game-specific fields here */
-      }}
-    }},
-    "players": {{
-      "type": "object",
-      "additionalProperties": {{
-        "type": "object",
-        "required": ["actionRequired", "illegalActionCount", /* other required player fields */],
-        "properties": {{
-          "actionRequired": {{ "type": "boolean", "description": "Whether player must act for game to proceed" }},
-          "illegalActionCount": {{ "type": "number", "description": "Count of illegal actions taken" }},
-          /* Add player-specific fields here */
-        }}
-      }}
-    }}
-  }},
-  "required": ["game", "players"]
-}}
-
-CRITICAL RULES:
-- Use standard JSON Schema syntax (type, properties, required, additionalProperties, items, enum, description)
-- Include ALL fields from the base schema PLUS game-specific fields identified in the planner analysis
-- For fixed objects (like "game"), use "properties" to define fields
-- For records/maps (like "players"), use "additionalProperties" since keys are dynamic player IDs
-- For arrays, use "items" to define the schema of array elements
-- Use "required" arrays to specify which fields are mandatory
-- Include "description" for all game-specific fields you add
-- Keep it simple: use object, array, string, number, boolean, integer types and enum for constrained strings
-- ⚠️ CRITICAL: STATE STRUCTURE RULES
-  * game: Properties are ONE level deep directly under "game"
-    Example: use "difficulty" directly under game.properties, NOT "settings.properties.difficulty"
-  * players: This is a map/record where each player ID is a key, with properties ONE level 
-    under that key
-    All player fields go directly under players.additionalProperties.properties
-    ✗ INCORRECT: nested objects like players.additionalProperties.properties.inventory.properties.gold
-    ✓ CORRECT: players.additionalProperties.properties.gold
-
-Example game-specific additions:
-- Game phase tracking: {{ "currentPhase": {{ "type": "string", "description": "Current game phase - valid values defined by transitions artifact" }} }}
-- Round counter: {{ "round": {{ "type": "number" }} }}
-- Player choices: {{ "choice": {{ "type": "string", "enum": ["rock", "paper", "scissors"] }} }}
-- Player scores: {{ "score": {{ "type": "number" }} }}
-
-IMPORTANT: Do NOT use enum for phase/currentPhase fields. Phases are defined in the transitions artifact which is generated AFTER the schema. The currentPhase field should be a plain string type.
-
-⚠️ CRITICAL: You MUST add ALL fields from the planner analysis to the stateSchema.
-
-For EACH field in the planner's "Fields" array:
-- If path="game": add to stateSchema.properties.game.properties[fieldName]
-- If path="player": add to stateSchema.properties.players.additionalProperties.properties[fieldName]
-
-DO NOT skip any fields. If the planner identified a field as required, you MUST include it 
-in the schema. Dropping fields will cause validation failures later.
-
-Base schema definition for the game state (from Zod):
-<schema>
-{schema}
-</schema>
-
-Use the provided schema as a base. Add the planner's fields PLUS any additional runtime fields 
-(such as gameEnded, publicMessage, player action flags, etc.) to ensure reliable gameplay.
-!___ END-CACHE ___!
-
-!___ CACHE:artifacts-executor ___!
-Planner analysis of game requirements:
-<analysis>
-{plannerAnalysis}
-</analysis>
-!___ END-CACHE ___!
-
-Now generate the complete schema artifact (gameRules, state, stateSchema) based on the planner analysis and base schema.
-
-**CRITICAL**: Your response must be ONLY valid JSON with the three fields (gameRules, 
-state, stateSchema). Do not include any explanatory text, XML tags, or markdown.
 `;

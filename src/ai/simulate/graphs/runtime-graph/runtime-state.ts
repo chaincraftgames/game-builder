@@ -115,4 +115,9 @@ export const RuntimeState = Annotation.Root({
     reducer: (x, y) => [...new Set([...x, ...y])],
     default: () => [],
   }),
+
+  imagePrompt: Annotation<string | undefined>({
+    reducer: (_, y) => y,
+    default: () => undefined,
+  }),
 });

@@ -7,7 +7,7 @@
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import { SpecProcessingStateType } from "../../spec-processing-state.js";
 import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
-import { planSchemaTemplate } from "./prompts.js";
+import { executeSchemaTemplate } from "./prompts.js";
 import { baseGameStateSchemaJson, baseSchemaFieldsJson } from "#chaincraft/ai/simulate/schema.js";
 import {
   GraphConfigWithStore,
@@ -26,7 +26,7 @@ export function schemaExecutorNode(model: ModelWithOptions) {
     const threadId = config?.configurable?.thread_id || "default";
 
     // Generate schema extraction
-    const executorPrompt = SystemMessagePromptTemplate.fromTemplate(planSchemaTemplate);
+    const executorPrompt = SystemMessagePromptTemplate.fromTemplate(executeSchemaTemplate);
     const executorSystemMessage = await executorPrompt.format({
       gameSpecification: state.gameSpecification,
       schema: baseGameStateSchemaJson,

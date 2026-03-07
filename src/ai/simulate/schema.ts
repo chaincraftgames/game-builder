@@ -80,6 +80,10 @@ export const baseGameStateSchema = z.object({
         .string()
         .optional()
         .describe("Public game state, instructions, etc... to all players"),
+      publicMessages: z
+        .array(z.string())
+        .optional()
+        .describe("Accumulated public messages for the current turn (runtime-internal)"),
       winningPlayers: z
         .array(z.string())
         .describe(
@@ -385,6 +389,15 @@ export const AutomaticTransitionInstructionSchema = z.object({
     })
     .nullable()
     .optional(),
+
+  // Optional image generation spec
+  imageContentSpec: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "Brief description of image content to generate for this transition. ONLY include if the game specification explicitly requests image generation for this moment (e.g., 'display an image depicting the final battle'). Null if the spec does not mention generating an image.",
+    ),
 });
 
 /**

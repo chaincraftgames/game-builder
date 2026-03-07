@@ -153,6 +153,29 @@ Rules:
   descriptionMaxChars: 400,
 };
 
+/**
+ * Gameplay scene image (single-step: executor-generated prompt → Leonardo).
+ * Used during live gameplay to illustrate key moments (round outcomes, game end, etc.).
+ * Landscape 16:9, vivid digital illustration style, no text or UI overlays.
+ */
+export const GAMEPLAY_IMAGE_CONFIG: ImageGenConfig = {
+  leonardo: {
+    modelId: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3", // Phoenix 1.0
+    width: 1344,
+    height: 768,
+    numImages: 1,
+    apiKey: LEO_API_KEY,
+  },
+  promptTemplate: `{image_prompt}, celestial tarot card illustration, radiating 
+  symmetrical composition, ornate sacred geometry borders, art nouveau details, 
+  dominant vivid crimson energy, deep forest green shadows, mystic violet accents, 
+  royal indigo background, neon mint green highlights, ash silver structures`,
+  negativePrompt: `photorealistic, photograph, 3D render, smooth gradients, 
+  anime, blurry, text, words, logo, lens flare, bokeh, realistic skin, warm yellow 
+  tones, brown earth tones, orange, pastel, pink, baby blue, pixel art, modern 
+  digital art`,
+};
+
 // ── Service functions ─────────────────────────────────────────────────────
 
 /**

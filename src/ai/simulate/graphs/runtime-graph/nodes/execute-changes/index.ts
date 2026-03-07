@@ -147,11 +147,54 @@ export function executeChanges(model: ModelWithOptions) {
       console.log("[execute_changes] Deterministic overrides applied successfully");
     }
     
-    // Apply messages to state
+    // Accumulate public messages across chained automatic transitions.
+    // Start fresh when a new player action arrives (state.playerAction set) or on initialization.
+    // On chained auto-transitions playerAction is already cleared, so we keep appending.
+    const isNewTurn = state.playerAction !== undefined || !state.isInitialized;
+    const existingMessages: string[] = isNewTurn
+      ? []
+      : (canonicalState.game.publicMessages ?? []);
+
     if (llmResponse.publicMessage) {
-      updatedState.game.publicMessage = llmResponse.publicMessage;
+      let message = llmResponse.publicMessage;
+
+      // Defense-in-depth: Anthropic structured output can bleed XML tool-call syntax into
+      // string fields on long outputs. Detect and recover imagePrompt if it leaked into
+      // publicMessage (e.g. "</publicMessage>\n<parameter name=\"imagePrompt\">...").
+      const xmlLeakMatch = message.match(/<\/publicMessage>\s*<parameter\s+name="imagePrompt">([\s\S]*?)(?:<\/parameter>|$)/i);
+      if (xmlLeakMatch) {
+        console.warn("[execute_changes] Detected Anthropic XML bleed-through in publicMessage, sanitizing");
+        // Strip the leaked XML from the message
+        message = message.replace(/<\/publicMessage>[\s\S]*$/i, '').trim();
+        // Recover imagePrompt if it wasn't populated in the structured output
+        if (!llmResponse.imagePrompt && xmlLeakMatch[1]?.trim()) {
+          llmResponse.imagePrompt = xmlLeakMatch[1].trim();
+          console.log("[execute_changes] Recovered imagePrompt from XML bleed-through");
+        }
+      }
+
+      // If an imagePrompt was generated, call the image service and embed URL in the message
+      if (llmResponse.imagePrompt) {
+        try {
+          const { generateImageDirect, GAMEPLAY_IMAGE_CONFIG } = await import(
+            "#chaincraft/ai/image-gen/image-gen-service.js"
+          );
+          const imageUrl = await generateImageDirect(
+            { image_prompt: llmResponse.imagePrompt },
+            GAMEPLAY_IMAGE_CONFIG
+          );
+          message += `\n\n![scene](${imageUrl})`;
+          console.log("[execute_changes] Generated gameplay image:", imageUrl);
+        } catch (error) {
+          console.warn("[execute_changes] Image generation failed, continuing without image:", error);
+        }
+      }
+
+      updatedState.game.publicMessages = [...existingMessages, message];
+    } else {
+      updatedState.game.publicMessages = existingMessages;
     }
-    
+
     if (llmResponse.privateMessages) {
       // Map private messages back to UUID player IDs
       for (const [alias, message] of Object.entries(llmResponse.privateMessages)) {
@@ -191,6 +234,7 @@ export function executeChanges(model: ModelWithOptions) {
       requiresPlayerInput: false, // Will be set by router on next iteration
       transitionReady: false, // Will be set by router on next iteration
       isInitialized: true, // Mark as initialized after any state change
+      imagePrompt: llmResponse.imagePrompt,
     };
   };
 }
