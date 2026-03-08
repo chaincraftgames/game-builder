@@ -9,7 +9,9 @@ import type { SpecProcessingStateType } from '../../spec-processing-state.js';
 import { 
   extractSchemaFields, 
   isValidFieldReference, 
-  extractFieldReferences 
+  extractFieldReferences,
+  classifyInvalidFieldReference,
+  getComputedContextFieldNames 
 } from '../../schema-utils.js';
 
 export interface ValidationIssue {
@@ -128,16 +130,28 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
     phaseOutbound.set(t.fromPhase, (phaseOutbound.get(t.fromPhase) || 0) + 1);
     phaseInbound.set(t.toPhase, (phaseInbound.get(t.toPhase) || 0) + 1);
   });
+
+  // Count outbound transitions to *different* phases (self-loops don't count
+  // for terminal detection — a phase that only loops to itself is still terminal).
+  const phaseOutboundNonSelf = new Map<string, number>();
+  phases.forEach((phase: string) => phaseOutboundNonSelf.set(phase, 0));
+  transitionList.forEach((t: any) => {
+    if (t.fromPhase && t.toPhase && t.fromPhase !== t.toPhase) {
+      phaseOutboundNonSelf.set(t.fromPhase, (phaseOutboundNonSelf.get(t.fromPhase) || 0) + 1);
+    }
+  });
   
-  // Identify terminal phases (no outbound transitions)
+  // Identify terminal phases:
+  //   1. Any phase with zero outbound transitions to different phases, OR
+  //   2. The conventional 'finished' phase (belt-and-suspenders)
   const initPhase = phases[0]; // Assume first phase is init
   const terminalPhases = new Set<string>();
   
   phases.forEach((phase: string) => {
-    const outbound = phaseOutbound.get(phase) || 0;
+    const outboundNonSelf = phaseOutboundNonSelf.get(phase) || 0;
     const inbound = phaseInbound.get(phase) || 0;
     
-    if (outbound === 0 && phase !== initPhase) {
+    if ((outboundNonSelf === 0 && phase !== initPhase) || phase === 'finished') {
       terminalPhases.add(phase);
     }
     
@@ -151,8 +165,8 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
       });
     }
     
-    // Check for potential deadlocks
-    if (outbound === 0 && !terminalPhases.has(phase) && phase !== initPhase) {
+    // Check for potential deadlocks (no outbound to different phases and not terminal)
+    if (outboundNonSelf === 0 && !terminalPhases.has(phase) && phase !== initPhase) {
       issues.push({
         severity: 'error',
         category: 'deadlock',
@@ -258,12 +272,25 @@ export function validateTransitions(state: SpecProcessingStateType): ValidationR
             context: { transition: t, precondition: p, field }
           });
         } else if (!isValidFieldReference(field, schemaFields)) {
-          issues.push({
-            severity: 'error',
-            category: 'reference',
-            message: `Transition ${t.id} precondition references unknown field: ${field}`,
-            context: { transition: t, precondition: p, field }
-          });
+          const classification = classifyInvalidFieldReference(field, schemaFields);
+          if (classification === 'unscoped') {
+            const computedFields = getComputedContextFieldNames();
+            issues.push({
+              severity: 'error',
+              category: 'reference',
+              message: `Transition ${t.id} precondition references unscoped field: '${field}'. ` +
+                       `State field references must use their full path (e.g., 'game.${field}' or 'players.${field}'). ` +
+                       `Only computed context fields can be referenced without a prefix: ${computedFields.join(', ')}.`,
+              context: { transition: t, precondition: p, field, classification: 'unscoped' }
+            });
+          } else {
+            issues.push({
+              severity: 'error',
+              category: 'reference',
+              message: `Transition ${t.id} precondition references unknown field: ${field}`,
+              context: { transition: t, precondition: p, field }
+            });
+          }
         }
       });
     });

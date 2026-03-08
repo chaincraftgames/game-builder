@@ -189,6 +189,36 @@ export const SetForAllPlayersOpSchema = z.object({
 });
 
 /**
+ * SetFromMap operation: looks up a key (read from game state) in a hardcoded map
+ * and writes the corresponding value to a target path.
+ * Useful for translating player choices to derived constants (e.g. ticker → dataSourceId,
+ * choice → point value, round → difficulty).
+ * This is a SYNCHRONOUS deterministic operation — no async or LLM needed.
+ */
+export const SetFromMapOpSchema = z.object({
+  op: z.literal("setFromMap"),
+  /** Dot-notation path to the state field whose value is used as the lookup key */
+  keyPath: z.string().describe(
+    "Dot-notation path to the state field containing the lookup key. " +
+    "Supports template variables. Example: 'players.{{playerId}}.selectedTicker'"
+  ),
+  /** The lookup map: keys are possible values of keyPath, values are what to write */
+  map: z.record(z.any()).describe(
+    "Hardcoded mapping from key strings to output values. " +
+    "Example: { \"BTC\": \"coinbase-btc-usd-price\", \"ETH\": \"coinbase-eth-usd-price\" }"
+  ),
+  /** Dot-notation path where the looked-up value will be written */
+  path: z.string().describe(
+    "Dot-notation path where the result will be stored. " +
+    "Supports template variables. Example: 'players.{{playerId}}.resolvedDataSourceId'"
+  ),
+  /** Optional fallback value if the key is not found in the map */
+  fallback: z.any().optional().describe(
+    "Value to write if the key is not found in the map. If omitted and key is missing, op is skipped with a warning."
+  ),
+});
+
+/**
  * SetFromDataSource operation: reads a value from a blockchain data source
  * and sets it at the target path.
  * NOTE: This operation is PRE-PROCESSED before execution.
@@ -197,9 +227,10 @@ export const SetForAllPlayersOpSchema = z.object({
  */
 export const SetFromDataSourceOpSchema = z.object({
   op: z.literal("setFromDataSource"),
-  /** ID of the DataSourceConfig to read from */
+  /** ID of the DataSourceConfig to read from. Supports template variables resolved from game state at runtime. */
   dataSourceId: z.string().describe(
-    "The unique ID of a registered data source (e.g., 'binance-btc-usd-price', 'chainlink-tsla-usd', 'cc-token-balance')"
+    "The unique ID of a registered data source (e.g., 'binance-btc-usd-price', 'chainlink-tsla-usd'). " +
+    "Can be a template variable like '{{players.p1.resolvedDataSourceId}}' to select a data source dynamically from game state."
   ),
   /** State path where the result will be written */
   path: z.string().describe(
@@ -250,6 +281,7 @@ export const StateDeltaOpSchema = z.discriminatedUnion("op", [
   MergeOpSchema,
   RngOpSchema,
   SetForAllPlayersOpSchema,
+  SetFromMapOpSchema,
   SetFromDataSourceOpSchema,
 ]);
 
@@ -267,6 +299,7 @@ export type TransferOp = z.infer<typeof TransferOpSchema>;
 export type RngOp = z.infer<typeof RngOpSchema>;
 export type MergeOp = z.infer<typeof MergeOpSchema>;
 export type SetForAllPlayersOp = z.infer<typeof SetForAllPlayersOpSchema>;
+export type SetFromMapOp = z.infer<typeof SetFromMapOpSchema>;
 export type SetFromDataSourceOp = z.infer<typeof SetFromDataSourceOpSchema>;
 
 // JSON schema exports for prompt injection
@@ -423,6 +456,27 @@ function applySingleOp(state: any, op: StateDeltaOp): string | null {
         return null;
       }
 
+      case "setFromMap": {
+        const key = getByPath(state, op.keyPath);
+        if (key == null) {
+          if (op.fallback !== undefined) {
+            setByPath(state, op.path, op.fallback);
+          } else {
+            console.warn(`[statedelta] setFromMap: keyPath '${op.keyPath}' resolved to null/undefined — op skipped`);
+          }
+          return null;
+        }
+        const keyStr = String(key);
+        if (Object.prototype.hasOwnProperty.call(op.map, keyStr)) {
+          setByPath(state, op.path, op.map[keyStr]);
+        } else if (op.fallback !== undefined) {
+          setByPath(state, op.path, op.fallback);
+        } else {
+          console.warn(`[statedelta] setFromMap: key '${keyStr}' not found in map — op skipped`);
+        }
+        return null;
+      }
+
       default:
         return `Unknown operation type: ${(op as any).op}`;
     }
@@ -492,6 +546,12 @@ export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDelta
       case 'delete':
       case 'merge':
       case 'rng':
+        if ('path' in delta && delta.path) {
+          touchedPaths.add(delta.path);
+        }
+        break;
+
+      case 'setFromMap':
         if ('path' in delta && delta.path) {
           touchedPaths.add(delta.path);
         }

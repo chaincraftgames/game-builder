@@ -74,6 +74,12 @@ Rules for the planner output:
   (submits a choice, makes a move, etc.),even if the payer may still take optional actions, 
   the game logic will set actionRequired=false. This ensures the router can reliably 
   determine when all players have acted and automatic transitions can proceed.
+- ⛔ NEVER ADD TIMING OR ELAPSED-TIME FIELDS: Do NOT add any field that tracks elapsed time,
+  phase duration, countdowns, or when a phase started. Examples of forbidden field names:
+  phaseElapsedMs, elapsedSeconds, phaseStartTime, timerMs, countdownMs, remainingSeconds,
+  waitStartedAt, timeoutAt. Phase timing is managed entirely by the runtime engine, which
+  reads the humanSummary of each transition to configure timers automatically. Preconditions
+  only evaluate stored game state — they never evaluate elapsed time.
 
 You are provided with a formal schema definition for the base game state.  The final schema
 must match the shape of this schema:

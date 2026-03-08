@@ -91,6 +91,11 @@ export function isDeterministicOperation(op: StateDeltaOp): boolean {
     return !hasTemplateVariables(setForAllOp.value);
   }
 
+  if (op.op === 'setFromMap') {
+    // setFromMap is deterministic — pure synchronous lookup, no async or randomness.
+    return true;
+  }
+
   if (op.op === 'setFromDataSource') {
     // setFromDataSource is NEVER deterministic — requires async blockchain read.
     // Always routed through the pre-processor (like rng).
@@ -170,6 +175,16 @@ export function expandAndTransformOperation(
       ...op,
       fromPath: transformedFromPath,
       toPath: transformedToPath
+    } as StateDeltaOp];
+  }
+
+  // Handle setFromMap separately — needs both keyPath and path alias-transformed
+  if (op.op === 'setFromMap') {
+    const mapOp = op as any;
+    return [{
+      ...op,
+      keyPath: transformPath(mapOp.keyPath, mapping),
+      path: transformPath(mapOp.path, mapping),
     } as StateDeltaOp];
   }
   

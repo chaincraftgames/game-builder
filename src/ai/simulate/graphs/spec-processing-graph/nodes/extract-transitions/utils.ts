@@ -20,8 +20,27 @@ export function formatComputedContextForPrompt(): string {
     output += `  • ${fieldName} (${typeName}) - ${description}\n`;
   }
   
-  output += "\nIMPORTANT: Use these EXACT field names in preconditions. Do NOT invent similar names.";
-  
+  output += `
+
+⛔ PRECONDITION WHITELIST — ONLY THESE ARE ALLOWED:
+A precondition may reference ONLY:
+  1. A computed context field listed above (e.g. allPlayersCompletedActions, playersCount)
+  2. A schema field from the available fields list that is SET by a player action or transition
+     (e.g. game.currentPhase, players.*.predictionSubmitted)
+
+Any field not in one of those two categories is FORBIDDEN in a precondition.
+
+⛔ TIMER-BASED TRANSITIONS — ABSOLUTE RULE:
+If a transition fires after N seconds (countdown, timeout, wait), it must have ONLY a
+phase check precondition. The timer is described in humanSummary. The runtime engine reads
+humanSummary to configure and fire the timer automatically.
+  ✅ Precondition: {"var": "game.currentPhase"} == "wait"
+  ✅ humanSummary: "30-second wait timer completed — fetch final price and advance"
+  ❌ NEVER add a timing field to the schema
+  ❌ NEVER add a timing field to a precondition
+  ❌ NEVER invent field names like phaseElapsedMs, elapsedSeconds, timerMs, phaseStartTime,
+     countdownMs, remainingSeconds — these will NEVER be set by anything at runtime.`;
+
   return output;
 }
 

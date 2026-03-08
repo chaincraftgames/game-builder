@@ -72,7 +72,7 @@ export const SpecProcessingState = Annotation.Root({
     reducer: (x, y) => {
       if (y === null) return null;              // explicit clear
       if (y === undefined) return x;            // not mentioned, keep existing
-      return [...(x || []), ...y];              // accumulate new errors
+      return y;                                 // replace with new errors
     },
     default: () => undefined,
   }),
@@ -81,7 +81,7 @@ export const SpecProcessingState = Annotation.Root({
     reducer: (x, y) => {
       if (y === null) return null;              // explicit clear
       if (y === undefined) return x;            // not mentioned, keep existing
-      return [...(x || []), ...y];              // accumulate new errors
+      return y;                                 // replace with new errors
     },
     default: () => undefined,
   }),
@@ -90,7 +90,7 @@ export const SpecProcessingState = Annotation.Root({
     reducer: (x, y) => {
       if (y === null) return null;              // explicit clear
       if (y === undefined) return x;            // not mentioned, keep existing
-      return [...(x || []), ...y];              // accumulate new errors
+      return y;                                 // replace with new errors
     },
     default: () => undefined,
   }),
