@@ -313,6 +313,106 @@ TRANSITIONS:
     console.log('✓ All preconditions are deterministic (no null logic)');
   }, 60000);
 
+  it("should NOT use timing fields in preconditions for a timer-based game", async () => {
+    const subgraph = createExtractionSubgraph(transitionsExtractionConfig);
+
+    console.log("\n=== TEST: No timing fields in preconditions ===");
+
+    // This spec is intentionally full of timer language to provoke the hallucination.
+    const gameRules = `
+A two-player countdown guessing game.
+
+Phase 1 — GUESS: Each player submits a number guess (1-100). Players have 30 seconds to submit.
+If both players submit before 30 seconds, move to resolution immediately.
+If 30 seconds elapse without both submitting, auto-assign 50 as the default guess.
+
+Phase 2 — RESOLUTION: The system reveals both guesses and declares the player closest to 50 the winner.
+The resolution screen displays for 5 seconds, then the game ends.
+
+Timeout rules:
+- Guess phase: 30-second timer. Expires → assign defaults, advance to resolution.
+- Resolution phase: 5-second minimum display time before game end.
+`;
+
+    const stateSchema = JSON.stringify([
+      { name: "currentPhase", type: "string", path: "game" },
+      { name: "gameEnded", type: "boolean", path: "game" },
+      { name: "guess", type: "number", path: "player" },
+      { name: "actionRequired", type: "boolean", path: "player" },
+    ]);
+
+    const inputState = {
+      gameSpecification: gameRules,
+      gameRules,
+      stateSchema,
+    };
+
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-thread-timing" },
+    });
+
+    expect(result.stateTransitions).toBeDefined();
+    const parsed =
+      typeof result.stateTransitions === "string"
+        ? JSON.parse(result.stateTransitions)
+        : result.stateTransitions;
+
+    // Collect all var references used in every precondition across all transitions
+    const TIMING_FIELD_PATTERNS = [
+      "elapsedSeconds",
+      "timeElapsed",
+      "elapsed",
+      "phaseStartTime",
+      "phaseDuration",
+      "timerExpired",
+      "countdownSeconds",
+      "remainingTime",
+      "secondsRemaining",
+      "phaseTimer",
+    ];
+
+    function collectVarRefs(logic: any, refs: string[] = []): string[] {
+      if (!logic || typeof logic !== "object") return refs;
+      if (typeof logic.var === "string") refs.push(logic.var);
+      for (const v of Object.values(logic)) {
+        if (typeof v === "object") collectVarRefs(v, refs);
+        if (Array.isArray(v)) v.forEach((item) => collectVarRefs(item, refs));
+      }
+      return refs;
+    }
+
+    const timingViolations: { transitionId: string; field: string }[] = [];
+    for (const t of parsed.transitions ?? []) {
+      for (const p of t.preconditions ?? []) {
+        const refs = collectVarRefs(p.logic);
+        for (const ref of refs) {
+          const lower = ref.toLowerCase();
+          if (TIMING_FIELD_PATTERNS.some((pattern) => lower.includes(pattern.toLowerCase()))) {
+            timingViolations.push({ transitionId: t.id, field: ref });
+          }
+        }
+      }
+    }
+
+    if (timingViolations.length > 0) {
+      console.error(
+        "\n❌ Timing field violations found in preconditions:",
+        JSON.stringify(timingViolations, null, 2)
+      );
+      console.error(
+        "Full transitions:",
+        JSON.stringify(parsed.transitions, null, 2)
+      );
+    } else {
+      console.log(
+        "✓ No timing fields found in preconditions — runtime timers correctly described in humanSummary only"
+      );
+    }
+
+    expect(timingViolations).toHaveLength(0);
+  }, 60000);
+
   it("should use custom player operations in preconditions", async () => {
     const subgraph = createExtractionSubgraph(transitionsExtractionConfig);
     

@@ -680,8 +680,17 @@ interface CoinbaseAsset {
 }
 
 const COINBASE_ASSETS: CoinbaseAsset[] = [
-  { ticker: "btc", name: "Bitcoin", pair: "BTC-USD" },
+   { ticker: "btc", name: "Bitcoin", pair: "BTC-USD" },
   { ticker: "eth", name: "Ethereum", pair: "ETH-USD" },
+  { ticker: "bnb", name: "BNB", pair: "BNB-USD" },
+  { ticker: "xrp", name: "XRP", pair: "XRP-USD" },
+  { ticker: "sol", name: "Solana", pair: "SOL-USD" },
+  { ticker: "trx", name: "TRON", pair: "TRX-USD" },
+  { ticker: "doge", name: "Dogecoin", pair: "DOGE-USD" },
+  { ticker: "ada", name: "Cardano", pair: "ADA-USD" },
+  { ticker: "bch", name: "Bitcoin Cash", pair: "BCH-USD" },
+  { ticker: "leo", name: "LEO Token", pair: "LEO-USD" },
+  { ticker: "arb", name: "Arbitrum", pair: "ARB-USD" },
 ];
 
 /**

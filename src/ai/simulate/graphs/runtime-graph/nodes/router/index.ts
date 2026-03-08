@@ -1,44 +1,61 @@
 /**
  * Router Node - Deterministic Phase Transition Routing
- * 
+ *
  * The Router is a pure deterministic function that:
  * 1. Checks if player input is present and required
  * 2. Evaluates automatic transitions from current phase
  * 3. Routes to appropriate next step or detects deadlock
- * 
+ *
  * Key Responsibilities:
  * - Parse transitions artifact
  * - Evaluate JsonLogic preconditions
  * - Determine which transition fires (if any)
  * - Detect deadlock conditions
  * - Select appropriate instructions for next step
- * 
+ *
  * No LLM calls - fully deterministic based on:
  * - Current game state
  * - Transitions artifact
  * - JsonLogic evaluation
  */
 
-import { getActionsAllowed } from '#chaincraft/ai/simulate/simulate-workflow.js';
+import { getActionsAllowed } from "#chaincraft/ai/simulate/simulate-workflow.js";
 
-import type { RuntimeStateType } from '../../runtime-state.js';
-import { buildRouterContext, jsonLogic } from '#chaincraft/ai/simulate/logic/jsonlogic.js';
-import type { 
+import type { RuntimeStateType } from "../../runtime-state.js";
+import {
+  buildRouterContext,
+  jsonLogic,
+} from "#chaincraft/ai/simulate/logic/jsonlogic.js";
+import type {
   BaseRuntimeState,
   Transition,
-  TransitionsArtifact
-} from '#chaincraft/ai/simulate/schema.js';
-import { RuntimePlayerState } from '#chaincraft/ai/simulate/schema.js';
-import { processRngInstructions } from './rng-utils.js';
-import { processDataSourceInstructions, buildCallArgs, applyTransform, type ContractReader, type DataSourceReader } from './datasource-utils.js';
-import type { DataSourceConfig, BlockchainDataSourceConfig } from '#chaincraft/ai/design/game-design-state.js';
-import { createPlayerMapping, serializePlayerMapping } from '#chaincraft/ai/simulate/player-mapping.js';
+  TransitionsArtifact,
+} from "#chaincraft/ai/simulate/schema.js";
+import { RuntimePlayerState } from "#chaincraft/ai/simulate/schema.js";
+import { processRngInstructions } from "./rng-utils.js";
+import {
+  processDataSourceInstructions,
+  buildCallArgs,
+  applyTransform,
+  type ContractReader,
+  type DataSourceReader,
+} from "./datasource-utils.js";
+import type {
+  DataSourceConfig,
+  BlockchainDataSourceConfig,
+} from "#chaincraft/ai/design/game-design-state.js";
+import {
+  createPlayerMapping,
+  serializePlayerMapping,
+  deserializePlayerMapping,
+  transformStateToAliases,
+} from "#chaincraft/ai/simulate/player-mapping.js";
 
 /**
  * Convert DataSourceConfig[] to Record<string, Config> keyed by ID.
  */
 function buildDataSourceMap(
-  dataSources?: DataSourceConfig[]
+  dataSources?: DataSourceConfig[],
 ): Record<string, DataSourceConfig> {
   if (!dataSources || dataSources.length === 0) return {};
   const map: Record<string, DataSourceConfig> = {};
@@ -52,7 +69,7 @@ function buildDataSourceMap(
 let _contractReader: ContractReader | null = null;
 async function getContractReader(): Promise<ContractReader> {
   if (!_contractReader) {
-    const { createContractReader } = await import('./contract-reader.js');
+    const { createContractReader } = await import("./contract-reader.js");
     _contractReader = createContractReader();
   }
   return _contractReader;
@@ -64,9 +81,13 @@ async function getContractReader(): Promise<ContractReader> {
  * HTTP sources use fetch.
  */
 async function getDataSourceReader(): Promise<DataSourceReader> {
-  return async (config: DataSourceConfig, paramValues: Record<string, string>, state: any) => {
-    if (config.sourceType === 'http') {
-      const { readHttpDataSource } = await import('./http-reader.js');
+  return async (
+    config: DataSourceConfig,
+    paramValues: Record<string, string>,
+    state: any,
+  ) => {
+    if (config.sourceType === "http") {
+      const { readHttpDataSource } = await import("./http-reader.js");
       return readHttpDataSource(config, paramValues, state);
     }
 
@@ -92,7 +113,8 @@ async function getDataSourceReader(): Promise<DataSourceReader> {
 async function resolveInstructions(
   instructions: string,
   dataSourceMap: Record<string, DataSourceConfig>,
-  gameState: any
+  gameState: any,
+  playerMapping?: string,
 ): Promise<string> {
   // Phase 1: Resolve RNG ops (synchronous)
   let resolved = processRngInstructions(instructions);
@@ -101,15 +123,23 @@ async function resolveInstructions(
   if (Object.keys(dataSourceMap).length > 0) {
     const parsed = JSON.parse(resolved);
     const hasDataSourceOps = parsed.stateDelta?.some?.(
-      (op: any) => op.op === 'setFromDataSource'
+      (op: any) => op.op === "setFromDataSource",
     );
     if (hasDataSourceOps) {
       const reader = await getDataSourceReader();
+      // Data-source ops may reference alias paths (e.g. players.player1.selectedCryptocurrency)
+      // but gameState has UUID-keyed players. Transform to alias keys so template resolution works.
+      const stateForDataSources = playerMapping
+        ? transformStateToAliases(
+            gameState,
+            deserializePlayerMapping(playerMapping),
+          )
+        : gameState;
       resolved = await processDataSourceInstructions(
         resolved,
         dataSourceMap,
-        gameState,
-        reader
+        stateForDataSources,
+        reader,
       );
     }
   }
@@ -127,13 +157,17 @@ interface RouterResult {
   transitionId?: string;
   transitionName?: string;
   nextPhase?: string;
-  
+
   // Instructions for next step
   selectedInstructions: string;
-  
+
   // Error handling
   hasError: boolean;
-  errorType?: 'deadlock' | 'invalid_state' | 'rule_violation' | 'transition_failed';
+  errorType?:
+    | "deadlock"
+    | "invalid_state"
+    | "rule_violation"
+    | "transition_failed";
   errorMessage?: string;
   errorContext?: any;
 }
@@ -142,85 +176,106 @@ interface RouterResult {
  * Router node function
  */
 export function router() {
-  return async (state: RuntimeStateType): Promise<Partial<RuntimeStateType>> => {
-    console.log('[router] Starting routing decision...');
-    
+  return async (
+    state: RuntimeStateType,
+  ): Promise<Partial<RuntimeStateType>> => {
+    console.log("[router] Starting routing decision...");
+
     try {
       // Parse artifacts - handle both string and object forms from checkpoint
       // Empty gameState means this is initialization, use defaults
-      const gameState: BaseRuntimeState = typeof state.gameState === 'string' 
-        ? (state.gameState ? JSON.parse(state.gameState) : { game: { gameEnded: false }, players: {} })
-        : state.gameState as any;
-      const transitions: TransitionsArtifact = typeof state.stateTransitions === 'string'
-        ? JSON.parse(state.stateTransitions)
-        : state.stateTransitions as any;
+      const gameState: BaseRuntimeState =
+        typeof state.gameState === "string"
+          ? state.gameState
+            ? JSON.parse(state.gameState)
+            : { game: { gameEnded: false }, players: {} }
+          : (state.gameState as any);
+      const transitions: TransitionsArtifact =
+        typeof state.stateTransitions === "string"
+          ? JSON.parse(state.stateTransitions)
+          : (state.stateTransitions as any);
 
       // Build data source map from runtime state (set during artifact storage)
       const dataSourceMap = buildDataSourceMap(state.dataSources);
-      
+
       // Check for existing error
       if (gameState.game?.gameError) {
-        console.log('[router] Game already in error state, passing through');
+        console.log("[router] Game already in error state, passing through");
         return {
           requiresPlayerInput: false,
           transitionReady: false,
         };
       }
-      
+
       // Check if game has already ended - prevents infinite loops on finished phase
       if (gameState.game?.gameEnded) {
-        console.log('[router] Game already ended, no more transitions to process');
+        console.log(
+          "[router] Game already ended, no more transitions to process",
+        );
         return {
           requiresPlayerInput: false,
           transitionReady: false,
         };
       }
-      
+
       // Handle initialization - find initialize_game transition from init phase
       if (!state.isInitialized) {
-        console.log('[router] Game not initialized, looking for initialize_game transition');
+        console.log(
+          "[router] Game not initialized, looking for initialize_game transition",
+        );
         const firstPhase = transitions.phases[0];
-        
+
         // Create player mapping if not already present
         let playerMapping = state.playerMapping;
         if (!playerMapping || playerMapping === "{}") {
-          console.log('[router] Creating player mapping for initialization');
+          console.log("[router] Creating player mapping for initialization");
           const mapping = createPlayerMapping(state.players || []);
           playerMapping = serializePlayerMapping(mapping);
-          console.log('[router] Player mapping created:', playerMapping);
+          console.log("[router] Player mapping created:", playerMapping);
         }
-        
+
         // Find the initialize_game transition (should be from init -> first gameplay phase)
-        const initTransition = transitions.transitions.find(
-          t => t.id === 'initialize_game'
-        ) || transitions.transitions.find(
-          t => t.fromPhase === 'init' 
-        );
-        
+        const initTransition =
+          transitions.transitions.find((t) => t.id === "initialize_game") ||
+          transitions.transitions.find((t) => t.fromPhase === "init");
+
         if (!initTransition) {
           return handleError(
             gameState,
-            'invalid_state',
-            'Initialize transition not found from init phase',
-            { firstPhase, availableTransitions: transitions.transitions.map(t => t.id) }
+            "invalid_state",
+            "Initialize transition not found from init phase",
+            {
+              firstPhase,
+              availableTransitions: transitions.transitions.map((t) => t.id),
+            },
           );
         }
-        
+
         const instructions = state.transitionInstructions[initTransition.id];
         if (!instructions) {
           return handleError(
             gameState,
-            'invalid_state',
+            "invalid_state",
             `Initialize transition instructions not found: ${initTransition.id}`,
-            { transitionId: initTransition.id, availableTransitions: Object.keys(state.transitionInstructions) }
+            {
+              transitionId: initTransition.id,
+              availableTransitions: Object.keys(state.transitionInstructions),
+            },
           );
         }
-        
-        console.log(`[router] Routing to initialize via transition: ${initTransition.id} (${firstPhase} -> ${initTransition.toPhase})`);
+
+        console.log(
+          `[router] Routing to initialize via transition: ${initTransition.id} (${firstPhase} -> ${initTransition.toPhase})`,
+        );
         // Pre-resolve RNG ops so execute_changes receives concrete values.
         // Without this, template variables like {{activePlayer}} that depend on
         // RNG results cannot be resolved by the LLM, causing init deadlocks.
-        const resolvedInstructions = await resolveInstructions(instructions, dataSourceMap, gameState);
+        const resolvedInstructions = await resolveInstructions(
+          instructions,
+          dataSourceMap,
+          gameState,
+          playerMapping,
+        );
         return {
           currentPhase: firstPhase,
           nextPhase: initTransition.toPhase,
@@ -230,61 +285,72 @@ export function router() {
           transitionReady: true, // Ready to execute initialization transition
         };
       }
-      
+
       // Get current phase directly from game state (required field)
       const currentPhase = gameState.game.currentPhase;
       console.log(`[router] Current phase: ${currentPhase}`);
 
-      const phaseMetadata = transitions.phaseMetadata.find(p => p.phase === currentPhase);
-      
+      const phaseMetadata = transitions.phaseMetadata.find(
+        (p) => p.phase === currentPhase,
+      );
+
       // Check if we have player input
-      const hasPlayerInput = 
-        !!state.playerAction && 
+      const hasPlayerInput =
+        !!state.playerAction &&
         state.playerAction.playerId.trim().length > 0 &&
         state.playerAction.playerAction.trim().length > 0;
       console.log(`[router] Has player input: ${hasPlayerInput}`);
-      
+
       // Validate player exists in state before checking input
-      const actingPlayer = hasPlayerInput ? gameState.players[state.playerAction!.playerId] : undefined;
-      
+      const actingPlayer = hasPlayerInput
+        ? gameState.players[state.playerAction!.playerId]
+        : undefined;
+
       // If player input provided but player not found, return error
       if (hasPlayerInput && !actingPlayer) {
         return handleError(
           gameState,
-          'invalid_state',
+          "invalid_state",
           `Player ID not found in game state: ${state.playerAction!.playerId}`,
-          { 
+          {
             playerId: state.playerAction!.playerId,
             availablePlayers: Object.keys(gameState.players || {}),
-            playerMapping: state.playerMapping
-          }
+            playerMapping: state.playerMapping,
+          },
         );
       }
-      
+
       if (
         phaseMetadata?.requiresPlayerInput &&
-        hasPlayerInput && 
+        hasPlayerInput &&
         actingPlayer &&
-        playerInputIsValid(
-            state.playerAction!.playerAction, 
-            actingPlayer
-        )
+        playerInputIsValid(state.playerAction!.playerAction, actingPlayer)
       ) {
         const instructions = state.playerPhaseInstructions[currentPhase];
         if (!instructions) {
           return handleError(
             gameState,
-            'invalid_state',
+            "invalid_state",
             `Player phase instructions not found: ${currentPhase}`,
-            { currentPhase, availablePhases: Object.keys(state.playerPhaseInstructions) }
+            {
+              currentPhase,
+              availablePhases: Object.keys(state.playerPhaseInstructions),
+            },
           );
         }
-        
-        console.log(`[router] Routing to change agent with player action instructions: ${currentPhase}`);
-        
+
+        console.log(
+          `[router] Routing to change agent with player action instructions: ${currentPhase}`,
+        );
+
         // Resolve any RNG and data-source templates in instructions before passing to execute-changes
-        const resolvedInstructions = await resolveInstructions(instructions, dataSourceMap, gameState);
-        
+        const resolvedInstructions = await resolveInstructions(
+          instructions,
+          dataSourceMap,
+          gameState,
+          state.playerMapping,
+        );
+
         return {
           currentPhase,
           selectedInstructions: resolvedInstructions,
@@ -292,24 +358,29 @@ export function router() {
           transitionReady: true, // Instructions selected and ready to execute
         };
       }
-      
+
       // Check if THIS PHASE accepts player input (from phase metadata)
       const phaseRequiresInput = phaseMetadata?.requiresPlayerInput || false;
-      console.log(`[router] Phase metadata requiresPlayerInput: ${phaseMetadata?.requiresPlayerInput}, resolved to: ${phaseRequiresInput}`);
-      
+      console.log(
+        `[router] Phase metadata requiresPlayerInput: ${phaseMetadata?.requiresPlayerInput}, resolved to: ${phaseRequiresInput}`,
+      );
+
       // Check if any player actually needs to act
-      const playerInputRequired = gameState.players && typeof gameState.players === 'object'
-        ? Object.values(gameState.players).some(
-            ({actionRequired}) => actionRequired
-          )
-        : false;
-      console.log(`[router] Any player has actionRequired=true: ${playerInputRequired}`);
-      
+      const playerInputRequired =
+        gameState.players && typeof gameState.players === "object"
+          ? Object.values(gameState.players).some(
+              ({ actionRequired }) => actionRequired,
+            )
+          : false;
+      console.log(
+        `[router] Any player has actionRequired=true: ${playerInputRequired}`,
+      );
+
       // Only wait for player input if:
       // 1. The phase accepts player input (phaseRequiresInput === true), AND
       // 2. At least one player needs to act (playerInputRequired === true)
       if (phaseRequiresInput && playerInputRequired) {
-        console.log('[router] Waiting for player input');
+        console.log("[router] Waiting for player input");
         return {
           currentPhase,
           gameState: JSON.stringify(gameState),
@@ -317,35 +388,45 @@ export function router() {
           transitionReady: false,
         };
       }
-      
-      console.log('[router] Not waiting for player input, checking automatic transitions');
-      
+
+      console.log(
+        "[router] Not waiting for player input, checking automatic transitions",
+      );
+
       // No player input required OR phase doesn't accept input - check automatic transitions
       const transition = findTriggeredTransition(
         currentPhase,
         gameState,
-        transitions
+        transitions,
       );
-      
+
       if (transition) {
         // Transition found - use transition instructions to execute it
         const instructions = state.transitionInstructions[transition.id];
-        
+
         if (!instructions) {
           return handleError(
             gameState,
-            'invalid_state',
+            "invalid_state",
             `Transition instructions not found: ${transition.id}`,
-            { transitionId: transition.id, availableTransitions: Object.keys(state.transitionInstructions) }
+            {
+              transitionId: transition.id,
+              availableTransitions: Object.keys(state.transitionInstructions),
+            },
           );
         }
-        
+
         console.log(`[router] Transition triggered: ${transition.id}`);
         console.log(`[router] Next phase: ${transition.toPhase}`);
-        
+
         // Resolve any RNG and data-source templates in instructions before passing to execute-changes
-        const resolvedInstructions = await resolveInstructions(instructions, dataSourceMap, gameState);
-        
+        const resolvedInstructions = await resolveInstructions(
+          instructions,
+          dataSourceMap,
+          gameState,
+          state.playerMapping,
+        );
+
         return {
           currentPhase,
           selectedInstructions: resolvedInstructions,
@@ -354,46 +435,53 @@ export function router() {
           nextPhase: transition.toPhase,
         };
       }
-      
+
       // No transition found and no player input required - DEADLOCK
       if (!gameState.game.gameEnded) {
-        console.error('[router] DEADLOCK: No player input required and no transitions can fire');
+        console.error(
+          "[router] DEADLOCK: No player input required and no transitions can fire",
+        );
         return handleError(
           gameState,
-          'deadlock',
+          "deadlock",
           `Game deadlocked in phase: ${currentPhase}. No player input required and no automatic transitions can fire.`,
-          { 
+          {
             currentPhase,
             availableTransitions: transitions.transitions
-              .filter(t => t.fromPhase === currentPhase)
-              .map(t => ({ id: t.id, fromPhase: t.fromPhase, toPhase: t.toPhase }))
-          }
+              .filter((t) => t.fromPhase === currentPhase)
+              .map((t) => ({
+                id: t.id,
+                fromPhase: t.fromPhase,
+                toPhase: t.toPhase,
+              })),
+          },
         );
       }
-      
+
       // Game ended - no error, just waiting
-      console.log('[router] Game ended, no further routing');
+      console.log("[router] Game ended, no further routing");
       return {
         currentPhase,
         requiresPlayerInput: false,
         transitionReady: false,
       };
-      
     } catch (error) {
-      console.error('[router] Error during routing:', error);
+      console.error("[router] Error during routing:", error);
       return handleError(
-        JSON.parse(state.gameState || '{"game":{"gameEnded":false},"players":{}}'),
-        'invalid_state',
+        JSON.parse(
+          state.gameState || '{"game":{"gameEnded":false},"players":{}}',
+        ),
+        "invalid_state",
         `Router error: ${error instanceof Error ? error.message : String(error)}`,
-        { error: String(error) }
+        { error: String(error) },
       );
     }
   };
 }
 
 function playerInputIsValid(
-  playerAction: string, 
-  playerState: RuntimePlayerState
+  playerAction: string,
+  playerState: RuntimePlayerState,
 ): boolean {
   // Basic validation: player is allowed to act
   // Uses helper to get effective actionsAllowed value (defaults to actionRequired if not set)
@@ -402,66 +490,71 @@ function playerInputIsValid(
 
 /**
  * Find automatic transition that can fire from current phase
- * 
+ *
  * Evaluates transitions in artifact order and returns first match.
  * This ensures deterministic priority when multiple transitions could fire.
  */
 function findTriggeredTransition(
   currentPhase: string,
   gameState: BaseRuntimeState,
-  transitions: TransitionsArtifact
+  transitions: TransitionsArtifact,
 ): Transition | null {
   // Filter to automatic transitions from current phase
   const candidates = transitions.transitions.filter(
-    t => t.fromPhase === currentPhase
+    (t) => t.fromPhase === currentPhase,
   );
-  
+
   if (candidates.length === 0) {
     return null;
   }
-  
+
   // Build context for JsonLogic evaluation: full game state + computed context
   const routerContext = buildRouterContext(gameState);
   const context = {
     ...gameState,
     ...routerContext,
   };
-  
+
   // Evaluate each candidate in order
   for (const transition of candidates) {
     console.log(`[router] Evaluating transition: ${transition.id}`);
-    
+
     // Check all preconditions
     let allPreconditionsMet = true;
-    
+
     for (const precondition of transition.preconditions) {
       if (!precondition.deterministic) {
-        console.warn(`[router] Skipping non-deterministic precondition: ${precondition.id}`);
+        console.warn(
+          `[router] Skipping non-deterministic precondition: ${precondition.id}`,
+        );
         continue;
       }
-      
+
       try {
         const result = jsonLogic.apply(precondition.logic, context);
         console.log(`[router]   Precondition ${precondition.id}: ${result}`);
-        
+
         if (!result) {
           allPreconditionsMet = false;
           break;
         }
       } catch (error) {
-        console.error(`[router] Error evaluating precondition ${precondition.id}:`, error);
+        console.error(
+          `[router] Error evaluating precondition ${precondition.id}:`,
+          error,
+        );
         allPreconditionsMet = false;
         break;
       }
     }
-    
+
     if (allPreconditionsMet) {
       console.log(`[router] ✅ Transition ${transition.id} triggered`);
       return transition;
     }
   }
-  
-  console.log('[router] No automatic transitions triggered');
+
+  console.log("[router] No automatic transitions triggered");
   return null;
 }
 
@@ -470,9 +563,13 @@ function findTriggeredTransition(
  */
 function handleError(
   gameState: BaseRuntimeState,
-  errorType: 'deadlock' | 'invalid_state' | 'rule_violation' | 'transition_failed',
+  errorType:
+    | "deadlock"
+    | "invalid_state"
+    | "rule_violation"
+    | "transition_failed",
   errorMessage: string,
-  errorContext?: any
+  errorContext?: any,
 ): Partial<RuntimeStateType> {
   // Set error in game state
   gameState.game.gameError = {
@@ -481,16 +578,16 @@ function handleError(
     errorContext,
     timestamp: new Date().toISOString(),
   };
-  
+
   // Fatal errors end the game
   gameState.game.gameEnded = true;
-  
+
   // Set public message to inform players
   gameState.game.publicMessages = [`Game Error: ${errorMessage}`];
   gameState.game.publicMessage = `Game Error: ${errorMessage}`; // keep legacy field in sync
-  
+
   console.error(`[router] ERROR: ${errorType} - ${errorMessage}`, errorContext);
-  
+
   return {
     gameState: JSON.stringify(gameState),
     requiresPlayerInput: false,

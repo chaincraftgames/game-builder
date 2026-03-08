@@ -90,6 +90,55 @@ export function isComputedContextField(field: string): boolean {
 }
 
 /**
+ * Get the list of computed context field names from RouterContextSchema.
+ * Used to include in error messages so the coordinator knows what's available.
+ */
+export function getComputedContextFieldNames(): string[] {
+  return Object.keys(RouterContextSchema.shape);
+}
+
+/**
+ * Classification result for invalid field references.
+ * - 'valid': Field reference is valid (shouldn't happen if called after isValidFieldReference fails)
+ * - 'unscoped': Field has no scope prefix (game./players.) and isn't a computed context field
+ * - 'unknown': Field has proper scope prefix but doesn't exist in schema
+ */
+export type FieldReferenceClassification = 'valid' | 'unscoped' | 'unknown';
+
+/**
+ * Classify WHY a field reference is invalid.
+ * When isValidFieldReference returns false, this function tells you whether:
+ * 1. The reference is missing its scope prefix (e.g., bare "elapsedSeconds" instead of "game.elapsedSeconds")
+ * 2. The reference has proper scope but the field doesn't exist in schema
+ * 
+ * This distinction is critical for the repair coordinator: unscoped references
+ * need BOTH a schema addition AND a transition precondition fix, while truly
+ * unknown fields only need a schema addition.
+ * 
+ * @param fieldRef - The invalid field reference
+ * @param schemaFields - Set of valid field paths from schema
+ * @returns Classification of why the reference is invalid
+ */
+export function classifyInvalidFieldReference(
+  fieldRef: string, 
+  schemaFields: Set<string>
+): FieldReferenceClassification {
+  // Double-check: if it's actually valid, return 'valid'
+  if (isValidFieldReference(fieldRef, schemaFields)) {
+    return 'valid';
+  }
+  
+  // Check if it's unscoped: no game. or players. prefix and not a computed context field
+  const hasValidPrefix = fieldRef.startsWith('game.') || fieldRef.startsWith('players.');
+  if (!hasValidPrefix && !isComputedContextField(fieldRef)) {
+    return 'unscoped';
+  }
+  
+  // Has proper prefix but field doesn't exist in schema
+  return 'unknown';
+}
+
+/**
  * Validate a field reference against schema fields.
  * Handles:
  * - Wildcards: players[*].score matches players.score in schema

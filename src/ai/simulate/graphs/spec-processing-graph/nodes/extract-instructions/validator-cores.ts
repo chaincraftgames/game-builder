@@ -21,6 +21,8 @@ import {
   extractSchemaFields,
   isValidFieldReference,
   extractFieldReferences,
+  classifyInvalidFieldReference,
+  getComputedContextFieldNames,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js";
 import { TransitionGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/transition-graph.js";
 
@@ -59,6 +61,30 @@ function validatePathSegmentStructure(
 }
 
 /**
+ * Detect JS expressions inside template variables.
+ * Template variables must be simple dot-path lookups only — not JS expressions.
+ * Examples of INVALID templates: {{score > 0 ? score : 0}}, {{Math.abs(x)}}, {{a == 'UP' && b > 0}}
+ */
+const TEMPLATE_EXPRESSION_RE = /\{\{[^}]*(==|!=|&&|\|\||\?|Math\.|=>|>=|<=)[^}]*\}\}/;
+
+function validateNoTemplateExpressions(
+  value: string,
+  fieldDescription: string,
+  context: string,
+  errors: string[],
+): void {
+  if (typeof value !== "string") return;
+  if (!value.includes("{{")) return;
+  if (TEMPLATE_EXPRESSION_RE.test(value)) {
+    errors.push(
+      `${context}: ${fieldDescription} contains a JS expression inside \`{{}}\`: "${value}". ` +
+      `Template variables must be simple state path lookups only (e.g. {{players.player1.score}}). ` +
+      `For conditional logic, scoring, or arithmetic, use mechanicsGuidance so the runtime LLM computes it.`,
+    );
+  }
+}
+
+/**
  * Validate stateDelta operations for correctness
  */
 function validateStateDelta(
@@ -78,6 +104,7 @@ function validateStateDelta(
     "merge",
     "rng",
     "setForAllPlayers",
+    "setFromMap",
     "setFromDataSource",
   ];
 
@@ -191,6 +218,28 @@ function validateStateDelta(
         }
         break;
 
+      case "setFromMap":
+        if (!op.keyPath) {
+          errors.push(
+            `${context}: stateDelta[${i}] op 'setFromMap' missing 'keyPath' field`,
+          );
+        }
+        if (!op.path) {
+          errors.push(
+            `${context}: stateDelta[${i}] op 'setFromMap' missing 'path' field`,
+          );
+        }
+        if (!op.map || typeof op.map !== "object" || Array.isArray(op.map)) {
+          errors.push(
+            `${context}: stateDelta[${i}] op 'setFromMap' missing or invalid 'map' field (must be a key-value object)`,
+          );
+        } else if (Object.keys(op.map).length === 0) {
+          errors.push(
+            `${context}: stateDelta[${i}] op 'setFromMap' has empty 'map' object`,
+          );
+        }
+        break;
+
       case "setFromDataSource":
         if (!op.path) {
           errors.push(
@@ -203,7 +252,8 @@ function validateStateDelta(
           );
         } else if (
           validDataSourceIds &&
-          !validDataSourceIds.has(op.dataSourceId)
+          !validDataSourceIds.has(op.dataSourceId) &&
+          !/\{\{.+\}\}/.test(op.dataSourceId)  // template variable — resolved at runtime, skip static check
         ) {
           errors.push(
             `${context}: stateDelta[${i}] op 'setFromDataSource' references unknown dataSourceId '${op.dataSourceId}'. ` +
@@ -216,6 +266,21 @@ function validateStateDelta(
           );
         }
         break;
+    }
+
+    // Validate that template variables are path lookups, not JS expressions
+    const stringFieldsToCheckForExpressions: [any, string][] = [
+      [op.path, "path"],
+      [(op as any).keyPath, "keyPath"],
+      [(op as any).fromPath, "fromPath"],
+      [(op as any).toPath, "toPath"],
+      [(op as any).dataSourceId, "dataSourceId"],
+      [typeof op.value === "string" ? op.value : null, "value"],
+    ];
+    for (const [fieldVal, fieldName] of stringFieldsToCheckForExpressions) {
+      if (fieldVal) {
+        validateNoTemplateExpressions(fieldVal, `stateDelta[${i}].${fieldName}`, context, errors);
+      }
     }
 
     // Validate that array values don't contain template variables
@@ -247,9 +312,19 @@ function validateStateDelta(
 
         if (!cleanPath.includes("{{") && cleanPath !== "[*]") {
           if (!isValidFieldReference(cleanPath, schemaFields)) {
-            warnings.push(
-              `${context}: stateDelta[${i}] references unknown field: ${pathField}`,
-            );
+            const classification = classifyInvalidFieldReference(cleanPath, schemaFields);
+            if (classification === 'unscoped') {
+              const computedFields = getComputedContextFieldNames();
+              warnings.push(
+                `${context}: stateDelta[${i}] references unscoped field: '${pathField}'. ` +
+                `State field references must use their full path (e.g., 'game.${pathField}' or 'players.${pathField}'). ` +
+                `Only computed context fields can be referenced without a prefix: ${computedFields.join(', ')}.`,
+              );
+            } else {
+              warnings.push(
+                `${context}: stateDelta[${i}] references unknown field: ${pathField}`,
+              );
+            }
           }
         }
       }

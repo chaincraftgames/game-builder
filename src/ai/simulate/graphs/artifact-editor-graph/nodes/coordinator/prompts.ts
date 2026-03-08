@@ -65,9 +65,19 @@ Changes to Schema may require cascading changes to Transitions and/or Instructio
 - Confidence: MEDIUM (may require examining precondition logic)
 
 ### Pattern 6: Field referenced but not in schema
-- Error: "references unknown field: X"
+- Error: "references unknown field: X" (where X has a proper 'game.' or 'players.' prefix)
 - Fix: Add the missing field to schema
 - Artifacts affected: schema only
+- Confidence: HIGH
+
+### Pattern 6b: Unscoped field reference in precondition or op
+- Error: "references unscoped field: 'X'. State field references must use their full path"
+- Root cause: A precondition or stateDelta op uses a bare field name (e.g., {"var": "elapsedSeconds"}) instead of its full scoped path (e.g., {"var": "game.elapsedSeconds"} or {"var": "players.elapsedSeconds"})
+- Fix: TWO changes required:
+  1. Fix the transition precondition or instruction stateDelta to use the properly scoped path (e.g., {"var": "game.X"} instead of {"var": "X"})
+  2. Add the field to schema if it's not already present (determine correct scope from game context: game-level vs per-player)
+- Artifacts affected: transitions and/or instructions (fix the reference) + schema (if field is new)
+- IMPORTANT: You must fix BOTH the reference AND ensure the field exists. Fixing only the schema will NOT resolve the error because the reference still uses the wrong path.
 - Confidence: HIGH
 
 ### Pattern 7: Indexed player access in preconditions

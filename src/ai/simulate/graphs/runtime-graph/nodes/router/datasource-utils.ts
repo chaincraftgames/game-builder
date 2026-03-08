@@ -183,6 +183,42 @@ export function buildCallArgs(
 }
 
 /**
+ * Apply a single deterministic op to a mutable snapshot object.
+ * Used to keep workingState up to date while walking a stateDelta array,
+ * so that setFromDataSource ops later in the same delta can resolve
+ * template variables that were written by earlier set/setFromMap ops.
+ */
+function applyOpToSnapshot(op: any, snapshot: any): void {
+  try {
+    if (op.op === 'set' && op.path && op.value !== undefined) {
+      const segments = op.path.split('.');
+      let cur = snapshot;
+      for (let i = 0; i < segments.length - 1; i++) {
+        const seg = segments[i];
+        if (cur[seg] == null || typeof cur[seg] !== 'object') {
+          cur[seg] = {};
+        }
+        cur = cur[seg];
+      }
+      cur[segments[segments.length - 1]] = op.value;
+    } else if (op.op === 'setFromMap' && op.keyPath && op.path && op.map) {
+      const key = resolveTemplateValue(`{{${op.keyPath}}}`, snapshot);
+      // resolveTemplateValue returns the raw template string if unresolvable, skip in that case
+      if (key && !key.startsWith('{{')) {
+        const lookup = Object.prototype.hasOwnProperty.call(op.map, key)
+          ? op.map[key]
+          : op.fallback;
+        if (lookup !== undefined) {
+          applyOpToSnapshot({ op: 'set', path: op.path, value: lookup }, snapshot);
+        }
+      }
+    }
+  } catch {
+    // Best-effort — snapshot update failure is non-fatal; template resolution degrades gracefully
+  }
+}
+
+/**
  * Process an array of stateDelta operations, resolving setFromDataSource ops
  * into standard "set" ops with concrete values from data source reads.
  *
@@ -192,6 +228,15 @@ export function buildCallArgs(
  *   reuse the same result (e.g., one op extracts startValue, another endValue)
  *
  * Non-datasource ops are passed through unchanged.
+ *
+ * IMPORTANT — intra-delta ordering: set/setFromMap ops that appear before a
+ * setFromDataSource op in the same delta ARE applied to a running workingState
+ * snapshot, so that the (potentially template-based) dataSourceId of the
+ * setFromDataSource op can be resolved against values written earlier in the
+ * same delta.  For example:
+ *
+ *   setFromMap  → writes game.player1DataSourceId = "coinbase-btc-usd-price"
+ *   setFromDataSource({{game.player1DataSourceId}}) → resolves correctly
  *
  * @param stateDelta - Array of stateDelta operations (may include setFromDataSource)
  * @param dataSources - Map of data source ID → config (from design state)
@@ -216,20 +261,31 @@ export async function processStateDeltaWithDataSources(
 
   const result: any[] = [];
 
+  // Working state snapshot — updated as we walk the delta so that
+  // setFromDataSource ops can resolve templates written earlier in the same delta.
+  const workingState = structuredClone(state);
+
   for (const operation of stateDelta) {
     if (operation.op !== 'setFromDataSource') {
       result.push(operation);
+      // Keep workingState current so later setFromDataSource ops see these values
+      applyOpToSnapshot(operation, workingState);
       continue;
     }
 
-    const { dataSourceId, path, paramValues = {}, aggregatorId, extractField } = operation;
+    const { dataSourceId: rawDataSourceId, path, paramValues = {}, aggregatorId, extractField } = operation;
+
+    // Resolve dataSourceId — supports template variables like {{players.p1.resolvedDataSourceId}}
+    // Use workingState (not original state) so values written by earlier ops in this same delta are visible.
+    const dataSourceId = resolveTemplateValue(rawDataSourceId, workingState);
 
     // Look up data source config
     const dataSource = dataSources[dataSourceId];
     if (!dataSource) {
       console.error(
-        `[datasource-utils] Unknown data source ID: "${dataSourceId}". ` +
-        `Operation will be skipped.`
+        `[datasource-utils] Unknown data source ID: "${dataSourceId}"` +
+        (dataSourceId !== rawDataSourceId ? ` (resolved from template "${rawDataSourceId}")` : '') +
+        `. Operation will be skipped.`
       );
       continue;
     }
@@ -286,11 +342,10 @@ export async function processStateDeltaWithDataSources(
       );
 
       // Convert to standard set operation
-      result.push({
-        op: 'set',
-        path,
-        value,
-      });
+      const setOp = { op: 'set', path, value };
+      result.push(setOp);
+      // Update workingState so subsequent ops in this delta can see the fetched value
+      applyOpToSnapshot(setOp, workingState);
     } catch (err: any) {
       console.error(
         `[datasource-utils] Failed to read data source "${dataSourceId}"${aggregatorId ? ` with aggregator "${aggregatorId}"` : ''}: ${err.message || err}`

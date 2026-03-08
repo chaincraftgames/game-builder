@@ -49,17 +49,30 @@ Other examples:
 {{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
 
+**setFromMap**: Look up a value from game state in a hardcoded map and write the result. Use this when a player's choice needs to be translated to a derived constant (ticker → dataSourceId, choice → score, etc.).
+{{ "op": "setFromMap", "keyPath": "players.{{{{playerId}}}}.selectedTicker", "map": {{ "BTC": "coinbase-btc-usd-price", "ETH": "coinbase-eth-usd-price", "SOL": "coinbase-sol-usd-price" }}, "path": "players.{{{{playerId}}}}.resolvedDataSourceId" }}
+{{ "op": "setFromMap", "keyPath": "game.difficulty", "map": {{ "easy": 1, "medium": 3, "hard": 5 }}, "path": "game.startingLives", "fallback": 3 }}
+- keyPath: dot-notation path to the state field whose value is the lookup key (supports template variables)
+- map: hardcoded key→value dictionary; keys are strings, values can be any type
+- path: where to write the result (supports template variables)
+- fallback (optional): value to write if key is not found; if omitted and key is missing, op is skipped with a warning
+- This is synchronous and deterministic — no LLM or async needed
+
 **setFromDataSource**: Read live blockchain data into game state (PRE-RESOLVED by router, like rng)
 The router resolves these to standard "set" operations before execute_changes sees them.
 Only use dataSourceIds that are listed in the game's dataSources configuration.
 {{ "op": "setFromDataSource", "dataSourceId": "chainlink-tsla-usd", "path": "game.tslaPrice" }}
 {{ "op": "setFromDataSource", "dataSourceId": "cc-token-balance", "path": "players.{{{{playerId}}}}.tokenBalance", "paramValues": {{ "account": "{{{{players.{{{{playerId}}}}.walletAddress}}}}" }} }}
 
-- dataSourceId: must match a predefined data source ID from the game's dataSources
+**DYNAMIC dataSourceId**: When the data source depends on a player's choice (e.g. player picked a ticker, each ticker has its own data source ID), store the resolved data source ID in game state during selection, then use a template variable:
+{{ "op": "setFromDataSource", "dataSourceId": "{{{{players.{{{{playerId}}}}.resolvedDataSourceId}}}}", "path": "players.{{{{playerId}}}}.startPrice" }}
+The resolvedDataSourceId field must be a valid data source ID string already written to game state.
+
+- dataSourceId: exact data source ID string OR a template variable that resolves to one at runtime
 - path: where to store the result in game state
-- paramValues (optional): maps parameter names to values or template variables for contract calls that require inputs (e.g. balanceOf needs an address)
-- The data source's transform (extractField, decimals) is applied automatically — no need to handle raw blockchain values
-- If the blockchain read fails, the op is skipped (game continues without the data)
+- paramValues (optional): maps parameter names to values or template variables
+- The data source's transform (extractField, decimals) is applied automatically
+- If the data source read fails, the op is skipped (game continues without the data)
 
 **Template Variables in Paths**: Use {{{{variableName}}}} for runtime values:
 {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
@@ -77,6 +90,14 @@ Only use dataSourceIds that are listed in the game's dataSources configuration.
 - If you need player-specific fields, structure the schema with nested player objects:
   Use "players.{{{{playerId}}}}.roundsWon" NOT "game.roundWinsP{{{{playerId}}}}"
   Use "players.{{{{winnerId}}}}.isGameWinner" NOT "players[{{{{winnerId}}}}].isGameWinner"
+
+⛔ **NEVER put JS expressions inside template variables**: {{{{...}}}} is a state path lookup ONLY.
+- Valid: "{{{{players.player1.roundScore}}}}" (reads a stored value from state)
+- Invalid: "{{{{score > 0 ? score : 0}}}}" (ternary — not supported, will become a literal string)
+- Invalid: "{{{{Math.abs(game.delta)}}}}" (function call — not supported)
+- Invalid: "{{{{a == 'UP' && b > 0}}}}" (boolean expression — not supported)
+- If you need conditional computation or arithmetic: use **mechanicsGuidance** (see section 3).
+  The runtime LLM reads mechanicsGuidance, computes the result from actual state values, and writes it back.
 
 **Prefer Atomic Operations**: Break complex changes into simple atomic ops.
 
@@ -130,16 +151,48 @@ Numeric comparisons: {{ "<": [...] }}, {{ ">=": [...] }}
 
 ## 3. Mechanics Guidance
 
-When planner hints include mechanicsDescription, format as structured guidance:
+**When to use mechanicsGuidance**: Use it whenever game mechanics require conditional logic, comparisons, or arithmetic that cannot be expressed as atomic ops:
+- Scoring that depends on conditions (e.g. "if stock moved in predicted direction, score = abs(pctChange), else 0")
+- Winner determination by comparing player scores ("player with higher score wins")
+- Any computation that reads multiple state fields and derives a result
 
+**How it works with stateDelta**: Mix deterministic ops (setFromMap, setFromDataSource, set) for data-fetching/known values, and let mechanicsGuidance handle the conditional/arithmetic parts. The runtime LLM reads mechanicsGuidance, inspects the fetched data already in state, and emits the remaining set ops.
+
+**⚠️ CRITICAL — Computed winners still require isGameWinner in stateDelta**: Even when the winner is determined by runtime computation (via mechanicsGuidance), you MUST still declare players.{{{{winnerId}}}}.isGameWinner in the static stateDelta. The {{winnerId}} acts as a placeholder — the runtime LLM computes the actual winner ID via mechanicsGuidance, then populates the op. The validator scans stateDelta for this declaration; if it's missing, validation will fail with "No transition sets players.*.isGameWinner". For draw-only games (never any winner), omit the op and ignore the warning.
+
+**Example: scoring after data fetch (Crypto Stock Duel pattern)**
 {{
-  "rules": [
-    "Rock beats scissors",
-    "Scissors beats paper",
-    "Paper beats rock",
-    "If both players choose the same option, the round is a tie"
-  ],
-  "computation": "Compare player choices to determine winner, then increment winner's score by 1 (or no change if tie)"
+  "mechanicsGuidance": {{
+    "rules": [
+      "If stock moved in predicted direction (UP and pctChange > 0, or DOWN and pctChange < 0): roundScore = Math.abs(pctChange)",
+      "If stock moved opposite to predicted direction: roundScore = 0",
+      "After computing both scores: the player with the higher roundScore wins (set isGameWinner=true); equal scores = tie (no winner, leave isGameWinner false)"
+    ],
+    "computation": "For each player: read selectedDirection and the fetched pctChange from state. Compute roundScore and write to players.player1.roundScore and players.player2.roundScore. Then compare scores, determine winner or tie, and set isGameWinner accordingly. If tie, skip the isGameWinner op."
+  }},
+  "stateDelta": [
+    {{ "op": "setFromMap", "keyPath": "players.player1.selectedTicker", "map": {{ "BTC": "coinbase-btc-usd-price" }}, "path": "game.p1DataSourceId" }},
+    {{ "op": "setFromDataSource", "dataSourceId": "{{{{game.p1DataSourceId}}}}", "path": "game.p1PriceData", "aggregatorId": "30s-movement" }},
+    {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
+    {{ "op": "set", "path": "game.gameEnded", "value": true }}
+  ]
+}}
+
+**Example: RPS winner determination (classic pattern)**
+{{
+  "mechanicsGuidance": {{
+    "rules": [
+      "Rock beats scissors",
+      "Scissors beats paper",
+      "Paper beats rock",
+      "If both players choose the same option, the round is a tie (no winner)"
+    ],
+    "computation": "Compare player choices to determine winner, then increment winner's score by 1 (or no change if tie)"
+  }},
+  "stateDelta": [
+    {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
+    {{ "op": "set", "path": "game.gameEnded", "value": true }}
+  ]
 }}
 
 ## 4. Message Templates

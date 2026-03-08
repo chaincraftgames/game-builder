@@ -168,6 +168,39 @@ Similarly for round-based phases:
 ❌ Wrong: "round1_scoring", "round2_scoring", "round3_scoring"
 ✅ Right: "scoring" with game.currentRound field and loop transitions
 
+### 7. Precondition Whitelist (ABSOLUTE RULE)
+Preconditions may reference ONLY:
+  1. Computed context fields (listed in the computed context section above)
+  2. Schema fields that are explicitly SET by player actions or transitions
+
+Anything else — especially elapsed time, phase duration, countdowns, or timeouts — is FORBIDDEN
+in preconditions AND in the schema.
+
+❌ FORBIDDEN — timer fields in schema or preconditions:
+\`\`\`json
+// Wrong: these fields do not exist and will never be set at runtime
+{{ "explain": "game.phaseElapsedMs >= 30000" }}
+{{ "explain": "game.elapsedSeconds >= 30" }}
+{{ "explain": "game.phaseStartTime + 30 < now" }}
+\`\`\`
+
+✅ CORRECT — timer-based transitions use ONLY a phase precondition; timing goes in humanSummary:
+\`\`\`json
+{{
+  "id": "wait_timer_complete",
+  "fromPhase": "wait",
+  "toPhase": "resolution",
+  "preconditionHints": [
+    {{ "explain": "game.currentPhase == 'wait'" }}
+  ],
+  "humanSummary": "30-second wait timer completed — fetch final price and advance to resolution"
+}}
+\`\`\`
+
+The runtime reads humanSummary to configure the timer. If a transition fires after N seconds,
+put the number in humanSummary ONLY. Do NOT add timing fields to the schema. Do NOT reference
+timing fields in preconditionHints. They will never be set and the game will deadlock.
+
 ### 6. Precondition Hints (for executor synthesis)
 When writing \`explain\` text for preconditionHints, follow these rules so executor can synthesize valid JsonLogic:
 
