@@ -189,6 +189,56 @@ export const SetForAllPlayersOpSchema = z.object({
 });
 
 /**
+ * SetFromDataSource operation: reads a value from a blockchain data source
+ * and sets it at the target path.
+ * NOTE: This operation is PRE-PROCESSED before execution.
+ * The pre-processor calls the blockchain, applies any transform defined
+ * on the data source config, and converts this to a standard "set" operation.
+ */
+export const SetFromDataSourceOpSchema = z.object({
+  op: z.literal("setFromDataSource"),
+  /** ID of the DataSourceConfig to read from */
+  dataSourceId: z.string().describe(
+    "The unique ID of a registered data source (e.g., 'binance-btc-usd-price', 'chainlink-tsla-usd', 'cc-token-balance')"
+  ),
+  /** State path where the result will be written */
+  path: z.string().describe(
+    "Dot-notation path where the data source result will be stored. " +
+    "Examples: 'game.tslaPrice', 'players.p1.tokenBalance'"
+  ),
+  /** 
+   * Concrete values for the data source's required parameters.
+   * Keys must match param names in the data source config.
+   * Values can be template variables like '{{playerAddress}}' that
+   * are resolved from game state before the contract call.
+   */
+  paramValues: z.record(z.string()).optional().describe(
+    "Parameter values for the contract call. Keys match data source param names. " +
+    "Values can be literals or template variables like '{{playerAddress}}'"
+  ),
+  /**
+   * Optional aggregator ID to apply to the data source read.
+   * Aggregators are reusable read patterns (e.g., '30s-movement' reads the
+   * source twice with a 30-second delay and computes direction/delta).
+   * When present, the result is an object — use extractField to pick a specific field.
+   */
+  aggregatorId: z.string().optional().describe(
+    "ID of a predefined aggregator to apply (e.g., '30s-movement'). " +
+    "When set, the data source is read through the aggregator pattern. " +
+    "Use extractField to pick a specific result field."
+  ),
+  /**
+   * Extract a specific field from the aggregator result before setting.
+   * Only meaningful when aggregatorId is set.
+   * For '30s-movement': 'startValue', 'endValue', 'direction', 'delta', 'pctChange'.
+   */
+  extractField: z.string().optional().describe(
+    "Field to extract from the aggregator result. " +
+    "For '30s-movement' aggregator: 'startValue', 'endValue', 'direction', 'delta', 'pctChange'"
+  ),
+});
+
+/**
  * Union of all state delta operations
  */
 export const StateDeltaOpSchema = z.discriminatedUnion("op", [
@@ -200,6 +250,7 @@ export const StateDeltaOpSchema = z.discriminatedUnion("op", [
   MergeOpSchema,
   RngOpSchema,
   SetForAllPlayersOpSchema,
+  SetFromDataSourceOpSchema,
 ]);
 
 /**
@@ -216,6 +267,7 @@ export type TransferOp = z.infer<typeof TransferOpSchema>;
 export type RngOp = z.infer<typeof RngOpSchema>;
 export type MergeOp = z.infer<typeof MergeOpSchema>;
 export type SetForAllPlayersOp = z.infer<typeof SetForAllPlayersOpSchema>;
+export type SetFromDataSourceOp = z.infer<typeof SetFromDataSourceOpSchema>;
 
 // JSON schema exports for prompt injection
 export const StateDeltaOpSchemaJson = zodToJsonSchema(StateDeltaOpSchema, "StateDeltaOp");
@@ -440,6 +492,14 @@ export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDelta
       case 'delete':
       case 'merge':
       case 'rng':
+        if ('path' in delta && delta.path) {
+          touchedPaths.add(delta.path);
+        }
+        break;
+
+      case 'setFromDataSource':
+        // setFromDataSource should be pre-processed to set ops before reaching here.
+        // If one slips through, track the path but applySingleOp will return an error.
         if ('path' in delta && delta.path) {
           touchedPaths.add(delta.path);
         }

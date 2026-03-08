@@ -18,17 +18,8 @@ describe("Main Design Graph - Integration", () => {
   beforeAll(async () => {
     checkpointer = new MemorySaver();
     
-    const mechanicsRegistry = `
-# Available Mechanics
-
-- Turn-based gameplay
-- Resource management
-- Victory point systems
-    `.trim();
-    
     graph = await createMainDesignGraph(
-      checkpointer,
-      mechanicsRegistry
+      checkpointer
     );
   }, 30000); // Allow time for model setup
   
@@ -184,8 +175,7 @@ describe("Main Design Graph - Lazy Spec Generation", () => {
   beforeAll(async () => {
     const checkpointer = new MemorySaver();
     graph = await createMainDesignGraph(
-      checkpointer,
-      "Test mechanics"
+      checkpointer
     );
   }, 30000);
   

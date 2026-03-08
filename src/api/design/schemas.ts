@@ -107,6 +107,41 @@ export const GetConversationHistoryResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
+// ─── Data Source configuration schemas ───────────────────────────────────────
+
+/** Summary of a predefined data source (for listing). */
+export const DataSourceSummarySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  sourceType: z.enum(["blockchain", "http"]),
+});
+
+/** List available data sources (no request body needed). */
+export const ListDataSourcesResponseSchema = z.object({
+  dataSources: z.array(DataSourceSummarySchema),
+});
+
+/** Configure data sources for a design conversation. */
+export const ConfigureDataSourcesRequestSchema = z.object({
+  conversationId: z.string().min(1),
+  dataSourceIds: z.array(z.string().min(1)).min(1)
+    .describe("Array of predefined data source IDs to enable for this game"),
+});
+
+export const ConfigureDataSourcesResponseSchema = z.object({
+  configured: z.array(DataSourceSummarySchema),
+});
+
+/** Get currently configured data sources for a design conversation. */
+export const GetConfiguredDataSourcesRequestSchema = z.object({
+  conversationId: z.string().min(1),
+});
+
+export const GetConfiguredDataSourcesResponseSchema = z.object({
+  dataSources: z.array(DataSourceSummarySchema),
+});
+
 // Type exports
 export type PlayerCount = z.infer<typeof PlayerCountSchema>;
 export type GameSpecification = z.infer<typeof GameSpecificationSchema>;
@@ -133,3 +168,9 @@ export type GetConversationHistoryResponse = z.infer<
   typeof GetConversationHistoryResponseSchema
 >;
 export type Message = z.infer<typeof MessageSchema>;
+export type DataSourceSummary = z.infer<typeof DataSourceSummarySchema>;
+export type ListDataSourcesResponse = z.infer<typeof ListDataSourcesResponseSchema>;
+export type ConfigureDataSourcesRequest = z.infer<typeof ConfigureDataSourcesRequestSchema>;
+export type ConfigureDataSourcesResponse = z.infer<typeof ConfigureDataSourcesResponseSchema>;
+export type GetConfiguredDataSourcesRequest = z.infer<typeof GetConfiguredDataSourcesRequestSchema>;
+export type GetConfiguredDataSourcesResponse = z.infer<typeof GetConfiguredDataSourcesResponseSchema>;

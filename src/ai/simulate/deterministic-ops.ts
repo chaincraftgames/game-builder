@@ -90,6 +90,12 @@ export function isDeterministicOperation(op: StateDeltaOp): boolean {
     if (hasTemplateVariables(setForAllOp.field)) return false;
     return !hasTemplateVariables(setForAllOp.value);
   }
+
+  if (op.op === 'setFromDataSource') {
+    // setFromDataSource is NEVER deterministic — requires async blockchain read.
+    // Always routed through the pre-processor (like rng).
+    return false;
+  }
   
   return false;
 }

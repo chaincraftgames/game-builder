@@ -49,6 +49,17 @@ Return EXACTLY one JSON object matching the schema.
 {gameSpecification}
 </specification>
 
+# Valid Data Source IDs
+{validDataSourceIds}
+
+# Valid Aggregator IDs
+{validAggregatorIds}
+
+Aggregators are composable read patterns applied to a data source. When the spec describes
+comparing two readings of the same data with a delay (e.g., "read BTC price, wait 30 seconds,
+read again"), use a setFromDataSource op with both dataSourceId AND aggregatorId, plus
+extractField to pick the specific result field (e.g., startValue, endValue, direction).
+
 # Narrative Markers Available
 {narrativeMarkersSection}
 !___ END-CACHE ___!
@@ -112,6 +123,26 @@ Runtime expands them before LLM invocation. Use for narrative/atmospheric conten
 # ⚠️ USE THESE EXACT TRANSITION IDs - DO NOT MODIFY ⚠️
 
 {transitionIdsList}
+
+# ⚠️ VALID DATA SOURCE IDs FOR setFromDataSource ⚠️
+
+{validDataSourceIds}
+
+When using setFromDataSource operations, you MUST use ONLY the exact data source IDs listed above.
+Do NOT invent, abbreviate, or modify data source IDs. Copy them EXACTLY as shown.
+
+# ⚠️ VALID AGGREGATOR IDs FOR setFromDataSource ⚠️
+
+{validAggregatorIds}
+
+Aggregators are optional composable read patterns. When the spec describes reading a data source
+twice with a delay to compare values (e.g., "track price movement over 30 seconds"), use:
+- dataSourceId: the underlying data source (e.g., "binance-btc-usd-price")
+- aggregatorId: the aggregator pattern (e.g., "30s-movement")
+- extractField: which field from the aggregator result (e.g., "startValue", "endValue", "direction", "delta", "pctChange")
+
+Multiple ops can reference the same dataSourceId + aggregatorId — the aggregator executes once
+and caches the result. Use different extractField values to get different parts of the result.
 
 # CRITICAL ID MATCHING REQUIREMENTS
 

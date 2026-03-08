@@ -49,6 +49,18 @@ Other examples:
 {{ "op": "rng", "path": "game.mood", "choices": ["calm", "tense", "chaotic"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.specialEvent", "choices": [true, false], "probabilities": [0.05, 0.95] }}
 
+**setFromDataSource**: Read live blockchain data into game state (PRE-RESOLVED by router, like rng)
+The router resolves these to standard "set" operations before execute_changes sees them.
+Only use dataSourceIds that are listed in the game's dataSources configuration.
+{{ "op": "setFromDataSource", "dataSourceId": "chainlink-tsla-usd", "path": "game.tslaPrice" }}
+{{ "op": "setFromDataSource", "dataSourceId": "cc-token-balance", "path": "players.{{{{playerId}}}}.tokenBalance", "paramValues": {{ "account": "{{{{players.{{{{playerId}}}}.walletAddress}}}}" }} }}
+
+- dataSourceId: must match a predefined data source ID from the game's dataSources
+- path: where to store the result in game state
+- paramValues (optional): maps parameter names to values or template variables for contract calls that require inputs (e.g. balanceOf needs an address)
+- The data source's transform (extractField, decimals) is applied automatically — no need to handle raw blockchain values
+- If the blockchain read fails, the op is skipped (game continues without the data)
+
 **Template Variables in Paths**: Use {{{{variableName}}}} for runtime values:
 {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
 {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
@@ -73,6 +85,7 @@ Other examples:
 - transfer → MUST have 'amount' field (not 'value')
 - delete → ONLY has 'path' field (NO 'value')
 - rng → MUST have 'choices' and 'probabilities' arrays
+- setFromDataSource → MUST have 'dataSourceId' and 'path'; optionally 'paramValues'
 
 ## 2. JsonLogic Validation
 

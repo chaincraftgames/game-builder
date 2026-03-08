@@ -262,9 +262,12 @@ export const MessageTemplateSchema = z.object({
 });
 
 /**
- * Mechanics guidance for LLM to apply game rules
+ * Structured mechanics guidance for LLM to apply game rules.
+ * Accepts either:
+ *   - A structured object with rules[] and optional computation
+ *   - A plain string (common LLM output — treated as a single-rule guidance)
  */
-export const MechanicsGuidanceSchema = z.object({
+export const MechanicsGuidanceObjectSchema = z.object({
   rules: z
     .array(z.string())
     .describe(
@@ -277,6 +280,13 @@ export const MechanicsGuidanceSchema = z.object({
       "Description of what needs to be computed/decided using these rules",
     ),
 });
+
+export const MechanicsGuidanceSchema = z.union([
+  MechanicsGuidanceObjectSchema,
+  z.string().describe(
+    "Plain-text mechanics guidance (will be wrapped into a rules array at runtime)",
+  ),
+]);
 
 /**
  * RNG configuration for instructions involving randomness

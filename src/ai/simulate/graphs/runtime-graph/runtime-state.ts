@@ -8,6 +8,7 @@
  */
 
 import { Annotation } from "@langchain/langgraph";
+import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
 
 export type RuntimeStateType = typeof RuntimeState.State;
 
@@ -67,6 +68,11 @@ export const RuntimeState = Annotation.Root({
   producedTokensConfiguration: Annotation<string>({
     reducer: (_, y) => y,
     default: () => "",
+  }),
+
+  dataSources: Annotation<DataSourceConfig[]>({
+    reducer: (_, y) => y,
+    default: () => [],
   }),
 
   // Runtime state

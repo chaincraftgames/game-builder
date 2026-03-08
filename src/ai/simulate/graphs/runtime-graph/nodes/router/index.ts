@@ -30,7 +30,92 @@ import type {
 } from '#chaincraft/ai/simulate/schema.js';
 import { RuntimePlayerState } from '#chaincraft/ai/simulate/schema.js';
 import { processRngInstructions } from './rng-utils.js';
+import { processDataSourceInstructions, buildCallArgs, applyTransform, type ContractReader, type DataSourceReader } from './datasource-utils.js';
+import type { DataSourceConfig, BlockchainDataSourceConfig } from '#chaincraft/ai/design/game-design-state.js';
 import { createPlayerMapping, serializePlayerMapping } from '#chaincraft/ai/simulate/player-mapping.js';
+
+/**
+ * Convert DataSourceConfig[] to Record<string, Config> keyed by ID.
+ */
+function buildDataSourceMap(
+  dataSources?: DataSourceConfig[]
+): Record<string, DataSourceConfig> {
+  if (!dataSources || dataSources.length === 0) return {};
+  const map: Record<string, DataSourceConfig> = {};
+  for (const ds of dataSources) {
+    map[ds.id] = ds;
+  }
+  return map;
+}
+
+/** Lazily-created contract reader singleton (avoids importing viem when unused). */
+let _contractReader: ContractReader | null = null;
+async function getContractReader(): Promise<ContractReader> {
+  if (!_contractReader) {
+    const { createContractReader } = await import('./contract-reader.js');
+    _contractReader = createContractReader();
+  }
+  return _contractReader;
+}
+
+/**
+ * Create a unified DataSourceReader that dispatches to the appropriate
+ * backend based on sourceType. Blockchain sources use viem (lazy-loaded),
+ * HTTP sources use fetch.
+ */
+async function getDataSourceReader(): Promise<DataSourceReader> {
+  return async (config: DataSourceConfig, paramValues: Record<string, string>, state: any) => {
+    if (config.sourceType === 'http') {
+      const { readHttpDataSource } = await import('./http-reader.js');
+      return readHttpDataSource(config, paramValues, state);
+    }
+
+    // Blockchain source — delegate to contract reader
+    const blockchainConfig = config as BlockchainDataSourceConfig;
+    const contractReader = await getContractReader();
+    const args = buildCallArgs(blockchainConfig, paramValues, state);
+    return contractReader({
+      chainId: blockchainConfig.chainId,
+      rpcUrl: blockchainConfig.rpcUrl,
+      contract: blockchainConfig.contract,
+      method: blockchainConfig.method,
+      abi: blockchainConfig.abi,
+      params: args,
+    });
+  };
+}
+
+/**
+ * Resolve both RNG and data-source ops in instructions.
+ * RNG is synchronous; data-source resolution is async (blockchain/HTTP reads).
+ */
+async function resolveInstructions(
+  instructions: string,
+  dataSourceMap: Record<string, DataSourceConfig>,
+  gameState: any
+): Promise<string> {
+  // Phase 1: Resolve RNG ops (synchronous)
+  let resolved = processRngInstructions(instructions);
+
+  // Phase 2: Resolve data-source ops (async, only if data sources configured)
+  if (Object.keys(dataSourceMap).length > 0) {
+    const parsed = JSON.parse(resolved);
+    const hasDataSourceOps = parsed.stateDelta?.some?.(
+      (op: any) => op.op === 'setFromDataSource'
+    );
+    if (hasDataSourceOps) {
+      const reader = await getDataSourceReader();
+      resolved = await processDataSourceInstructions(
+        resolved,
+        dataSourceMap,
+        gameState,
+        reader
+      );
+    }
+  }
+
+  return resolved;
+}
 
 /**
  * Router result
@@ -69,6 +154,9 @@ export function router() {
       const transitions: TransitionsArtifact = typeof state.stateTransitions === 'string'
         ? JSON.parse(state.stateTransitions)
         : state.stateTransitions as any;
+
+      // Build data source map from runtime state (set during artifact storage)
+      const dataSourceMap = buildDataSourceMap(state.dataSources);
       
       // Check for existing error
       if (gameState.game?.gameError) {
@@ -132,7 +220,7 @@ export function router() {
         // Pre-resolve RNG ops so execute_changes receives concrete values.
         // Without this, template variables like {{activePlayer}} that depend on
         // RNG results cannot be resolved by the LLM, causing init deadlocks.
-        const resolvedInstructions = processRngInstructions(instructions);
+        const resolvedInstructions = await resolveInstructions(instructions, dataSourceMap, gameState);
         return {
           currentPhase: firstPhase,
           nextPhase: initTransition.toPhase,
@@ -194,8 +282,8 @@ export function router() {
         
         console.log(`[router] Routing to change agent with player action instructions: ${currentPhase}`);
         
-        // Resolve any RNG templates in instructions before passing to execute-changes
-        const resolvedInstructions = processRngInstructions(instructions);
+        // Resolve any RNG and data-source templates in instructions before passing to execute-changes
+        const resolvedInstructions = await resolveInstructions(instructions, dataSourceMap, gameState);
         
         return {
           currentPhase,
@@ -255,8 +343,8 @@ export function router() {
         console.log(`[router] Transition triggered: ${transition.id}`);
         console.log(`[router] Next phase: ${transition.toPhase}`);
         
-        // Resolve any RNG templates in instructions before passing to execute-changes
-        const resolvedInstructions = processRngInstructions(instructions);
+        // Resolve any RNG and data-source templates in instructions before passing to execute-changes
+        const resolvedInstructions = await resolveInstructions(instructions, dataSourceMap, gameState);
         
         return {
           currentPhase,

@@ -277,7 +277,7 @@ FINISHED:
     // Instructions only need stateDelta and mechanicsGuidance
     
     // Critical: Should have mechanics guidance for RPS rules
-    if (resolveTransition?.mechanicsGuidance) {
+    if (resolveTransition?.mechanicsGuidance && typeof resolveTransition.mechanicsGuidance !== 'string') {
       expect(resolveTransition.mechanicsGuidance.rules).toBeDefined();
       expect(Array.isArray(resolveTransition.mechanicsGuidance.rules)).toBe(true);
       expect(resolveTransition.mechanicsGuidance.rules.length).toBeGreaterThan(0);
@@ -287,6 +287,11 @@ FINISHED:
       expect(rulesText).toMatch(/scissors.*paper|paper.*scissors/);
       expect(rulesText).toMatch(/paper.*rock|rock.*paper/);
       console.log(`✓ Resolve transition has RPS mechanics: ${resolveTransition.mechanicsGuidance.rules.length} rules`);
+    } else if (typeof resolveTransition?.mechanicsGuidance === 'string') {
+      // String-form guidance — just verify it mentions RPS concepts
+      const guidanceText = resolveTransition.mechanicsGuidance.toLowerCase();
+      expect(guidanceText).toMatch(/rock|scissors|paper/);
+      console.log(`✓ Resolve transition has string mechanics guidance: "${resolveTransition.mechanicsGuidance.substring(0, 60)}..."`);
     }
     
     // Should have stateDelta operations
@@ -432,6 +437,19 @@ FINISHED:
           }
           if (!("value" in op)) {
             stateDeltaErrors.push(`${context}: setForAllPlayers op missing 'value' field`);
+          }
+          break;
+        case "rng":
+          if (!op.choices || !Array.isArray(op.choices) || op.choices.length === 0) {
+            stateDeltaErrors.push(`${context}: rng op missing or invalid 'choices' array`);
+          }
+          if (!op.probabilities || !Array.isArray(op.probabilities)) {
+            stateDeltaErrors.push(`${context}: rng op missing or invalid 'probabilities' array`);
+          }
+          break;
+        case "setFromDataSource":
+          if (!op.dataSourceId) {
+            stateDeltaErrors.push(`${context}: setFromDataSource op missing 'dataSourceId' field`);
           }
           break;
         default:
@@ -934,5 +952,374 @@ FINISHED:
     }
 
     console.log("\n=== Image Gen Positive Test Complete ===");
+  }, 120000);
+
+  it("should generate setFromDataSource ops for blockchain price prediction game", async () => {
+    const subgraph = createExtractionSubgraph(instructionsExtractionConfig);
+    const gameSpecification = `
+TSLA Price Prediction is a 2-player game where players predict if Tesla's stock price will go up or down.
+
+BLOCKCHAIN DATA SOURCES:
+- chainlink-tsla-usd: Fetches live TSLA/USD price from Chainlink oracle (returns price as a number e.g. 248.35)
+
+SETUP (Init Phase):
+- Fetch the current TSLA stock price using data source: chainlink-tsla-usd and store it as the starting price
+- Game starts in "prediction" phase
+- Both players have score of 0
+
+GAMEPLAY (Prediction Phase):
+- Each player submits their prediction: "up" or "down"
+- Once both players have submitted, game automatically transitions to resolve
+
+RESOLVE (Resolve Phase):
+- Fetch the current TSLA stock price again using data source: chainlink-tsla-usd
+- Compare current price to starting price to determine actual direction
+- Players who predicted correctly get 1 point
+- Game transitions to finished phase
+
+FINISHED:
+- Game ends
+- Player with highest score wins (tie if both correct or both wrong)
+`;
+
+    const stateSchema = JSON.stringify({
+      type: "object",
+      properties: {
+        game: {
+          type: "object",
+          description: "Core game state",
+          properties: {
+            phase: { type: "string", description: "Current phase: prediction, resolve, or finished" },
+            startingPrice: { type: "number", description: "TSLA price at game start (fetched from chainlink-tsla-usd)" },
+            currentPrice: { type: "number", description: "TSLA price at resolution (fetched from chainlink-tsla-usd)" },
+            actualDirection: { type: ["string", "null"], description: "Actual price direction: up or down" },
+            gameEnded: { type: "boolean", description: "Whether game has ended" },
+            publicMessage: { type: "string", description: "Public message to all players" }
+          },
+          required: ["phase", "startingPrice", "gameEnded"]
+        },
+        players: {
+          type: "object",
+          description: "Player state keyed by player ID",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Player name" },
+              prediction: { type: ["string", "null"], description: "Player's prediction: up or down" },
+              score: { type: "number", description: "Player's current score" },
+              actionRequired: { type: "boolean", description: "Whether player action is required" },
+              illegalActionCount: { type: "number", description: "Count of illegal actions" },
+              privateMessage: { type: "string", description: "Private message to player" }
+            },
+            required: ["score", "actionRequired", "illegalActionCount"]
+          }
+        }
+      },
+      required: ["game", "players"]
+    });
+
+    const transitionsArtifact = JSON.stringify({
+      phases: ["init", "prediction", "resolve", "finished"],
+      phaseMetadata: [
+        { phase: "init", requiresPlayerInput: false },
+        { phase: "prediction", requiresPlayerInput: true },
+        { phase: "resolve", requiresPlayerInput: false },
+        { phase: "finished", requiresPlayerInput: false }
+      ],
+      transitions: [
+        {
+          id: "game-start",
+          fromPhase: "init",
+          toPhase: "prediction",
+          condition: "Always",
+          checkedFields: [],
+          preconditions: [],
+          humanSummary: "Fetch starting TSLA price and move to prediction phase"
+        },
+        {
+          id: "predictions-complete",
+          fromPhase: "prediction",
+          toPhase: "resolve",
+          condition: "Both players have submitted predictions",
+          checkedFields: [],
+          preconditions: [],
+          humanSummary: "Move to resolve when both players have predicted"
+        },
+        {
+          id: "resolve-outcome",
+          fromPhase: "resolve",
+          toPhase: "finished",
+          condition: "Always",
+          checkedFields: [],
+          preconditions: [],
+          humanSummary: "Fetch current TSLA price, determine winners, end game"
+        }
+      ]
+    });
+
+    // Valid data source IDs for this game
+    const validDataSourceIds = new Set(["chainlink-tsla-usd"]);
+
+    const inputState = {
+      gameSpecification,
+      stateSchema,
+      stateTransitions: transitionsArtifact,
+      gameRules: "",
+    };
+
+    console.log("\n=== Executing Extract Instructions (Blockchain Data Source Test) ===\n");
+    const result = await subgraph.invoke(inputState, {
+      store: new InMemoryStore(),
+      configurable: { thread_id: "test-instructions-blockchain" }
+    });
+
+    expect(result.playerPhaseInstructions).toBeDefined();
+    expect(result.transitionInstructions).toBeDefined();
+    const playerPhaseInstructionsMap = result.playerPhaseInstructions!;
+    const transitionInstructionsMap = result.transitionInstructions!;
+
+    // Parse instructions
+    const parsedPlayerPhases: Record<string, any> = {};
+    const parsedTransitions: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(playerPhaseInstructionsMap)) {
+      parsedPlayerPhases[key] = JSON.parse(value);
+    }
+    for (const [key, value] of Object.entries(transitionInstructionsMap)) {
+      parsedTransitions[key] = JSON.parse(value);
+    }
+
+    const instructions: InstructionsArtifact = {
+      version: "1.0",
+      generatedAt: new Date().toISOString(),
+      playerPhases: parsedPlayerPhases,
+      transitions: parsedTransitions,
+      metadata: {
+        totalPlayerPhases: Object.keys(parsedPlayerPhases).length,
+        totalTransitions: Object.keys(parsedTransitions).length,
+        deterministicInstructionCount: 0,
+        llmDrivenInstructionCount: 0,
+      }
+    };
+
+    // Save output for debugging
+    const fs = await import('fs');
+    await fs.promises.writeFile(
+      '/tmp/instructions-blockchain-output.json',
+      JSON.stringify(instructions, null, 2),
+      'utf-8'
+    );
+    console.log("Saved full output to /tmp/instructions-blockchain-output.json");
+
+    console.log("\n=== Instructions Artifact ===");
+    console.log(`Player Phases: ${Object.keys(parsedPlayerPhases).join(", ")}`);
+    console.log(`Transitions: ${Object.keys(parsedTransitions).join(", ")}`);
+
+    // ========================================================================
+    // 1. BLOCKCHAIN DATA SOURCE VALIDATION (PRIMARY ASSERTION)
+    // ========================================================================
+    console.log("\n--- Blockchain Data Source Validation ---");
+
+    // Collect all setFromDataSource ops across all transitions
+    const allSetFromDataSourceOps: { context: string; op: any }[] = [];
+
+    for (const [transitionId, transition] of Object.entries(parsedTransitions)) {
+      for (const op of transition.stateDelta || []) {
+        if (op.op === "setFromDataSource") {
+          allSetFromDataSourceOps.push({ context: `Transition '${transitionId}'`, op });
+        }
+      }
+    }
+
+    // Also check player actions (unlikely but possible)
+    for (const [phaseName, phaseInst] of Object.entries(parsedPlayerPhases)) {
+      for (const action of (phaseInst as any).playerActions || []) {
+        for (const op of action.stateDelta || []) {
+          if (op.op === "setFromDataSource") {
+            allSetFromDataSourceOps.push({ context: `Action '${action.id}'`, op });
+          }
+        }
+      }
+    }
+
+    console.log(`Found ${allSetFromDataSourceOps.length} setFromDataSource ops:`);
+    for (const { context, op } of allSetFromDataSourceOps) {
+      console.log(`  - ${context}: dataSourceId="${op.dataSourceId}", path="${op.path}"`);
+    }
+
+    // CRITICAL: Must have at least one setFromDataSource op
+    expect(allSetFromDataSourceOps.length).toBeGreaterThanOrEqual(1);
+    console.log(`✓ Found ${allSetFromDataSourceOps.length} setFromDataSource op(s)`);
+
+    // All setFromDataSource ops must reference valid data source IDs
+    const dataSourceErrors: string[] = [];
+    for (const { context, op } of allSetFromDataSourceOps) {
+      if (!op.dataSourceId) {
+        dataSourceErrors.push(`${context}: setFromDataSource op missing dataSourceId`);
+      } else if (!validDataSourceIds.has(op.dataSourceId)) {
+        dataSourceErrors.push(
+          `${context}: setFromDataSource references unknown dataSourceId '${op.dataSourceId}'. ` +
+          `Valid IDs: ${[...validDataSourceIds].join(", ")}`
+        );
+      }
+      if (!op.path) {
+        dataSourceErrors.push(`${context}: setFromDataSource op missing path`);
+      }
+    }
+
+    if (dataSourceErrors.length > 0) {
+      console.error("Data source validation errors:", dataSourceErrors);
+      throw new Error(`Found ${dataSourceErrors.length} data source validation error(s):\n${dataSourceErrors.join("\n")}`);
+    }
+    console.log(`✓ All setFromDataSource ops reference valid data source IDs`);
+
+    // Should reference chainlink-tsla-usd specifically
+    const tslaOps = allSetFromDataSourceOps.filter(
+      ({ op }) => op.dataSourceId === "chainlink-tsla-usd"
+    );
+    expect(tslaOps.length).toBeGreaterThanOrEqual(1);
+    console.log(`✓ ${tslaOps.length} op(s) reference 'chainlink-tsla-usd'`);
+
+    // ========================================================================
+    // 2. STATEDELTA VALIDATION (reuse inline validator from first test)
+    // ========================================================================
+    console.log("\n--- StateDelta Validation ---");
+    let stateDeltaCount = 0;
+    let stateDeltaErrors: string[] = [];
+
+    const validateStateDeltaOp = (op: any, context: string) => {
+      stateDeltaCount++;
+
+      if (!op.op) {
+        stateDeltaErrors.push(`${context}: Missing 'op' field`);
+        return;
+      }
+      if (op.op !== "transfer" && op.op !== "setForAllPlayers" && !op.path) {
+        stateDeltaErrors.push(`${context}: Missing 'path' field`);
+        return;
+      }
+
+      switch (op.op) {
+        case "set":
+        case "increment":
+        case "append":
+        case "merge":
+          if (!("value" in op)) {
+            stateDeltaErrors.push(`${context}: ${op.op} op missing 'value' field`);
+          }
+          break;
+        case "delete":
+          break;
+        case "transfer":
+          if (!op.fromPath) stateDeltaErrors.push(`${context}: transfer op missing 'fromPath'`);
+          if (!op.toPath) stateDeltaErrors.push(`${context}: transfer op missing 'toPath'`);
+          if (!("amount" in op)) stateDeltaErrors.push(`${context}: transfer op missing 'amount'`);
+          break;
+        case "setForAllPlayers":
+          if (!op.field) stateDeltaErrors.push(`${context}: setForAllPlayers op missing 'field'`);
+          if (!("value" in op)) stateDeltaErrors.push(`${context}: setForAllPlayers op missing 'value'`);
+          break;
+        case "rng":
+          if (!op.choices || !Array.isArray(op.choices) || op.choices.length === 0) {
+            stateDeltaErrors.push(`${context}: rng op missing or invalid 'choices'`);
+          }
+          if (!op.probabilities || !Array.isArray(op.probabilities)) {
+            stateDeltaErrors.push(`${context}: rng op missing or invalid 'probabilities'`);
+          }
+          break;
+        case "setFromDataSource":
+          if (!op.dataSourceId) stateDeltaErrors.push(`${context}: setFromDataSource op missing 'dataSourceId'`);
+          if (!validDataSourceIds.has(op.dataSourceId)) {
+            stateDeltaErrors.push(`${context}: setFromDataSource references unknown dataSourceId '${op.dataSourceId}'`);
+          }
+          break;
+        default:
+          stateDeltaErrors.push(`${context}: Unknown op type '${op.op}'`);
+      }
+    };
+
+    for (const [phaseName, phaseInst] of Object.entries(parsedPlayerPhases)) {
+      for (const action of (phaseInst as any).playerActions || []) {
+        for (let i = 0; i < (action.stateDelta || []).length; i++) {
+          validateStateDeltaOp(action.stateDelta[i], `Action ${action.id} stateDelta[${i}]`);
+        }
+      }
+    }
+
+    for (const [transitionId, transition] of Object.entries(parsedTransitions)) {
+      for (let i = 0; i < ((transition as any).stateDelta || []).length; i++) {
+        validateStateDeltaOp((transition as any).stateDelta[i], `Transition ${(transition as any).id} stateDelta[${i}]`);
+      }
+    }
+
+    if (stateDeltaErrors.length > 0) {
+      console.error("StateDelta validation errors:", stateDeltaErrors);
+      throw new Error(`Found ${stateDeltaErrors.length} StateDelta error(s)`);
+    }
+    console.log(`✓ All ${stateDeltaCount} StateDelta operations are valid`);
+
+    // ========================================================================
+    // 3. COVERAGE VALIDATION
+    // ========================================================================
+    console.log("\n--- Coverage Validation ---");
+    const transitionsArtifactParsed = JSON.parse(transitionsArtifact);
+
+    // Prediction phase should have player actions
+    expect(parsedPlayerPhases["prediction"]).toBeDefined();
+    const predPhase = parsedPlayerPhases["prediction"];
+    expect(Array.isArray(predPhase.playerActions)).toBe(true);
+    expect(predPhase.playerActions.length).toBeGreaterThan(0);
+    console.log(`✓ Prediction phase has ${predPhase.playerActions.length} player action(s)`);
+
+    // Find submit prediction action
+    const submitAction = predPhase.playerActions.find(
+      (a: any) => a.actionName?.toLowerCase().includes("predict") || a.actionName?.toLowerCase().includes("submit")
+    );
+    expect(submitAction).toBeDefined();
+    console.log(`✓ Found prediction action: ${submitAction.actionName}`);
+
+    // All automatic transitions should have instructions
+    const automaticTransitionIds = transitionsArtifactParsed.transitions
+      .filter((t: any) => {
+        const meta = transitionsArtifactParsed.phaseMetadata.find((pm: any) => pm.phase === t.fromPhase);
+        return meta && !meta.requiresPlayerInput;
+      })
+      .map((t: any) => t.id);
+
+    for (const id of automaticTransitionIds) {
+      expect(parsedTransitions[id]).toBeDefined();
+      console.log(`✓ Automatic transition '${id}' has instructions`);
+    }
+
+    // Finished phase should NOT be in playerPhases
+    expect(parsedPlayerPhases["finished"]).toBeUndefined();
+    console.log(`✓ Finished phase not in playerPhases (no player input required)`);
+
+    // ========================================================================
+    // 4. VALIDATOR-CORES INTEGRATION CHECK
+    // ========================================================================
+    console.log("\n--- Validator Cores Integration ---");
+
+    // Import and run the actual validateArtifactStructureCore with data source IDs
+    const { validateArtifactStructureCore } = await import("../validator-cores.js");
+
+    const schema = JSON.parse(stateSchema);
+    const coreErrors = validateArtifactStructureCore(instructions, schema, validDataSourceIds);
+
+    if (coreErrors.length > 0) {
+      console.error("Validator core errors:", coreErrors);
+      throw new Error(`validateArtifactStructureCore reported ${coreErrors.length} error(s):\n${coreErrors.join("\n")}`);
+    }
+    console.log(`✓ validateArtifactStructureCore passed with validDataSourceIds`);
+
+    // Also verify it WOULD catch an invalid data source ID —
+    // create a restricted set that doesn't include chainlink-tsla-usd
+    const restrictedIds = new Set(["some-other-source"]);
+    const expectedErrors = validateArtifactStructureCore(instructions, schema, restrictedIds);
+    const dataSourceIdErrors = expectedErrors.filter(e => e.includes("unknown dataSourceId"));
+    expect(dataSourceIdErrors.length).toBeGreaterThan(0);
+    console.log(`✓ Validator correctly rejects unknown dataSourceIds (${dataSourceIdErrors.length} error(s) with restricted set)`);
+
+    console.log("\n=== Blockchain Data Source Test Complete ===");
   }, 120000);
 });
