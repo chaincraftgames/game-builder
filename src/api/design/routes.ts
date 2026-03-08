@@ -5,6 +5,9 @@ import {
   handleGenerateSpec,
   handleGetCachedSpecification,
   handleGetConversationHistory,
+  handleListDataSources,
+  handleConfigureDataSources,
+  handleGetConfiguredDataSources,
 } from "./handler.js";
 import {
   ContinueDesignConversationRequestSchema,
@@ -17,6 +20,11 @@ import {
   GetFullSpecificationResponseSchema,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponseSchema,
+  ListDataSourcesResponseSchema,
+  ConfigureDataSourcesRequestSchema,
+  ConfigureDataSourcesResponseSchema,
+  GetConfiguredDataSourcesRequestSchema,
+  GetConfiguredDataSourcesResponseSchema,
 } from "#chaincraft/api/design/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -98,5 +106,54 @@ export async function registerDesignRoutes(server: FastifyInstance) {
       },
     },
     handler: handleGetConversationHistory,
+  });
+
+  // ─── Data Source Endpoints ───────────────────────────────────────────
+
+  // List all available predefined data sources
+  server.get("/data-sources", {
+    schema: {
+      response: {
+        200: zodToJsonSchema(
+          ListDataSourcesResponseSchema,
+          "listDataSourcesResponse"
+        ),
+      },
+    },
+    handler: handleListDataSources,
+  });
+
+  // Configure data sources for a design conversation
+  server.post("/data-sources/configure", {
+    schema: {
+      body: zodToJsonSchema(
+        ConfigureDataSourcesRequestSchema,
+        "configureDataSourcesRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          ConfigureDataSourcesResponseSchema,
+          "configureDataSourcesResponse"
+        ),
+      },
+    },
+    handler: handleConfigureDataSources,
+  });
+
+  // Get configured data sources for a design conversation
+  server.post("/data-sources/configured", {
+    schema: {
+      body: zodToJsonSchema(
+        GetConfiguredDataSourcesRequestSchema,
+        "getConfiguredDataSourcesRequest"
+      ),
+      response: {
+        200: zodToJsonSchema(
+          GetConfiguredDataSourcesResponseSchema,
+          "getConfiguredDataSourcesResponse"
+        ),
+      },
+    },
+    handler: handleGetConfiguredDataSources,
   });
 }

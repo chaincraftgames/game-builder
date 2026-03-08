@@ -45,12 +45,13 @@ export function stripInternalTags(response: string): string {
 /**
  * Creates the conversational design agent.
  * 
- * @param mechanicsRegistry - Available game mechanics
+ * @param model - LLM model with options
+ * @param platformCapabilities - Platform capabilities text (from buildPlatformCapabilities())
  * @returns Async function that processes state and returns updates
  */
 export async function createConversationalAgent(
   model: ModelWithOptions,
-  mechanicsRegistry: string
+  platformCapabilities: string
 ) {
   return async (state: typeof GameDesignState.State) => {
     // 1. Get available narrative keys from state.specNarratives
@@ -61,7 +62,7 @@ export async function createConversationalAgent(
     
     // 2. Create cached system message with variable substitution
     const systemMessage = createCachedSystemMessage(SYSTEM_PROMPT, {
-      mechanicsRegistry,
+      platformCapabilities,
       fewShotExamples: formatFewShotExamples(),
       narrativeContext
     });

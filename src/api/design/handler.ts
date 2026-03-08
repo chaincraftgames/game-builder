@@ -15,6 +15,14 @@ import {
   GetConversationHistoryRequest,
   GetConversationHistoryRequestSchema,
   GetConversationHistoryResponse,
+  ConfigureDataSourcesRequest,
+  ConfigureDataSourcesRequestSchema,
+  ConfigureDataSourcesResponse,
+  GetConfiguredDataSourcesRequest,
+  GetConfiguredDataSourcesRequestSchema,
+  GetConfiguredDataSourcesResponse,
+  ListDataSourcesResponse,
+  DataSourceSummary,
 } from "#chaincraft/api/design/schemas.js";
 import {
   continueDesignConversation,
@@ -22,8 +30,12 @@ import {
   getCachedDesign,
   getConversationHistory,
   isActiveConversation,
+  configureDataSources,
+  getConfiguredDataSources,
 } from "#chaincraft/ai/design/design-workflow.js";
 import { expandSpecification } from "#chaincraft/ai/design/expand-narratives.js";
+import { getAllDataSources } from "#chaincraft/ai/design/data-sources.js";
+import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
 
 /**
  * Helper to expand narratives in a specification for API responses.
@@ -189,6 +201,83 @@ export async function handleGetConversationHistory(
     if (error instanceof Error && error.message.includes("not found")) {
       reply.code(404).send({ error: "Conversation not found" });
     } else {
+      reply.code(500).send({ error: "Internal server error" });
+    }
+    return Promise.reject();
+  }
+}
+
+// ─── Data Source Handlers ────────────────────────────────────────────────────
+
+/** Convert a DataSourceConfig to a DataSourceSummary for API responses. */
+function toSummary(ds: DataSourceConfig): DataSourceSummary {
+  return {
+    id: ds.id,
+    label: ds.label,
+    description: ds.description,
+    sourceType: ds.sourceType,
+  };
+}
+
+/** List all available predefined data sources. */
+export async function handleListDataSources(
+  _request: FastifyRequest,
+  _reply: FastifyReply,
+): Promise<ListDataSourcesResponse> {
+  const all = getAllDataSources();
+  return { dataSources: all.map(toSummary) };
+}
+
+/** Configure data sources for a design conversation. */
+export async function handleConfigureDataSources(
+  request: FastifyRequest<{ Body: ConfigureDataSourcesRequest }>,
+  reply: FastifyReply,
+): Promise<ConfigureDataSourcesResponse> {
+  const result = ConfigureDataSourcesRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId, dataSourceIds } = result.data;
+    const configured = await configureDataSources(conversationId, dataSourceIds);
+    return { configured: configured.map(toSummary) };
+  } catch (error: any) {
+    if (error.message?.includes("not found")) {
+      reply.code(404).send({ error: error.message });
+    } else if (error.message?.includes("Unknown data source ID")) {
+      reply.code(400).send({ error: error.message });
+    } else {
+      console.error("Error in configureDataSources:", error);
+      reply.code(500).send({ error: "Internal server error" });
+    }
+    return Promise.reject();
+  }
+}
+
+/** Get currently configured data sources for a design conversation. */
+export async function handleGetConfiguredDataSources(
+  request: FastifyRequest<{ Body: GetConfiguredDataSourcesRequest }>,
+  reply: FastifyReply,
+): Promise<GetConfiguredDataSourcesResponse> {
+  const result = GetConfiguredDataSourcesRequestSchema.safeParse(request.body);
+
+  if (!result.success) {
+    reply.code(400).send({ error: "Invalid request", details: result.error });
+    return Promise.reject();
+  }
+
+  try {
+    const { conversationId } = result.data;
+    const dataSources = await getConfiguredDataSources(conversationId);
+    return { dataSources: dataSources.map(toSummary) };
+  } catch (error: any) {
+    if (error.message?.includes("not found")) {
+      reply.code(404).send({ error: error.message });
+    } else {
+      console.error("Error in getConfiguredDataSources:", error);
       reply.code(500).send({ error: "Internal server error" });
     }
     return Promise.reject();

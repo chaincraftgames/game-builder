@@ -15,8 +15,7 @@ describe("Quick Force Generation Test", () => {
   beforeAll(async () => {
     const checkpointer = new MemorySaver();
     graph = await createMainDesignGraph(
-      checkpointer,
-      "Test mechanics"
+      checkpointer
     );
   }, 30000);
   

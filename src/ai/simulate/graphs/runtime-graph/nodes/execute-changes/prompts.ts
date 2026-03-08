@@ -21,6 +21,7 @@ Your job is to:
 **YOU DO NOT RETURN THE UPDATED STATE**. You only return the state delta operations with all templates resolved.
 
 **NOTE ON RNG**: Any RNG operations have been PRE-RESOLVED by the router. Template variables like {{randomValue}} already contain concrete values.
+**NOTE ON DATA SOURCES**: Any setFromDataSource operations have been PRE-RESOLVED by the router into standard "set" operations with concrete values from blockchain reads. You will never see setFromDataSource ops — they arrive as plain "set" ops.
 
 # How to Resolve Templates
 

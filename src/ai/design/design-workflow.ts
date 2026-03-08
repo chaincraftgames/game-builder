@@ -8,6 +8,7 @@ import {
 } from "@langchain/core/messages";
 import { createDesignGraphConfig } from "#chaincraft/ai/graph-config.js";
 import {
+  DataSourceConfig,
   GameDesignSpecification,
   GameDesignState,
   SpecPlan,
@@ -33,6 +34,7 @@ import {
   CARTRIDGE_IMAGE_CONFIG,
   RAW_IMAGE_CONFIG,
 } from "#chaincraft/ai/image-gen/image-gen-service.js";
+import { getDataSourceById, getAllDataSources } from "#chaincraft/ai/design/data-sources.js";
 
 // Log safe application startup info
 logApplicationEvent("design-workflow", "initializing", {
@@ -67,6 +69,7 @@ export interface DesignState {
   pendingSpecChanges?: string[];
   consolidationThreshold?: number;
   consolidationCharLimit?: number;
+  dataSources?: DataSourceConfig[];
 };
 
 /** A response from the design workflow. */
@@ -88,6 +91,11 @@ export async function continueDesignConversation(
   const graph = await designGraphCache.getGraph(conversationId);
   const config = createDesignGraphConfig(conversationId);
 
+  // Auto-inject predefined data sources if not already configured.
+  // This ensures both new conversations and legacy conversations
+  // (created before data sources existed) have the full set available.
+  await ensureDataSourcesConfigured(graph, config);
+
   // Format initial game description with XML tags if provided
   const message = gameDescription
     ? `
@@ -97,6 +105,31 @@ export async function continueDesignConversation(
     : userMessage;
 
   return _processMessage(graph, message, config, forceSpecGeneration);
+}
+
+/**
+ * Ensures the design graph state has the latest predefined dataSources.
+ * Always writes the current predefined data sources to the checkpoint
+ * so that registry changes (e.g., adding/removing sources) are picked up
+ * by ongoing conversations, not just new ones.
+ */
+async function ensureDataSourcesConfigured(
+  graph: any,
+  config: { configurable: { thread_id: string } },
+): Promise<void> {
+  try {
+    const allSources = getAllDataSources();
+    await graph.updateState(config, { dataSources: allSources });
+    console.log(
+      `[design-workflow] Refreshed ${allSources.length} predefined data source(s) in design state`,
+    );
+  } catch (err: any) {
+    // Don't fail the conversation if data source injection fails —
+    // it's supplementary and the design agent can still function without it.
+    console.warn(
+      `[design-workflow] Failed to auto-inject data sources: ${err.message}`,
+    );
+  }
 }
 
 export async function generateImage(
@@ -414,6 +447,77 @@ export async function isActiveConversation(
   return _isActiveConversation(graphType, conversationId);
 }
 
+/**
+ * Configure data sources for a design conversation.
+ *
+ * Resolves an array of predefined data source IDs to their full
+ * DataSourceConfig objects and writes them to the design graph checkpoint
+ * via `graph.updateState()`. The next time the simulation reads
+ * `cachedDesign.dataSources`, it will receive these configs.
+ *
+ * @param conversationId - The design conversation ID
+ * @param dataSourceIds  - Array of predefined data source IDs
+ *                         (e.g. ["binance-btc-usd-price", "chainlink-eth-usd"])
+ * @returns The resolved DataSourceConfig[] that were written to state
+ * @throws If the conversation is not active or any ID is unrecognized
+ */
+export async function configureDataSources(
+  conversationId: string,
+  dataSourceIds: string[],
+): Promise<DataSourceConfig[]> {
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
+
+  // Resolve IDs → configs, fail fast on unknown IDs
+  const resolved: DataSourceConfig[] = [];
+  const unknown: string[] = [];
+  for (const id of dataSourceIds) {
+    const config = getDataSourceById(id);
+    if (!config) {
+      unknown.push(id);
+    } else {
+      resolved.push(config);
+    }
+  }
+
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown data source ID(s): ${unknown.join(", ")}. ` +
+      `Use the /design/data-sources endpoint to list available IDs.`
+    );
+  }
+
+  // Write to the design graph checkpoint
+  const graph = await designGraphCache.getGraph(conversationId);
+  const config = createDesignGraphConfig(conversationId);
+
+  await graph.updateState(config, {
+    dataSources: resolved,
+  });
+
+  console.log(
+    `[design-workflow] Configured ${resolved.length} data source(s) for conversation ${conversationId}:`,
+    resolved.map((ds) => ds.id),
+  );
+
+  return resolved;
+}
+
+/**
+ * Get the currently configured data sources for a design conversation.
+ */
+export async function getConfiguredDataSources(
+  conversationId: string,
+): Promise<DataSourceConfig[]> {
+  if (!(await isActiveConversation(conversationId))) {
+    throw new Error(`Conversation ${conversationId} not found`);
+  }
+
+  const cached = await getCachedDesign(conversationId);
+  return cached?.dataSources ?? [];
+}
+
 async function getDesignFromCheckpoint(
   checkpoint: Checkpoint
 ): Promise<DesignState | undefined> {
@@ -425,6 +529,7 @@ async function getDesignFromCheckpoint(
   const pendingSpecChanges = channelValues.pendingSpecChanges as SpecPlan[] | undefined;
   const consolidationThreshold = channelValues.consolidationThreshold as number | undefined;
   const consolidationCharLimit = channelValues.consolidationCharLimit as number | undefined;
+  const dataSources = channelValues.dataSources as DataSourceConfig[] | undefined;
 
   console.log(
     "[getCachedDesignSpecification] Found cached spec:",
@@ -447,6 +552,7 @@ async function getDesignFromCheckpoint(
         : undefined,
       consolidationThreshold,
       consolidationCharLimit,
+      dataSources,
     };
   // }
 }

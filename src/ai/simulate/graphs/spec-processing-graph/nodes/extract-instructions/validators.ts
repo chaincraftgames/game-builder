@@ -167,7 +167,13 @@ export async function validateArtifactStructure(
     ? JSON.parse(state.stateSchema)
     : state.stateSchema;
 
-  return validateArtifactStructureCore(artifact, schema);
+  // Build set of valid data source IDs for setFromDataSource validation
+  const dataSources = state.dataSources || [];
+  const validDataSourceIds = dataSources.length > 0
+    ? new Set(dataSources.map(ds => ds.id))
+    : undefined;
+
+  return validateArtifactStructureCore(artifact, schema, validDataSourceIds);
 }
 
 /**

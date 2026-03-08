@@ -22,7 +22,8 @@ import {
   GAME_TITLE_TAG,
   formatFewShotExamples 
 } from "../prompts.js";
-import { CONSTRAINTS_TEXT } from "#chaincraft/ai/design/constraints.js";
+import { CONSTRAINT_FEW_SHOT_EXAMPLES } from "#chaincraft/ai/design/constraints.js";
+import { buildPlatformCapabilities } from "#chaincraft/ai/design/platform-capabilities.js";
 import type { GameDesignSpecification, GamepieceMetadata } from "#chaincraft/ai/design/game-design-state.js";
 
 // Helper function to create test state with all required fields
@@ -65,13 +66,8 @@ function createTestState(overrides: {
   };
 }
 
-// Mock registries for testing - moderate size to test cache thresholds
-const MOCK_MECHANICS_REGISTRY = `
-- Deck Building: Players construct and modify decks during gameplay
-- Area Control: Players compete for control of board spaces and territories
-- Resource Management: Players collect, spend, and optimize resources
-- Drafting: Players select cards or items from a shared pool in turn order
-`;
+// Platform capabilities for testing (includes constraints + data sources + mechanics)
+const TEST_PLATFORM_CAPABILITIES = buildPlatformCapabilities();
 
 describe("Conversational Agent - Tag Parsing", () => {
   test("should extract game title from tags", () => {
@@ -158,7 +154,7 @@ describe("Conversational Agent - Integration", () => {
       // Create agent instance
       agent = await createConversationalAgent(
         model,
-        MOCK_MECHANICS_REGISTRY
+        TEST_PLATFORM_CAPABILITIES
       );
     } catch (error) {
       console.log("⚠️  Failed to setup model:", error);
@@ -324,8 +320,7 @@ describe("Conversational Agent - Constraint Enforcement", () => {
     // Violations: real-time graphics, autonomous enemy actions, timing-based gameplay
     const agent = await createConversationalAgent(
       model,
-      CONSTRAINTS_TEXT,
-      MOCK_MECHANICS_REGISTRY
+      TEST_PLATFORM_CAPABILITIES
     );
 
     const state = createTestState({
@@ -367,8 +362,7 @@ describe("Conversational Agent - Constraint Enforcement", () => {
     // graphics update asynchronously (animations after each match)
     const agent = await createConversationalAgent(
       model,
-      CONSTRAINTS_TEXT,
-      MOCK_MECHANICS_REGISTRY
+      TEST_PLATFORM_CAPABILITIES
     );
 
     const state = createTestState({
@@ -412,8 +406,7 @@ describe("Conversational Agent - Constraint Enforcement", () => {
     // and should engage with the design, setting spec_update_needed.
     const agent = await createConversationalAgent(
       model,
-      CONSTRAINTS_TEXT,
-      MOCK_MECHANICS_REGISTRY
+      TEST_PLATFORM_CAPABILITIES
     );
 
     const state = createTestState({
@@ -451,7 +444,7 @@ describe("Conversational Agent - Edge Cases", () => {
     const model = await setupDesignModel();
     const agent = await createConversationalAgent(
       model,
-      MOCK_MECHANICS_REGISTRY
+      TEST_PLATFORM_CAPABILITIES
     );
 
     const state = createTestState({
@@ -475,7 +468,7 @@ describe("Conversational Agent - Edge Cases", () => {
     const model = await setupDesignModel();
     const agent = await createConversationalAgent(
       model,
-      MOCK_MECHANICS_REGISTRY
+      TEST_PLATFORM_CAPABILITIES
     );
 
     const existingSpec: GameDesignSpecification = {

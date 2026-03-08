@@ -111,7 +111,18 @@ export function createRevalidateNode() {
         allErrors.push(...errors);
       }
     } else {
-      console.log('[ArtifactEditor:revalidate] Skipping semantic validation — no instructions present');
+      // If original errors mention instructions (post-instructions repair), missing
+      // instructions is itself a failure — the editor failed to produce them.
+      const errorsReferenceInstructions = (state.errors ?? []).some(e =>
+        /instruction|executor|schema.*validation/i.test(e)
+      );
+      if (errorsReferenceInstructions) {
+        const msg = 'Instructions artifact is empty after repair — editor failed to regenerate instructions';
+        console.error(`[ArtifactEditor:revalidate] ${msg}`);
+        allErrors.push(msg);
+      } else {
+        console.log('[ArtifactEditor:revalidate] Skipping semantic validation — no instructions present (transitions-only repair)');
+      }
     }
 
     // ── Deduplicate errors (structural + semantic may overlap) ──

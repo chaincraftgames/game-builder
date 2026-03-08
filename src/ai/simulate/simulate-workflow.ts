@@ -19,6 +19,7 @@ import {
   getDesignByVersion,
   getCachedDesign as getCachedDesign,
 } from "#chaincraft/ai/design/design-workflow.js";
+import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
@@ -129,6 +130,7 @@ export interface SpecArtifacts {
   transitionInstructions: Record<string, string>;
   producedTokensConfiguration?: string;
   specNarratives?: Record<string, string>;
+  dataSources?: DataSourceConfig[];
 }
 
 /**
@@ -165,6 +167,7 @@ export async function getCachedSpecArtifacts(
     playerPhaseInstructions: channelValues.playerPhaseInstructions,
     transitionInstructions: channelValues.transitionInstructions,
     producedTokensConfiguration: channelValues.producedTokensConfiguration,
+    dataSources: channelValues.dataSources,
   };
 }
 
@@ -316,6 +319,7 @@ async function storeArtifactsInRuntimeGraph(
     transitionInstructions: artifacts.transitionInstructions,
     producedTokensConfiguration: artifacts.producedTokensConfiguration || "",
     specNarratives: artifacts.specNarratives,
+    dataSources: artifacts.dataSources || [],
     gameId: gameId || "",
     gameSpecificationVersion: gameSpecificationVersion || 0,
   };
@@ -433,6 +437,7 @@ export async function createSimulation(
     let versionToUse = gameSpecificationVersion;
     let narrativesToUse: Record<string, string> | undefined =
       specNarrativesOverride;
+    let dataSourcesFromDesign: DataSourceConfig[] | undefined;
 
     if (!specToUse) {
       // We need to fetch spec from design workflow - gameId is required
@@ -459,6 +464,7 @@ export async function createSimulation(
         specToUse = cachedDesign.specification?.designSpecification;
         versionToUse = cachedDesign.specification?.version;
         narrativesToUse = cachedDesign.specNarratives;
+        dataSourcesFromDesign = cachedDesign.dataSources;
         console.log(
           "[simulate] Retrieved latest spec from design workflow, version:",
           versionToUse,
@@ -483,6 +489,7 @@ export async function createSimulation(
 
         specToUse = designSpec.specification?.designSpecification;
         narrativesToUse = designSpec.specNarratives;
+        dataSourcesFromDesign = designSpec.dataSources;
         console.log(
           "[simulate] Retrieved spec from design workflow, title:",
           designSpec.title,
@@ -533,6 +540,7 @@ export async function createSimulation(
         {
           gameSpecification: specToUse,
           specNarratives: narrativesToUse,
+          dataSources: dataSourcesFromDesign || [],
           atomicArtifactRegen: atomicArtifactRegen !== false, // Default to true
           // Explicitly clear validation errors to start fresh (null = explicit clear)
           schemaValidationErrors: null,
@@ -568,6 +576,24 @@ export async function createSimulation(
         throw new Error(errorMessage);
       }
 
+      // ── Final artifact presence check ──
+      // Even if validation errors are empty, verify critical artifacts exist.
+      // This catches cases where repair reported success but artifacts were
+      // never actually produced (e.g., instructions:reextract not implemented).
+      const missingArtifacts: string[] = [];
+      if (!specResult.stateSchema) missingArtifacts.push('stateSchema');
+      if (!specResult.stateTransitions) missingArtifacts.push('stateTransitions');
+      const hasPlayerPhase = specResult.playerPhaseInstructions && Object.keys(specResult.playerPhaseInstructions).length > 0;
+      const hasTransitionInstr = specResult.transitionInstructions && Object.keys(specResult.transitionInstructions).length > 0;
+      if (!hasPlayerPhase && !hasTransitionInstr) missingArtifacts.push('instructions (playerPhases + transitions)');
+      else if (!hasTransitionInstr) missingArtifacts.push('transitionInstructions');
+
+      if (missingArtifacts.length > 0) {
+        const errorMessage = `Spec processing completed without errors but critical artifacts are missing: ${missingArtifacts.join(', ')}`;
+        console.error('[simulate]', errorMessage);
+        throw new Error(errorMessage);
+      }
+
       artifacts = {
         gameRules: String(specResult.gameRules || ""),
         stateSchema: String(specResult.stateSchema || ""),
@@ -585,6 +611,8 @@ export async function createSimulation(
         producedTokensConfiguration: String(specResult.producedTokensConfiguration || ""),
         // Persist spec narratives alongside artifacts so runtime checkpoints include them
         specNarratives: narrativesToUse || undefined,
+        // Persist blockchain data sources from design state for runtime resolution
+        dataSources: dataSourcesFromDesign || undefined,
       };
 
       console.log("[simulate] Spec processing complete, artifacts cached");

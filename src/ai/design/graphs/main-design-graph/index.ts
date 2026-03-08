@@ -19,6 +19,7 @@ import { createSpecExecute } from "./nodes/spec-execute/index.js";
 import { createConversationalAgent } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/conversational-agent/index.js";
 import { createGenerateNarratives } from "./nodes/generate-narratives/index.js";
 import { specDiff } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-diff/index.js";
+import { buildPlatformCapabilities } from "#chaincraft/ai/design/platform-capabilities.js";
 
 // Import metadata subgraph (TODO: Implement)
 // import { createMetadataSubgraph } from "../gamepiece-metadata-subgraph/index.js";
@@ -138,12 +139,10 @@ function routeAfterSpecDiff(
  * Creates and compiles the main design workflow graph.
  * 
  * @param checkpointer - Checkpoint saver for state persistence
- * @param mechanicsRegistry - Available game mechanics
  * @returns Compiled graph
  */
 export async function createMainDesignGraph(
-  checkpointer: BaseCheckpointSaver,
-  mechanicsRegistry: string = "No specific mechanics registry provided."
+  checkpointer: BaseCheckpointSaver
 ) {
   const workflow = new StateGraph(GameDesignState);
   
@@ -153,10 +152,13 @@ export async function createMainDesignGraph(
   const specExecuteModel = await setupSpecExecuteModel();
   const narrativeModel = await setupNarrativeModel();
   
+  // Build platform capabilities (dynamic — includes current data sources)
+  const platformCapabilities = buildPlatformCapabilities();
+  
   // Create nodes
   const conversationalAgent = await createConversationalAgent(
     conversationalModel,
-    mechanicsRegistry
+    platformCapabilities
   );
   const specPlan = createSpecPlan(specPlanModel);
   const specExecute = createSpecExecute(specExecuteModel);
@@ -192,5 +194,5 @@ export async function createMainDesignGraph(
 }
 
 // TODO: Export compiled graph once implemented
-// export const graph = await createMainDesignGraph(null as any, "");
+// export const graph = await createMainDesignGraph(null as any);
 // graph.name = "Main Design Graph";

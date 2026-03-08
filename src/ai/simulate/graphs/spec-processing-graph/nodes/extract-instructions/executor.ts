@@ -21,6 +21,7 @@ import {
   incrementAttemptCount,
   putToStore,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
+import { getAllAggregators, getNumericDataSourceIds } from "#chaincraft/ai/design/data-sources.js";
 
 export function instructionsExecutorNode(model: ModelWithOptions) {
   return async (
@@ -82,6 +83,22 @@ export function instructionsExecutorNode(model: ModelWithOptions) {
       ? `Available markers: ${narrativeMarkers.map(m => `!___ NARRATIVE:${m} ___!`).join(', ')}`
       : "No narrative markers.";
 
+    // Format valid data source IDs for the prompt
+    const dataSources = state.dataSources || [];
+    const validDataSourceIds = dataSources.length > 0
+      ? dataSources.map((ds, i) => `${i + 1}. "${ds.id}" — ${ds.label || ds.id}`).join('\n')
+      : "No data sources configured for this game.";
+
+    // Format valid aggregator IDs for the prompt
+    const aggregators = getAllAggregators();
+    const numericIds = getNumericDataSourceIds();
+    const validAggregatorIds = aggregators.length > 0
+      ? aggregators.map((agg, i) =>
+          `${i + 1}. "${agg.id}" — ${agg.label}. Returns: ${agg.resultFields.join(', ')}. ` +
+          `Use extractField to pick a specific result field.`
+        ).join('\n')
+      : "No aggregators available.";
+
     const executorPrompt = SystemMessagePromptTemplate.fromTemplate(
       executeInstructionsTemplate
     );
@@ -96,6 +113,8 @@ export function instructionsExecutorNode(model: ModelWithOptions) {
       ).join('\n'),
       executorSchemaJson: JSON.stringify(InstructionsArtifactSchemaJson, null, 2),
       narrativeMarkersSection,
+      validDataSourceIds,
+      validAggregatorIds,
       validationFeedback: "",
     });
 
