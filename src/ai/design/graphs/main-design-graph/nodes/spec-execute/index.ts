@@ -9,6 +9,7 @@ import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import type { GameDesignState, GameDesignSpecification } from "#chaincraft/ai/design/game-design-state.js";
 import { SYSTEM_PROMPT, getPreservationGuidance } from "./prompts.js";
+import { getBus } from "#chaincraft/events/game-creation-status-bus.js";
 
 /**
  * Extracts all narrative markers from a skeleton specification.
@@ -75,8 +76,9 @@ export function createSpecExecute(model: ModelWithOptions) {
   // Create system prompt template
   const systemTemplate = SystemMessagePromptTemplate.fromTemplate(SYSTEM_PROMPT);
   
-  return async (state: typeof GameDesignState.State) => {
+  return async (state: typeof GameDesignState.State, config?: any) => {
     console.log('[spec-execute] Node started');
+    const bus = getBus(config?.configurable?.thread_id);
     
     try {
       // 1. Get the pending spec changes from state
@@ -121,15 +123,22 @@ export function createSpecExecute(model: ModelWithOptions) {
     // 5. Call LLM with formatted system prompt to generate pure markdown
     console.log('[spec-execute] Calling LLM to generate specification...');
     const startTime = Date.now();
+    bus?.emit({ type: 'spec:started' });
     
-    const response = await model.invokeWithSystemPrompt(
-      systemMessage.content as string,
-      undefined, // No user prompt needed
-      {
-        agent: "spec-execution-agent",
-        workflow: "design"
-      }
-    );
+    let response;
+    try {
+      response = await model.invokeWithSystemPrompt(
+        systemMessage.content as string,
+        undefined, // No user prompt needed
+        {
+          agent: "spec-execution-agent",
+          workflow: "design"
+        }
+      );
+    } catch (err) {
+      bus?.emit({ type: 'spec:error', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
     
     const designSpecification = (response.content as string).trim();
     
@@ -170,6 +179,7 @@ export function createSpecExecute(model: ModelWithOptions) {
 
     // 10. Return state updates
     console.log('[spec-execute] Node completed successfully - returning state updates');
+    bus?.emit({ type: 'spec:completed' });
     return {
       currentSpec: spec,
       updatedSpec: spec, // Store in updatedSpec for diff comparison

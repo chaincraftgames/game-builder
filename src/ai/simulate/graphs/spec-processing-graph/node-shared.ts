@@ -27,6 +27,7 @@ export interface GraphConfigWithStore extends RunnableConfig {
   configurable?: {
     thread_id?: string;
     debugOutputs?: DebugOutputsConfig;
+    statusBus?: import('#chaincraft/events/game-creation-status-bus.js').GameCreationBus;
   };
 }
 
