@@ -12,6 +12,7 @@
  */
 
 import { createTracerCallbacks } from "#chaincraft/ai/model-config.js";
+import type { GameCreationBus } from "#chaincraft/events/game-creation-status-bus.js";
 
 /**
  * Graph configuration interface matching LangGraph's expected structure
@@ -24,6 +25,18 @@ export interface GraphConfig {
   callbacks?: any[];
   store?: any;
   [key: string]: any;
+}
+
+/**
+ * Graph configuration for artifact creation workflows.
+ * Extends GraphConfig with a typed statusBus for SSE progress events.
+ */
+export interface CreationGraphConfig extends GraphConfig {
+  configurable: {
+    thread_id: string;
+    statusBus?: GameCreationBus;
+    [key: string]: any;
+  };
 }
 
 /**
@@ -126,20 +139,22 @@ export function createSimulationGraphConfig(
  * Create a graph configuration with callbacks for artifact creation workflows
  * 
  * @param threadId - Unique identifier for the graph execution thread
- * @param store - Optional LangGraph store for persistence  
- * @param additionalConfig - Optional additional configuration properties
+ * @param store - Optional LangGraph store for persistence
+ * @param options.statusBus - Optional SSE bus to receive per-artifact progress events
  * @returns Complete graph configuration ready for graph.invoke()
  */
 export function createArtifactCreationGraphConfig(
   threadId: string,
   store?: any,
-  additionalConfig?: Record<string, any>
-): GraphConfig {
+  options?: { statusBus?: GameCreationBus }
+): CreationGraphConfig {
   return {
-    configurable: { thread_id: threadId },
+    configurable: {
+      thread_id: threadId,
+      ...(options?.statusBus && { statusBus: options.statusBus }),
+    },
     callbacks: createArtifactCreationGraphCallbacks(),
     ...(store && { store }),
-    ...additionalConfig,
   };
 }
 

@@ -23,11 +23,14 @@ import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.j
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
+import { getBus } from "#chaincraft/events/game-creation-status-bus.js";
 import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
 import { InMemoryStore } from "@langchain/langgraph";
-import { ProducedTokenConfiguration, ProducedTokensArtifact, ProducedTokensArtifactSchema } from "./schema.js";
-import { parse } from "path";
+import { 
+  ProducedTokensArtifact, 
+  ProducedTokensArtifactSchema 
+} from "#chaincraft/ai/simulate/schema.js";
 
 /**
  * Replace player aliases (player1, player2, etc.) with real UUIDs in message text.
@@ -529,14 +532,20 @@ export async function createSimulation(
 
       // Get or create spec processing graph for this spec
       const specGraph = await specGraphCache.getGraph(specKey);
+      const statusBus = gameId ? getBus(gameId) : undefined;
       const specConfig = createArtifactCreationGraphConfig(
         specKey,
-        new InMemoryStore()
+        new InMemoryStore(),
+        { statusBus }
       );
+
+      statusBus?.emit({ type: 'generation:started' });
 
       // Invoke spec graph - results saved to checkpoint automatically (cached by specKey)
       // Clear validation errors to prevent accumulation from previous failed runs
-      const specResult = (await specGraph.invoke(
+      let specResult: SpecProcessingStateType;
+      try {
+      specResult = (await specGraph.invoke(
         {
           gameSpecification: specToUse,
           specNarratives: narrativesToUse,
@@ -549,6 +558,11 @@ export async function createSimulation(
         },
         specConfig,
       )) as SpecProcessingStateType;
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        statusBus?.emit({ type: 'generation:error', error: errorMessage });
+        throw err;
+      }
 
       // Check for validation errors before using artifacts
       const schemaErrors = Array.isArray(specResult.schemaValidationErrors)
@@ -573,6 +587,7 @@ export async function createSimulation(
       if (validationErrors.length > 0) {
         const errorMessage = `Spec processing failed validation with ${validationErrors.length} error(s):\n${validationErrors.join("\n")}`;
         console.error("[simulate]", errorMessage);
+        statusBus?.emit({ type: 'generation:error', error: errorMessage });
         throw new Error(errorMessage);
       }
 
@@ -591,6 +606,7 @@ export async function createSimulation(
       if (missingArtifacts.length > 0) {
         const errorMessage = `Spec processing completed without errors but critical artifacts are missing: ${missingArtifacts.join(', ')}`;
         console.error('[simulate]', errorMessage);
+        statusBus?.emit({ type: 'generation:error', error: errorMessage });
         throw new Error(errorMessage);
       }
 
@@ -615,6 +631,7 @@ export async function createSimulation(
         dataSources: dataSourcesFromDesign || undefined,
       };
 
+      statusBus?.emit({ type: 'generation:completed' });
       console.log("[simulate] Spec processing complete, artifacts cached");
     } else {
       console.log("[simulate] Using cached spec artifacts");
