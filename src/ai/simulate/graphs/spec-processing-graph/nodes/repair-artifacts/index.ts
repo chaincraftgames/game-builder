@@ -18,6 +18,9 @@ import type { SpecProcessingStateType } from '#chaincraft/ai/simulate/graphs/spe
 import { getFromStore, type GraphConfigWithStore } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js';
 import { resolvePositionalPlayerTemplates } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/utils.js';
 import type { InstructionsArtifact } from '#chaincraft/ai/simulate/schema.js';
+import { createMechanicsGraph, buildMechanicTargets } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/index.js';
+import { generateStateInterfaces } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/generate-state-interfaces.js';
+import type { MechanicTarget } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/schema.js';
 
 // ─── Helpers ───
 
@@ -284,6 +287,113 @@ export function createRepairArtifactsNode() {
     console.warn(`[RepairArtifacts] ✗ Repair failed, ${result.remainingErrors?.length ?? 0} error(s) remain`);
     return {
       instructionsValidationErrors: result.remainingErrors ?? errors,
+    };
+  };
+}
+
+/**
+ * Create a repair node for mechanics tsc validation failures.
+ *
+ * Re-invokes the mechanics generation subgraph with error-enriched targets
+ * for failed mechanics only. The LLM receives its prior code + tsc errors
+ * and regenerates a corrected version.
+ *
+ * This handles simple tsc errors (TS2339, TS2322, TS2345). Cross-artifact
+ * errors (schema missing fields needed by mechanics) require the full
+ * coordinator-driven artifact editor flow (future work).
+ */
+export function createRepairMechanicsNode() {
+  return async (
+    state: SpecProcessingStateType,
+    config?: GraphConfigWithStore,
+  ): Promise<Partial<SpecProcessingStateType>> => {
+    const errors = state.mechanicsErrors ?? [];
+    if (errors.length === 0) {
+      console.log('[RepairMechanics] No errors to repair, skipping');
+      return {};
+    }
+
+    const generatedMechanics = state.generatedMechanics ?? {};
+
+    console.log(`[RepairMechanics] ${errors.length} mechanic(s) with tsc errors, rebuilding targets`);
+
+    // Build the original targets so we can find the ones that failed
+    const allTargets = buildMechanicTargets(
+      state.transitionInstructions || {},
+      state.playerPhaseInstructions || {},
+    );
+
+    // Build repair targets — only for failed mechanics, enriched with error context
+    const failedIds = new Set(errors.map(e => e.mechanicId));
+    const repairTargets: MechanicTarget[] = [];
+
+    for (const mechanicError of errors) {
+      const originalTarget = allTargets.find(t => t.id === mechanicError.mechanicId);
+      if (!originalTarget) {
+        console.warn(`[RepairMechanics] No original target found for failed mechanic: ${mechanicError.mechanicId}`);
+        continue;
+      }
+
+      const previousCode = generatedMechanics[mechanicError.mechanicId];
+      if (!previousCode) {
+        console.warn(`[RepairMechanics] No previous code found for: ${mechanicError.mechanicId}`);
+        continue;
+      }
+
+      repairTargets.push({
+        ...originalTarget,
+        repairContext: {
+          previousCode,
+          tscErrors: mechanicError.errors.map(e =>
+            `TS${e.code} (line ${e.line}, col ${e.column}): ${e.message}`
+          ),
+        },
+      });
+    }
+
+    if (repairTargets.length === 0) {
+      console.warn('[RepairMechanics] Could not build repair targets');
+      return {};
+    }
+
+    // Generate fresh interfaces from current schema
+    if (!state.stateSchema) {
+      console.error('[RepairMechanics] No stateSchema available');
+      return {};
+    }
+
+    const fields: GameStateField[] = JSON.parse(state.stateSchema);
+    const stateInterfaces = generateStateInterfaces(fields);
+
+    console.log(
+      `[RepairMechanics] Invoking mechanics subgraph for ${repairTargets.length} repair target(s): ` +
+      repairTargets.map(t => t.id).join(', '),
+    );
+
+    const mechanicsGraph = await createMechanicsGraph();
+    const result = await mechanicsGraph.invoke({
+      targets: repairTargets,
+      stateInterfaces,
+      existingCode: generatedMechanics,
+    }, config);
+
+    // Merge repaired mechanics into existing (keep successful ones from first pass)
+    const mergedMechanics = { ...generatedMechanics, ...result.generatedMechanics };
+
+    if (result.mechanicsErrors.length === 0) {
+      console.log('[RepairMechanics] ✓ All mechanics repaired successfully');
+      return {
+        generatedMechanics: mergedMechanics,
+        mechanicsErrors: [],
+      };
+    }
+
+    console.warn(
+      `[RepairMechanics] ✗ ${result.mechanicsErrors.length} mechanic(s) still have errors after repair`,
+    );
+    return {
+      generatedMechanics: mergedMechanics,
+      mechanicsErrors: result.mechanicsErrors,
     };
   };
 }

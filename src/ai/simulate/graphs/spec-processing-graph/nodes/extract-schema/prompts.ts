@@ -18,12 +18,26 @@ decision-relevant state).
 2) Fields: a compact JSON array describing any new fields required 
 beyond the provided base schema. Each field entry must be an object with the following keys:
    - "name" (string): dot-path (example: "players.*.currentMove" or "game.round")
-   - "type" (string): one of "number|string|boolean|enum|object|array|record"
-   - "path" (string): either "game" or "player" indicating wether the field is at the
+   - "type" (string): MUST be one of these 6 values exactly: "string" | "number" | "boolean" | "enum" | "array" | "record"
+     Do NOT use "object" — use "record" for anything with sub-structure or dynamic keys.
+   - "path" (string): either "game" or "player" indicating whether the field is at the
      game-level or player-level
-   - "source" (string): either "system" (set by system), "player input" (input from players),
    - "purpose" (string): one short phrase (<=10 words) explaining why it is required
-   - "constraints" (optional string): e.g. "enum:[rock,paper,scissors]" or "maxItems:3"
+   - "enumValues" (optional string[]): list of allowed values when "type" or "valueType" is "enum"
+     Example: ["rock","paper","scissors"]
+   - "valueType" (optional string): inner element/value type when "type" is "array" or "record".
+     Must also be one of: "string" | "number" | "boolean" | "enum" | "array" | "record"
+   - "required" (optional boolean): defaults to true if omitted. Set to false for optional fields.
+
+   TYPE GUIDANCE:
+   - Simple string field → {{"type":"string"}}
+   - Simple number field → {{"type":"number"}}
+   - Boolean flag → {{"type":"boolean"}}
+   - Fixed set of choices → {{"type":"enum","enumValues":["rock","paper","scissors"]}}
+   - List of strings → {{"type":"array","valueType":"string"}}
+   - List of enum values → {{"type":"array","valueType":"enum","enumValues":["rock","paper","scissors"]}}
+   - Dictionary with string values → {{"type":"record","valueType":"string"}}
+   - Dictionary with enum values → {{"type":"record","valueType":"enum","enumValues":["rock","paper","scissors"]}}
 
 ⚠️ IMPORTANT: BASE SCHEMA FIELDS ALREADY PROVIDED
 The following fields are already available in the base schema and should NOT be redefined:
@@ -106,9 +120,9 @@ Fields:
 \`\`\`json
 [
   {{"name":"currentPhase","type":"string","purpose":"Track current game phase",
-    "path": "game","source":"system"}}, 
+    "path": "game"}}, 
   {{"name":"Choice","type":"enum","purpose":"player selection",
-    "path":"player","source":"player","constraints":"enum:[rock,paper,scissors]"}}
+    "path":"player","enumValues":["rock","paper","scissors"]}}
 ]
 \`\`\`
 !___ END-CACHE ___!

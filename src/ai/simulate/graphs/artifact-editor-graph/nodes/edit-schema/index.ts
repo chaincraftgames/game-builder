@@ -14,7 +14,7 @@
 
 import type { ArtifactEditorStateType } from '../../artifact-editor-state.js';
 import type { SchemaOp } from '../../types.js';
-import type { GameStateField } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
+import type { GameStateField, FieldType } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
 
 // ─── GameStateField[] Helpers ───
 
@@ -30,9 +30,8 @@ function applySchemaOp(fields: GameStateField[], op: SchemaOp): string {
     }
     fields.push({
       name: op.field,
-      type: op.type ?? 'string',
+      type: (op.type as FieldType) ?? 'string',
       path: op.scope,
-      source: 'artifact-editor',
       purpose: op.description ?? '',
     });
     return `ADD: ${op.scope}.${op.field} (${op.type ?? 'string'})`;

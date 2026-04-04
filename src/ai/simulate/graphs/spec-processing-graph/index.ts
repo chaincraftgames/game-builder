@@ -8,7 +8,9 @@
  * 4. repair_transitions - (if errors) Artifact editor fixes transitions
  * 5. extract_instructions - Create phase-specific instructions
  * 6. repair_artifacts - (if errors) Artifact editor cross-artifact repair
- * 7. extract_produced_tokens - Identify persistent tokens to produce
+ * 7. generate_mechanics - Generate deterministic code for transitions with mechanicsGuidance
+ * 8. repair_mechanics - (if tsc errors) Re-invoke mechanics subgraph with error context
+ * 9. extract_produced_tokens - Identify persistent tokens to produce
  */
 
 import { StateGraph, START, END } from "@langchain/langgraph";
@@ -20,7 +22,10 @@ import { instructionsExtractionConfig } from "#chaincraft/ai/simulate/graphs/spe
 import { producedTokensExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-produced-tokens/index.js";
 import { createValidationNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/validate-transitions/index.js";
 import { createExtractionSubgraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-factories.js";
-import { createRepairTransitionsNode, createRepairArtifactsNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/repair-artifacts/index.js";
+import { createRepairTransitionsNode, createRepairArtifactsNode, createRepairMechanicsNode } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/repair-artifacts/index.js";
+import { createMechanicsGraph, buildMechanicTargets } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/index.js";
+import { generateStateInterfaces } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/generate-state-interfaces.js";
+import type { GameStateField } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js";
 
 /**
  * Creates and compiles the spec processing graph.
@@ -46,6 +51,10 @@ export async function createSpecProcessingGraph(
   // Create repair nodes (artifact editor wrappers)
   const repairTransitionsNode = createRepairTransitionsNode();
   const repairArtifactsNode = createRepairArtifactsNode();
+  const repairMechanicsNode = createRepairMechanicsNode();
+
+  // Create mechanics generation subgraph
+  const mechanicsGraph = await createMechanicsGraph();
 
   // Add nodes to graph - subgraphs need to receive config with store
   workflow.addNode("extract_schema", async (state, config) => {
@@ -63,6 +72,42 @@ export async function createSpecProcessingGraph(
     return result;
   });
   workflow.addNode("repair_artifacts", repairArtifactsNode);
+  workflow.addNode("generate_mechanics", async (state, config) => {
+    // Thin wrapper: build targets + interfaces, invoke subgraph, map outputs back
+    if (!state.stateSchema) {
+      console.warn("[generate_mechanics] No stateSchema, skipping");
+      return {};
+    }
+
+    const fields: GameStateField[] = JSON.parse(state.stateSchema);
+    const stateInterfaces = generateStateInterfaces(fields);
+
+    const targets = buildMechanicTargets(
+      state.transitionInstructions || {},
+      state.playerPhaseInstructions || {},
+    );
+
+    if (targets.length === 0) {
+      console.debug("[generate_mechanics] No targets with mechanicsGuidance, skipping");
+      return {};
+    }
+
+    console.debug(
+      `[generate_mechanics] Invoking mechanics subgraph for ${targets.length} target(s)`,
+    );
+
+    const result = await mechanicsGraph.invoke({
+      targets,
+      stateInterfaces,
+      existingCode: state.generatedMechanics || {},
+    }, config);
+
+    return {
+      generatedMechanics: result.generatedMechanics,
+      mechanicsErrors: result.mechanicsErrors,
+    };
+  });
+  workflow.addNode("repair_mechanics", repairMechanicsNode);
   workflow.addNode("extract_produced_tokens", async (state, config) => {
     const result = await producedTokensSubgraph.invoke(state, config);
     return result;
@@ -87,14 +132,14 @@ export async function createSpecProcessingGraph(
       if (!hasSchema) return "schema";
       if (!hasTransitions) return atomic ? "schema" : "transitions";
       if (!hasPlayerPhaseInstructions || !hasTransitionInstructions) return atomic ? "schema" : "instructions";
-      if (!hasProducedTokens) return atomic ? "schema" : "produced_tokens";
+      if (!hasProducedTokens) return atomic ? "schema" : "generate_mechanics";
       return "end";
     },
     {
       schema: "extract_schema" as any,
       transitions: "extract_transitions" as any,
       instructions: "extract_instructions" as any,
-      produced_tokens: "extract_produced_tokens" as any,
+      generate_mechanics: "generate_mechanics" as any,
       end: END,
     }
   );
@@ -160,7 +205,7 @@ export async function createSpecProcessingGraph(
       return "continue";
     },
     {
-      continue: "extract_produced_tokens" as any,
+      continue: "generate_mechanics" as any,
       repair: "repair_artifacts" as any,
     }
   );
@@ -176,10 +221,29 @@ export async function createSpecProcessingGraph(
       return "continue";
     },
     {
-      continue: "extract_produced_tokens" as any,
+      continue: "generate_mechanics" as any,
       end: END,
     }
   );
+
+  // After mechanic generation: repair if tsc errors, otherwise continue to tokens
+  workflow.addConditionalEdges(
+    "generate_mechanics" as any,
+    (state) => {
+      if (state.mechanicsErrors && state.mechanicsErrors.length > 0) {
+        console.warn(`[SpecProcessingGraph] Mechanics generation found ${state.mechanicsErrors.length} tsc error(s), routing to repair`);
+        return "repair";
+      }
+      return "continue";
+    },
+    {
+      continue: "extract_produced_tokens" as any,
+      repair: "repair_mechanics" as any,
+    }
+  );
+
+  // After mechanics repair: continue regardless (best-effort — don't block pipeline)
+  workflow.addEdge("repair_mechanics" as any, "extract_produced_tokens" as any);
   
   // After produced tokens: always end
   workflow.addEdge("extract_produced_tokens" as any, END);

@@ -59,6 +59,11 @@ export const RuntimeState = Annotation.Root({
     reducer: (_, y) => y,
     default: () => ({}),
   }),
+
+  generatedMechanics: Annotation<Record<string, string>>({
+    reducer: (_, y) => y,
+    default: () => ({}),
+  }),
   
   specNarratives: Annotation<Record<string, string>>({
     reducer: (_, y) => y,

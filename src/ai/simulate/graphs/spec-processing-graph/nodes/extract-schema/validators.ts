@@ -9,7 +9,8 @@ import { BaseStore } from "@langchain/langgraph";
 
 /**
  * Parse executor output to extract field definitions
- * Preserves all field properties from executor output
+ * Produces enriched GameStateField format (FieldType union, optional enumValues/valueType).
+ * Tolerates legacy fields (source, constraints) in stored data for backward compatibility.
  */
 export function extractExecutorFields(executorOutput: string): GameStateField[] {
   const fields: GameStateField[] = [];
@@ -25,15 +26,16 @@ export function extractExecutorFields(executorOutput: string): GameStateField[] 
     if (Array.isArray(parsed)) {
       parsed.forEach((field: any) => {
         if (field.name && field.path) {
-          // Preserve all field properties
-          fields.push({
+          const f: GameStateField = {
             name: field.name,
             path: field.path,
-            type: field.type,
-            source: field.source,
-            purpose: field.purpose,
-            constraints: field.constraints,
-          });
+            type: field.type ?? 'string',
+            purpose: field.purpose ?? '',
+          };
+          if (field.enumValues) f.enumValues = field.enumValues;
+          if (field.valueType) f.valueType = field.valueType;
+          if (field.required !== undefined) f.required = field.required;
+          fields.push(f);
         }
       });
     }

@@ -9,6 +9,7 @@
 
 import { Annotation } from "@langchain/langgraph";
 import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
+import type { MechanicError } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/schema.js";
 
 export type SpecProcessingStateType = typeof SpecProcessingState.State;
 
@@ -54,6 +55,17 @@ export const SpecProcessingState = Annotation.Root({
   transitionInstructions: Annotation<Record<string, string>>({
     reducer: (_, y) => y,
     default: () => ({}),
+  }),
+
+  generatedMechanics: Annotation<Record<string, string>>({
+    reducer: (a, b) => ({ ...a, ...b }),
+    default: () => ({}),
+  }),
+
+  // tsc validation errors accumulated across all mechanic generations
+  mechanicsErrors: Annotation<MechanicError[]>({
+    reducer: (a, b) => [...a, ...b],
+    default: () => [],
   }),
 
   producedTokensConfiguration: Annotation<string>({

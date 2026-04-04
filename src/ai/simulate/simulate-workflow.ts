@@ -128,6 +128,7 @@ export interface SpecArtifacts {
   stateTransitions: string;
   playerPhaseInstructions: Record<string, string>;
   transitionInstructions: Record<string, string>;
+  generatedMechanics?: Record<string, string>;
   producedTokensConfiguration?: string;
   specNarratives?: Record<string, string>;
   dataSources?: DataSourceConfig[];
@@ -166,6 +167,7 @@ export async function getCachedSpecArtifacts(
     stateTransitions: channelValues.stateTransitions,
     playerPhaseInstructions: channelValues.playerPhaseInstructions,
     transitionInstructions: channelValues.transitionInstructions,
+    generatedMechanics: channelValues.generatedMechanics,
     producedTokensConfiguration: channelValues.producedTokensConfiguration,
     dataSources: channelValues.dataSources,
   };
@@ -317,6 +319,7 @@ async function storeArtifactsInRuntimeGraph(
     stateTransitions: artifacts.stateTransitions,
     playerPhaseInstructions: artifacts.playerPhaseInstructions,
     transitionInstructions: artifacts.transitionInstructions,
+    generatedMechanics: artifacts.generatedMechanics || {},
     producedTokensConfiguration: artifacts.producedTokensConfiguration || "",
     specNarratives: artifacts.specNarratives,
     dataSources: artifacts.dataSources || [],
