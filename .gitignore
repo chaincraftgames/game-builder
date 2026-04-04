@@ -10,4 +10,3 @@ logs/*.log
 *.log
 src/ai/simulate/test/fixtures/**
 test-results/**
-branches/
