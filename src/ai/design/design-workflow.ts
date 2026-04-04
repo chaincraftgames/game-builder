@@ -34,8 +34,10 @@ import {
   CARTRIDGE_IMAGE_CONFIG,
   RAW_IMAGE_CONFIG,
 } from "#chaincraft/ai/image-gen/image-gen-service.js";
-import { getDataSourceById, getAllDataSources } from "#chaincraft/ai/design/data-sources.js";
-
+import { 
+  getDataSourceById, 
+  getAllDataSources 
+} from "#chaincraft/ai/design/data-sources.js";
 // Log safe application startup info
 logApplicationEvent("design-workflow", "initializing", {
   cacheSize: parseInt(process.env.CHAINCRAFT_DESIGN_GRAPH_CACHE_SIZE ?? "100"),

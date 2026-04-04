@@ -12,6 +12,7 @@
 
 import { createArtifactEditorGraph } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/index.js';
 import { createArtifactEditorGraphConfig } from '#chaincraft/ai/graph-config.js';
+import type { GameCreationBus } from '#chaincraft/events/game-creation-status-bus.js';
 import { extractSchemaFields } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js';
 import type { GameStateField } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
 import type { SpecProcessingStateType } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js';
@@ -161,6 +162,7 @@ export function createRepairTransitionsNode() {
     state: SpecProcessingStateType,
     config?: GraphConfigWithStore,
   ): Promise<Partial<SpecProcessingStateType>> => {
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
     const errors = state.transitionsValidationErrors ?? [];
     if (errors.length === 0) {
       console.log('[RepairTransitions] No errors to repair, skipping');
@@ -168,6 +170,7 @@ export function createRepairTransitionsNode() {
     }
 
     console.log(`[RepairTransitions] Invoking artifact editor for ${errors.length} transition error(s)`);
+    bus?.emit({ type: 'repair:started', target: 'transitions' });
 
     const graph = await createArtifactEditorGraph();
     const threadId = config?.configurable?.thread_id || 'repair-transitions';
@@ -198,6 +201,7 @@ export function createRepairTransitionsNode() {
 
     if (result.editSucceeded) {
       console.log('[RepairTransitions] ✓ Repair succeeded');
+      bus?.emit({ type: 'repair:completed', target: 'transitions' });
       return {
         stateTransitions: result.stateTransitions,
         // Schema may have been modified (e.g., denormalization added fields)
@@ -207,6 +211,7 @@ export function createRepairTransitionsNode() {
     }
 
     console.warn(`[RepairTransitions] ✗ Repair failed, ${result.remainingErrors?.length ?? 0} error(s) remain`);
+    bus?.emit({ type: 'repair:completed', target: 'transitions' });
     return {
       // Keep existing errors + add remaining as additional context
       transitionsValidationErrors: result.remainingErrors ?? errors,
@@ -226,6 +231,7 @@ export function createRepairArtifactsNode() {
     state: SpecProcessingStateType,
     config?: GraphConfigWithStore,
   ): Promise<Partial<SpecProcessingStateType>> => {
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
     const errors = state.instructionsValidationErrors ?? [];
     if (errors.length === 0) {
       console.log('[RepairArtifacts] No errors to repair, skipping');
@@ -233,6 +239,7 @@ export function createRepairArtifactsNode() {
     }
 
     console.log(`[RepairArtifacts] Invoking artifact editor for ${errors.length} instruction/cross-artifact error(s)`);
+    bus?.emit({ type: 'repair:started', target: 'instructions' });
 
     const graph = await createArtifactEditorGraph();
     const threadId = config?.configurable?.thread_id || 'repair-artifacts';
@@ -271,6 +278,7 @@ export function createRepairArtifactsNode() {
 
     if (result.editSucceeded) {
       console.log('[RepairArtifacts] ✓ Repair succeeded');
+      bus?.emit({ type: 'repair:completed', target: 'instructions' });
       return {
         stateTransitions: result.stateTransitions,
         stateSchema: result.stateSchema || state.stateSchema,
@@ -285,6 +293,7 @@ export function createRepairArtifactsNode() {
     }
 
     console.warn(`[RepairArtifacts] ✗ Repair failed, ${result.remainingErrors?.length ?? 0} error(s) remain`);
+    bus?.emit({ type: 'repair:completed', target: 'instructions' });
     return {
       instructionsValidationErrors: result.remainingErrors ?? errors,
     };

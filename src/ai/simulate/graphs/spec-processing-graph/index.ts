@@ -16,6 +16,7 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
 import { SpecProcessingState } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js";
+import type { GameCreationBus } from "#chaincraft/events/game-creation-status-bus.js";
 import { schemaExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/index.js";
 import { transitionsExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-transitions/index.js";
 import { instructionsExtractionConfig } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/index.js";
@@ -58,18 +59,42 @@ export async function createSpecProcessingGraph(
 
   // Add nodes to graph - subgraphs need to receive config with store
   workflow.addNode("extract_schema", async (state, config) => {
-    const result = await schemaSubgraph.invoke(state, config);
-    return result;
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
+    bus?.emit({ type: 'artifact:started', artifact: 'stateSchema' });
+    try {
+      const result = await schemaSubgraph.invoke(state, config);
+      bus?.emit({ type: 'artifact:completed', artifact: 'stateSchema' });
+      return result;
+    } catch (err) {
+      bus?.emit({ type: 'artifact:error', artifact: 'stateSchema', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
   });
   workflow.addNode("extract_transitions", async (state, config) => {
-    const result = await transitionsSubgraph.invoke(state, config);
-    return result;
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
+    bus?.emit({ type: 'artifact:started', artifact: 'transitions' });
+    try {
+      const result = await transitionsSubgraph.invoke(state, config);
+      bus?.emit({ type: 'artifact:completed', artifact: 'transitions' });
+      return result;
+    } catch (err) {
+      bus?.emit({ type: 'artifact:error', artifact: 'transitions', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
   });
   workflow.addNode("validate_transitions", validationNode);
   workflow.addNode("repair_transitions", repairTransitionsNode);
   workflow.addNode("extract_instructions", async (state, config) => {
-    const result = await instructionsSubgraph.invoke(state, config);
-    return result;
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
+    bus?.emit({ type: 'artifact:started', artifact: 'instructions' });
+    try {
+      const result = await instructionsSubgraph.invoke(state, config);
+      bus?.emit({ type: 'artifact:completed', artifact: 'instructions' });
+      return result;
+    } catch (err) {
+      bus?.emit({ type: 'artifact:error', artifact: 'instructions', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
   });
   workflow.addNode("repair_artifacts", repairArtifactsNode);
   workflow.addNode("generate_mechanics", async (state, config) => {
@@ -109,8 +134,16 @@ export async function createSpecProcessingGraph(
   });
   workflow.addNode("repair_mechanics", repairMechanicsNode);
   workflow.addNode("extract_produced_tokens", async (state, config) => {
-    const result = await producedTokensSubgraph.invoke(state, config);
-    return result;
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
+    bus?.emit({ type: 'artifact:started', artifact: 'producedTokens' });
+    try {
+      const result = await producedTokensSubgraph.invoke(state, config);
+      bus?.emit({ type: 'artifact:completed', artifact: 'producedTokens' });
+      return result;
+    } catch (err) {
+      bus?.emit({ type: 'artifact:error', artifact: 'producedTokens', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
   });
 
   // Define flow with validation error checks
