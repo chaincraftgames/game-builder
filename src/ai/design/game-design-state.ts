@@ -227,7 +227,11 @@ export const GameDesignState = Annotation.Root({
     reducer: (_, y) => y,
   }),
   specNarratives: Annotation<Record<string, string> | undefined>({
-    reducer: (_, y) => y,
+    reducer: (x, y) => {
+      if (y === undefined) return x;
+      if (x === undefined) return y;
+      return { ...x, ...y };
+    },
   }),
   narrativesNeedingUpdate: Annotation<string[]>({
     reducer: (_, y) => y ?? [],
