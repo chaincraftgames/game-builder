@@ -10,9 +10,10 @@
  * Client layers (REST API, Discord bot, web UI) handle formatting.
  */
 
-import { StateGraph, START, END } from "@langchain/langgraph";
+import { StateGraph, START, END, Send } from "@langchain/langgraph";
 import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
+import { isSpecInProgress } from "#chaincraft/events/game-creation-status-bus.js";
 import { setupSpecPlanModel, setupSpecExecuteModel, setupModel, setupConversationalAgentModel, setupNarrativeModel } from "#chaincraft/ai/model-config.js";
 import { createSpecPlan } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-plan/index.js";
 import { createSpecExecute } from "./nodes/spec-execute/index.js";
@@ -32,9 +33,15 @@ import { buildPlatformCapabilities } from "#chaincraft/ai/design/platform-capabi
  * @returns Next node to execute
  */
 function routeFromStart(
-  state: typeof GameDesignState.State
-): "conversation" | "execute_spec" {
+  state: typeof GameDesignState.State,
+  config?: any
+): "conversation" | "execute_spec" | typeof END {
   if (state.forceSpecGeneration) {
+    const threadId = config?.configurable?.thread_id;
+    if (threadId && isSpecInProgress(threadId)) {
+      console.log("[routeFromStart] forceSpecGeneration requested but spec already in progress - skipping");
+      return END;
+    }
     console.log("[routeFromStart] forceSpecGeneration detected - routing to execute_spec");
     return "execute_spec";
   }
@@ -64,8 +71,18 @@ function routeFromConversation(
   }
 }
 
-function routeFromSpecPlan(state: typeof GameDesignState.State): 
-  "execute_spec" | typeof END {
+function routeFromSpecPlan(
+  state: typeof GameDesignState.State,
+  config?: any
+): "execute_spec" | typeof END {
+  const threadId = config?.configurable?.thread_id;
+
+  // Guard: skip if a spec generation is already running
+  if (threadId && isSpecInProgress(threadId)) {
+    console.log('[router] Spec generation already in progress - keeping changes pending');
+    return END;
+  }
+
   const accumulated = state.pendingSpecChanges || [];
   const { planThreshold, charThreshold } = getConsolidationThresholds(state);
   
@@ -100,20 +117,23 @@ function routeFromSpecPlan(state: typeof GameDesignState.State):
 
 /**
  * Routes after spec execution.
- * If there are narrative markers to generate, route to generate_narratives.
- * Otherwise, proceed to generate_diff.
+ * If there are narrative markers to generate, fan out via Send — one
+ * generate_narratives invocation per marker, all running in parallel.
+ * Otherwise, proceed directly to generate_diff.
  * 
  * @param state - Current graph state
- * @returns Next node to execute
+ * @returns Array of Send objects for parallel fan-out, or "generate_diff"
  */
 function routeFromSpecExecute(
   state: typeof GameDesignState.State
-): "generate_narratives" | "generate_diff" {
+): Send[] | "generate_diff" {
   const markersToUpdate = state.narrativesNeedingUpdate || [];
   
   if (markersToUpdate.length > 0) {
-    console.log(`[router] ${markersToUpdate.length} narrative markers found - generating narratives`);
-    return "generate_narratives";
+    console.log(`[router] ${markersToUpdate.length} narrative markers found - fanning out parallel generation`);
+    return markersToUpdate.map(
+      (markerKey) => new Send("generate_narratives", { narrativesNeedingUpdate: [markerKey] })
+    );
   }
   
   console.log('[router] No narrative markers - skipping narrative generation');

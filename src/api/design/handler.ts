@@ -35,6 +35,7 @@ import {
 } from "#chaincraft/ai/design/design-workflow.js";
 import { expandSpecification } from "#chaincraft/ai/design/expand-narratives.js";
 import { getAllDataSources } from "#chaincraft/ai/design/data-sources.js";
+import { isSpecInProgress } from "#chaincraft/events/game-creation-status-bus.js";
 import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
 
 /**
@@ -307,6 +308,14 @@ export async function handleGenerateSpec(
     if (!isActive) {
       reply.code(404).send({ error: "Conversation not found" });
       return Promise.reject();
+    }
+
+    // Guard: reject if a spec generation is already in progress
+    if (isSpecInProgress(conversationId)) {
+      return {
+        message: "Specification generation already in progress",
+        specUpdateInProgress: true,
+      };
     }
 
     // Trigger spec generation by calling continueDesignConversation

@@ -24,6 +24,7 @@ export interface GameCreationBus {
 
 const EVENT_KEY = 'status';
 const busMap = new Map<string, EventEmitter>();
+const specInProgressMap = new Map<string, boolean>();
 
 function makeInterface(emitter: EventEmitter): GameCreationBus {
   return {
@@ -45,6 +46,7 @@ export function getBus(gameId: string): GameCreationBus | undefined {
 /**
  * Returns the bus for the given gameId, creating one if it doesn't exist.
  * Call from the SSE handler before the client starts listening.
+ * If a spec generation is already in progress, emits a catch-up spec:started event.
  */
 export function getOrCreateBus(gameId: string): GameCreationBus {
   let emitter = busMap.get(gameId);
@@ -53,7 +55,12 @@ export function getOrCreateBus(gameId: string): GameCreationBus {
     emitter.setMaxListeners(20);
     busMap.set(gameId, emitter);
   }
-  return makeInterface(emitter);
+  const bus = makeInterface(emitter);
+  // Send catch-up event so late-connecting SSE clients know a spec gen is underway
+  if (specInProgressMap.get(gameId)) {
+    queueMicrotask(() => bus.emit({ type: 'spec:started' }));
+  }
+  return bus;
 }
 
 /**
@@ -61,4 +68,27 @@ export function getOrCreateBus(gameId: string): GameCreationBus {
  */
 export function removeBus(gameId: string): void {
   busMap.delete(gameId);
+}
+
+// ─── Spec-in-progress guard ─────────────────────────────────────────────────
+
+/**
+ * Marks a spec generation as in-progress for the given gameId.
+ */
+export function setSpecInProgress(gameId: string): void {
+  specInProgressMap.set(gameId, true);
+}
+
+/**
+ * Clears the in-progress flag for the given gameId.
+ */
+export function clearSpecInProgress(gameId: string): void {
+  specInProgressMap.delete(gameId);
+}
+
+/**
+ * Returns whether a spec generation is currently in-progress for the given gameId.
+ */
+export function isSpecInProgress(gameId: string): boolean {
+  return specInProgressMap.get(gameId) === true;
 }

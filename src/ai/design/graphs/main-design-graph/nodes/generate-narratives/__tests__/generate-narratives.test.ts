@@ -75,7 +75,7 @@ Players have limited resources and must manage fear levels.
     console.log("--- End Narrative ---\n");
   }, 60000);
   
-  it("should handle multiple markers", async () => {
+  it("should handle multiple markers via separate invocations", async () => {
     const skeleton = `
 # Card Game
 
@@ -86,33 +86,41 @@ Players have limited resources and must manage fear levels.
 !___ NARRATIVE:VICTORY_MESSAGES ___!
 `;
     
-    const state = createTestState({
+    const baseState = createTestState({
       currentSpec: {
         summary: "A strategic card game",
         playerCount: { min: 2, max: 4 },
         designSpecification: skeleton,
         version: 1,
       },
-      narrativesNeedingUpdate: ["FLAVOR_TEXT_STYLE", "VICTORY_MESSAGES"],
       narrativeStyleGuidance: "Epic fantasy theme with dramatic language",
     });
     
-    const result = await generateNarratives(state);
+    // Simulate parallel Send: each invocation gets one marker
+    const result1 = await generateNarratives({
+      ...baseState,
+      narrativesNeedingUpdate: ["FLAVOR_TEXT_STYLE"],
+    });
+    const result2 = await generateNarratives({
+      ...baseState,
+      narrativesNeedingUpdate: ["VICTORY_MESSAGES"],
+    });
     
     // Check both narratives were generated
-    expect(result.specNarratives?.FLAVOR_TEXT_STYLE).toBeDefined();
-    expect(result.specNarratives?.VICTORY_MESSAGES).toBeDefined();
+    expect(result1.specNarratives?.FLAVOR_TEXT_STYLE).toBeDefined();
+    expect(result2.specNarratives?.VICTORY_MESSAGES).toBeDefined();
     
     // Check both are substantial
-    expect(result.specNarratives?.FLAVOR_TEXT_STYLE.length).toBeGreaterThan(100);
-    expect(result.specNarratives?.VICTORY_MESSAGES.length).toBeGreaterThan(100);
+    expect(result1.specNarratives?.FLAVOR_TEXT_STYLE.length).toBeGreaterThan(100);
+    expect(result2.specNarratives?.VICTORY_MESSAGES.length).toBeGreaterThan(100);
     
     // Check markers cleared
-    expect(result.narrativesNeedingUpdate).toEqual([]);
+    expect(result1.narrativesNeedingUpdate).toEqual([]);
+    expect(result2.narrativesNeedingUpdate).toEqual([]);
     
     console.log("\n--- Generated Narratives ---");
-    console.log("FLAVOR_TEXT_STYLE:", result.specNarratives?.FLAVOR_TEXT_STYLE);
-    console.log("\nVICTORY_MESSAGES:", result.specNarratives?.VICTORY_MESSAGES);
+    console.log("FLAVOR_TEXT_STYLE:", result1.specNarratives?.FLAVOR_TEXT_STYLE);
+    console.log("\nVICTORY_MESSAGES:", result2.specNarratives?.VICTORY_MESSAGES);
     console.log("--- End Narratives ---\n");
   }, 90000);
   
@@ -129,8 +137,8 @@ Players have limited resources and must manage fear levels.
     
     const result = await generateNarratives(state);
     
-    // Should return empty object or minimal update
-    expect(result.narrativesNeedingUpdate).toEqual([]);
+    // Should return empty object (no specNarratives key)
+    expect(result.specNarratives).toBeUndefined();
   });
   
   it("should skip generation when no currentSpec", async () => {
@@ -140,8 +148,8 @@ Players have limited resources and must manage fear levels.
     
     const result = await generateNarratives(state);
     
-    // Should clear the markers list
-    expect(result.narrativesNeedingUpdate).toEqual([]);
+    // Should return empty object
+    expect(result.specNarratives).toBeUndefined();
   });
 });
 
