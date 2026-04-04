@@ -21,7 +21,7 @@ export type {
 
 export const CONSOLIDATION_DEFAULTS = {
   planThreshold: 5,
-  charThreshold: 2000,
+  charThreshold: 5000,
 } as const;
 
 export interface BlockchainAbi {
