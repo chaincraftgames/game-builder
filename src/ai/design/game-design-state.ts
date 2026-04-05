@@ -20,9 +20,13 @@ export type {
 };
 
 export const CONSOLIDATION_DEFAULTS = {
-  planThreshold: 5,
-  charThreshold: 5000,
-} as const;
+  /** Number of pending change plans before auto spec generation (env: SPEC_PLAN_THRESHOLD) */
+  planThreshold: parseInt(process.env.SPEC_PLAN_THRESHOLD || '3', 10),
+  /** Total character count of pending changes before auto spec generation (env: SPEC_CHAR_THRESHOLD) */
+  charThreshold: parseInt(process.env.SPEC_CHAR_THRESHOLD || '3000', 10),
+  /** Minimum message count before auto spec generation (env: SPEC_MIN_MESSAGE_COUNT, default: 4 = 1 user turn after initial prompt) */
+  minSpecMessageCount: parseInt(process.env.SPEC_MIN_MESSAGE_COUNT || '4', 10),
+};
 
 export interface BlockchainAbi {
   name: string;

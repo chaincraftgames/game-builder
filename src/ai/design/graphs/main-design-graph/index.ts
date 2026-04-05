@@ -11,9 +11,17 @@
  */
 
 import { StateGraph, START, END, Send } from "@langchain/langgraph";
-import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
+import { 
+  CONSOLIDATION_DEFAULTS, 
+  GameDesignState, 
+  getConsolidationThresholds 
+} from "#chaincraft/ai/design/game-design-state.js";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
-import { isSpecInProgress } from "#chaincraft/events/game-creation-status-bus.js";
+import { 
+  isSpecInProgress, 
+  clearSpecInProgress, 
+  getBus 
+} from "#chaincraft/events/game-creation-status-bus.js";
 import { setupSpecPlanModel, setupSpecExecuteModel, setupModel, setupConversationalAgentModel, setupNarrativeModel } from "#chaincraft/ai/model-config.js";
 import { createSpecPlan } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-plan/index.js";
 import { createSpecExecute } from "./nodes/spec-execute/index.js";
@@ -83,6 +91,17 @@ function routeFromSpecPlan(
     return END;
   }
 
+  // Guard: don't auto-execute until there are enough conversation turns.
+  // There isn't enough design information early on to justify a full spec generation.
+  // Users can still force-generate explicitly if they want.
+  // Configurable via SPEC_MIN_MESSAGE_COUNT env var (default: 4 = 2 turns).
+  const messageCount = state.messages?.length || 0;
+  const minMessages = CONSOLIDATION_DEFAULTS.minSpecMessageCount;
+  if (messageCount < minMessages && !state.forceSpecGeneration) {
+    console.log(`[router] Too few messages (${messageCount}/${minMessages}) - accumulating, not executing`);
+    return END;
+  }
+
   const accumulated = state.pendingSpecChanges || [];
   const { planThreshold, charThreshold } = getConsolidationThresholds(state);
   
@@ -132,7 +151,11 @@ function routeFromSpecExecute(
   if (markersToUpdate.length > 0) {
     console.log(`[router] ${markersToUpdate.length} narrative markers found - fanning out parallel generation`);
     return markersToUpdate.map(
-      (markerKey) => new Send("generate_narratives", { narrativesNeedingUpdate: [markerKey] })
+      (markerKey) => new Send("generate_narratives", {
+        narrativesNeedingUpdate: [markerKey],
+        currentSpec: state.currentSpec,
+        narrativeStyleGuidance: state.narrativeStyleGuidance,
+      })
     );
   }
   
@@ -153,6 +176,21 @@ function routeAfterSpecDiff(
   // TODO: Re-enable when metadata subgraph is implemented
   // return state.metadataUpdateNeeded ? "update_metadata" : END;
   return END;
+}
+
+/**
+ * Terminal node that fires spec:completed and clears the in-progress guard.
+ * Placed AFTER generate_diff so narratives have finished and been checkpointed.
+ */
+function createFinalizeSpec() {
+  return (state: typeof GameDesignState.State, config?: any) => {
+    const threadId = config?.configurable?.thread_id;
+    if (threadId) clearSpecInProgress(threadId);
+    const bus = getBus(threadId);
+    bus?.emit({ type: 'spec:completed' });
+    console.log('[finalize-spec] Emitted spec:completed and cleared in-progress flag');
+    return {};
+  };
 }
 
 /**
@@ -190,6 +228,7 @@ export async function createMainDesignGraph(
   workflow.addNode("execute_spec", specExecute);
   workflow.addNode("generate_narratives", generateNarratives);
   workflow.addNode("generate_diff", specDiff);
+  workflow.addNode("finalize_spec", createFinalizeSpec());
   
   // TODO: Metadata subgraph invocation
   // workflow.addNode("update_metadata", async (state) => {
@@ -204,7 +243,8 @@ export async function createMainDesignGraph(
   workflow.addConditionalEdges("plan_spec" as any, routeFromSpecPlan as any);
   workflow.addConditionalEdges("execute_spec" as any, routeFromSpecExecute as any);
   workflow.addEdge("generate_narratives" as any, "generate_diff" as any);
-  workflow.addConditionalEdges("generate_diff" as any, routeAfterSpecDiff as any);
+  workflow.addEdge("generate_diff" as any, "finalize_spec" as any);
+  workflow.addConditionalEdges("finalize_spec" as any, routeAfterSpecDiff as any);
   // workflow.addEdge("update_metadata" as any, END);
   
   console.log("[MainDesignGraph] Graph compiled successfully");

@@ -182,8 +182,8 @@ export function createSpecExecute(model: ModelWithOptions) {
 
     // 10. Return state updates
     console.log('[spec-execute] Node completed successfully - returning state updates');
-    if (threadId) clearSpecInProgress(threadId);
-    bus?.emit({ type: 'spec:completed' });
+    // Note: spec:completed and clearSpecInProgress are handled by finalize_spec
+    // node which runs AFTER narrative generation and diff are complete.
     return {
       currentSpec: spec,
       updatedSpec: spec, // Store in updatedSpec for diff comparison
