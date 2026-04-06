@@ -36,7 +36,7 @@ export type SchemaOp = z.infer<typeof SchemaOpSchema>;
 // ─── Coordinator Output Schema ───
 
 export const ArtifactChangeSchema = z.object({
-  artifact: z.enum(['schema', 'transitions', 'instructions']).describe(
+  artifact: z.enum(['schema', 'transitions', 'instructions', 'mechanics']).describe(
     'Which artifact type needs to be changed'
   ),
   operation: z.enum(['patch', 'reextract']).describe(
@@ -47,7 +47,8 @@ export const ArtifactChangeSchema = z.object({
     'For patches: the specific fragment to edit. ' +
     'Schema: field name (e.g. "game.battleNarrative"). ' +
     'Transitions: transition ID (e.g. "narrative_displayed"). ' +
-    'Instructions: "transitions.<transitionId>" or "playerPhases.<phaseName>.<actionId>"'
+    'Instructions: "transitions.<transitionId>" or "playerPhases.<phaseName>.<actionId>". ' +
+    'Mechanics: mechanic ID (e.g. "resolve_round_outcome")'
   ),
   description: z.string().describe(
     'Natural language description of what to change. ' +
@@ -88,4 +89,8 @@ export interface CoordinatorInput {
   stateTransitions: string;
   playerPhaseInstructions: string;
   transitionInstructions: string;
+  /** Generated mechanic code keyed by mechanic ID (optional — only when mechanics exist) */
+  generatedMechanics?: Record<string, string>;
+  /** TypeScript interfaces for schema context (optional — only when mechanics exist) */
+  stateInterfaces?: string;
 }

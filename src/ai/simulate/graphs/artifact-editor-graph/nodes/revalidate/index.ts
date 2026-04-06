@@ -4,10 +4,11 @@
  * Deterministic node (no LLM) that re-runs validation against the
  * patched artifacts to check if errors have been resolved.
  *
- * Runs two validation layers:
+ * Runs three validation layers:
  *   1. Structural: validateTransitions() from validate-transitions node
  *   2. Semantic: pure validator cores from extract-instructions
  *      (deadlock detection, precondition coverage, path structure, etc.)
+ *   3. Mechanics: in-memory tsc compilation of generated mechanic code
  */
 
 import {
@@ -25,7 +26,8 @@ import {
 } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/validator-cores.js';
 import type { InstructionsArtifact, TransitionsArtifact } from '#chaincraft/ai/simulate/schema.js';
 import type { SpecProcessingStateType } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js';
-import type { ArtifactEditorStateType } from '../../artifact-editor-state.js';
+import { validateMechanics } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/tsc-validator.js';
+import type { ArtifactEditorStateType } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/artifact-editor-state.js';
 
 /**
  * Build an InstructionsArtifact from editor state fields.
@@ -125,7 +127,22 @@ export function createRevalidateNode() {
       }
     }
 
-    // ── Deduplicate errors (structural + semantic may overlap) ──
+    // ── Layer 3: Mechanics validation (tsc) ──
+    const hasMechanics = Object.keys(state.generatedMechanics ?? {}).length > 0;
+    if (hasMechanics && state.stateInterfaces) {
+      const tscResult = validateMechanics(state.stateInterfaces, state.generatedMechanics);
+      if (!tscResult.valid) {
+        const tscErrors = tscResult.errors.map(e =>
+          `TS${e.code} in ${e.mechanicId} (line ${e.line}, col ${e.column}): ${e.message}`
+        );
+        allErrors.push(...tscErrors);
+        console.log(`[ArtifactEditor:revalidate] ${tscErrors.length} tsc error(s) in mechanics`);
+      } else {
+        console.log(`[ArtifactEditor:revalidate] ✓ All mechanics pass tsc validation`);
+      }
+    }
+
+    // ── Deduplicate errors (structural + semantic + tsc may overlap) ──
     const uniqueErrors = [...new Set(allErrors)];
 
     // ── Log results ──

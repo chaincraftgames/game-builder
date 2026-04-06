@@ -19,13 +19,17 @@ game artifact extraction and produce a change plan.
   - Transition instructions (transitionInstructions): keyed by transition ID, define automatic state changes
   - Player phase instructions (playerPhaseInstructions): keyed by phase name, contain player actions with validation and stateDelta
 
-## Artifact Dependencies
+- **Mechanics**: Generated TypeScript code that implements game logic for transitions with mechanicsGuidance. Each mechanic is a typed async function that receives game state (typed against schema-derived interfaces) and returns state mutations. Validated by tsc — type errors indicate either code bugs or schema gaps.
 
-  Schema ← Transitions (preconditions reference schema fields)
-  Schema ← Instructions (stateDelta ops reference schema fields)
-  Transitions ← Instructions (transition IDs, phase names must match)
+## Artifact Dependencies (upstream → downstream)
 
-Changes to Schema may require cascading changes to Transitions and/or Instructions. Changes to Transitions may require cascading changes to Instructions. Changes to Instructions are typically self-contained.
+  Schema → Transitions (preconditions reference schema fields)
+  Schema → Instructions (stateDelta ops reference schema fields)
+  Schema → State Interfaces (deterministic, auto-regenerated) → Mechanics (typed against interfaces)
+  Transitions → Instructions (transition IDs, phase names must match)
+  Instructions → Mechanics (mechanicsGuidance is the plan that mechanics implement)
+
+Changes to Schema may require cascading changes to Transitions, Instructions, and/or Mechanics (schema changes auto-regenerate interfaces, which may invalidate mechanics — tsc catches this). Changes to Transitions may require cascading changes to Instructions. Changes to Instructions may require mechanics regeneration (if the plan changed). Changes to Mechanics are typically self-contained (code fix only) unless the root cause is a schema gap.
 
 ## Common Fix Patterns
 
@@ -108,6 +112,30 @@ Changes to Schema may require cascading changes to Transitions and/or Instructio
 - Artifacts affected: instructions only
 - Confidence: MEDIUM (reextract is heavier but necessary when instructions are empty)
 
+### Pattern 11: Field access on nonexistent schema field (TS2339/TS2551)
+- Error: "TS2339 in <mechanicId>: Property 'X' does not exist on type 'PlayerState'" or similar TS2551 suggestion
+- Root cause: Generated mechanic code references a field not in the schema. Two possible causes:
+  1. The game spec implies the field should exist but schema extraction missed it → add field to schema (cascades: regen interfaces → regen mechanic)
+  2. The code has a typo or uses the wrong field name → regenerate the mechanic only
+- Fix strategy: Read the game specification. If the field is semantically needed (game rules require it), use approach 1 (add to schema + regenerate mechanic). If it looks like a typo or the correct field exists under a different name, use approach 2 (regenerate mechanic with error context).
+- Artifacts affected: schema + mechanics (approach 1), OR mechanics only (approach 2)
+- Confidence: HIGH (tsc provides exact field name; TS2551 sometimes suggests the correct spelling)
+
+### Pattern 12: Return type mismatch (TS2322)
+- Error: "TS2322 in <mechanicId>: Type 'X' is not assignable to type 'Y'"
+- Root cause: Generated mechanic returns a value of the wrong type for a state field (e.g., string instead of number)
+- Fix: Regenerate the mechanic with the tsc error as context. The mechanic code needs to produce values matching the schema-derived interface types.
+- Artifacts affected: mechanics only
+- Confidence: HIGH
+
+### Pattern 13: Mechanic logic doesn't match plan
+- Error: Semantic failure — mechanic code doesn't implement the behavior described in mechanicsGuidance or game specification
+- Root cause analysis: Compare the mechanic code against BOTH the mechanicsGuidance "computation" field AND the "rules" array. The "computation" field is the primary implementation spec that the code generator follows — "rules" provide constraints but the generator relies most heavily on "computation" for implementation decisions.
+  - If the "computation" field is vague, incomplete, or missing a constraint that "rules" or the game spec require, the **instructions are the root cause** — the plan under-specified the implementation. Fix instructions first.
+  - If the "computation" is clear and complete but the code simply implemented it incorrectly, the **mechanics are the root cause** — fix the code.
+- Artifacts affected: instructions + mechanics (if plan is under-specified), or mechanics only (if plan is clear)
+- Confidence: MEDIUM
+
 ## Schema Operations (schemaOps)
 
 When your plan includes schema changes (artifact="schema"), you MUST also populate the \`schemaOps\` array with structured operations. Schema changes are applied deterministically — no LLM is used.
@@ -143,7 +171,7 @@ Every \`schemaOps\` entry must correspond to a change with \`artifact="schema"\`
 ## Rules
 
 1. Produce the MINIMUM set of changes to resolve all errors
-2. Order changes respecting dependencies: schema → transitions → instructions
+2. Order changes respecting dependencies: schema → transitions → instructions → mechanics
 3. If multiple errors share a root cause, produce ONE change that fixes all
 4. Prefer 'patch' over 'reextract' — surgical fixes are cheaper and safer
 5. Use 'reextract' only when the artifact has fundamental structural problems (multiple unreachable phases, completely wrong phase model, or empty artifacts that need full generation)
@@ -151,4 +179,7 @@ Every \`schemaOps\` entry must correspond to a change with \`artifact="schema"\`
 7. Each change description should say WHAT to change in natural language, not HOW (the editor knows the syntax)
 8. When instructions are empty ({}) but transitions exist, use 'reextract' for instructions — there's nothing to patch
 9. Read the game specification carefully — it defines the game's intent. Not all validation warnings require code changes (e.g., isGameWinner warnings for no-winner games).
-10. When any change has artifact="schema", you MUST populate schemaOps with the corresponding structured operations. Schema editing is deterministic — the schemaOps array is the only way schema changes are applied.`;
+10. When any change has artifact="schema", you MUST populate schemaOps with the corresponding structured operations. Schema editing is deterministic — the schemaOps array is the only way schema changes are applied.
+11. For mechanics errors (TS2339/TS2551/TS2322): use artifact="mechanics", operation="patch" with the mechanic ID as fragmentAddress. If the root cause is a missing schema field, also include a schema change (with schemaOps) BEFORE the mechanics change.
+12. For mechanics 'reextract': regenerates the mechanic from scratch using the instructions plan. Use when the code is fundamentally wrong, not just a type error.
+13. UPSTREAM-FIRST PRINCIPLE: Downstream artifacts (mechanics) are regenerated from upstream artifacts (instructions, schema) each time the pipeline runs. If a failure could be caused by an upstream artifact being vague, incomplete, or incorrect, you MUST fix the upstream artifact — even if you could also fix the downstream artifact directly. A downstream-only fix will be lost the next time artifacts are regenerated, and the same problem will recur. When the root cause is ambiguous between upstream and downstream, ALWAYS fix upstream first. After upstream is corrected, downstream artifacts will be regenerated and may self-heal; if they don't, they can be repaired in a subsequent pass. Concretely for mechanics: the code generator follows the mechanicsGuidance "computation" field as its primary implementation spec. If the "computation" is missing a constraint or algorithm detail that would have prevented the error, the instructions must be patched to make "computation" explicit — even if the "rules" array already hints at the requirement. Rules alone are insufficient; the computation must operationalize them.`;
