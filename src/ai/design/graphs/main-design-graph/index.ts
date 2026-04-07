@@ -10,9 +10,18 @@
  * Client layers (REST API, Discord bot, web UI) handle formatting.
  */
 
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { GameDesignState, getConsolidationThresholds } from "#chaincraft/ai/design/game-design-state.js";
+import { StateGraph, START, END, Send } from "@langchain/langgraph";
+import { 
+  CONSOLIDATION_DEFAULTS, 
+  GameDesignState, 
+  getConsolidationThresholds 
+} from "#chaincraft/ai/design/game-design-state.js";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
+import { 
+  isSpecInProgress, 
+  clearSpecInProgress, 
+  getBus 
+} from "#chaincraft/events/game-creation-status-bus.js";
 import { setupSpecPlanModel, setupSpecExecuteModel, setupModel, setupConversationalAgentModel, setupNarrativeModel } from "#chaincraft/ai/model-config.js";
 import { createSpecPlan } from "#chaincraft/ai/design/graphs/main-design-graph/nodes/spec-plan/index.js";
 import { createSpecExecute } from "./nodes/spec-execute/index.js";
@@ -32,9 +41,15 @@ import { buildPlatformCapabilities } from "#chaincraft/ai/design/platform-capabi
  * @returns Next node to execute
  */
 function routeFromStart(
-  state: typeof GameDesignState.State
-): "conversation" | "execute_spec" {
+  state: typeof GameDesignState.State,
+  config?: any
+): "conversation" | "execute_spec" | typeof END {
   if (state.forceSpecGeneration) {
+    const threadId = config?.configurable?.thread_id;
+    if (threadId && isSpecInProgress(threadId)) {
+      console.log("[routeFromStart] forceSpecGeneration requested but spec already in progress - skipping");
+      return END;
+    }
     console.log("[routeFromStart] forceSpecGeneration detected - routing to execute_spec");
     return "execute_spec";
   }
@@ -64,8 +79,29 @@ function routeFromConversation(
   }
 }
 
-function routeFromSpecPlan(state: typeof GameDesignState.State): 
-  "execute_spec" | typeof END {
+function routeFromSpecPlan(
+  state: typeof GameDesignState.State,
+  config?: any
+): "execute_spec" | typeof END {
+  const threadId = config?.configurable?.thread_id;
+
+  // Guard: skip if a spec generation is already running
+  if (threadId && isSpecInProgress(threadId)) {
+    console.log('[router] Spec generation already in progress - keeping changes pending');
+    return END;
+  }
+
+  // Guard: don't auto-execute until there are enough conversation turns.
+  // There isn't enough design information early on to justify a full spec generation.
+  // Users can still force-generate explicitly if they want.
+  // Configurable via SPEC_MIN_MESSAGE_COUNT env var (default: 4 = 2 turns).
+  const messageCount = state.messages?.length || 0;
+  const minMessages = CONSOLIDATION_DEFAULTS.minSpecMessageCount;
+  if (messageCount < minMessages && !state.forceSpecGeneration) {
+    console.log(`[router] Too few messages (${messageCount}/${minMessages}) - accumulating, not executing`);
+    return END;
+  }
+
   const accumulated = state.pendingSpecChanges || [];
   const { planThreshold, charThreshold } = getConsolidationThresholds(state);
   
@@ -100,20 +136,27 @@ function routeFromSpecPlan(state: typeof GameDesignState.State):
 
 /**
  * Routes after spec execution.
- * If there are narrative markers to generate, route to generate_narratives.
- * Otherwise, proceed to generate_diff.
+ * If there are narrative markers to generate, fan out via Send — one
+ * generate_narratives invocation per marker, all running in parallel.
+ * Otherwise, proceed directly to generate_diff.
  * 
  * @param state - Current graph state
- * @returns Next node to execute
+ * @returns Array of Send objects for parallel fan-out, or "generate_diff"
  */
 function routeFromSpecExecute(
   state: typeof GameDesignState.State
-): "generate_narratives" | "generate_diff" {
+): Send[] | "generate_diff" {
   const markersToUpdate = state.narrativesNeedingUpdate || [];
   
   if (markersToUpdate.length > 0) {
-    console.log(`[router] ${markersToUpdate.length} narrative markers found - generating narratives`);
-    return "generate_narratives";
+    console.log(`[router] ${markersToUpdate.length} narrative markers found - fanning out parallel generation`);
+    return markersToUpdate.map(
+      (markerKey) => new Send("generate_narratives", {
+        narrativesNeedingUpdate: [markerKey],
+        currentSpec: state.currentSpec,
+        narrativeStyleGuidance: state.narrativeStyleGuidance,
+      })
+    );
   }
   
   console.log('[router] No narrative markers - skipping narrative generation');
@@ -133,6 +176,21 @@ function routeAfterSpecDiff(
   // TODO: Re-enable when metadata subgraph is implemented
   // return state.metadataUpdateNeeded ? "update_metadata" : END;
   return END;
+}
+
+/**
+ * Terminal node that fires spec:completed and clears the in-progress guard.
+ * Placed AFTER generate_diff so narratives have finished and been checkpointed.
+ */
+function createFinalizeSpec() {
+  return (state: typeof GameDesignState.State, config?: any) => {
+    const threadId = config?.configurable?.thread_id;
+    if (threadId) clearSpecInProgress(threadId);
+    const bus = getBus(threadId);
+    bus?.emit({ type: 'spec:completed' });
+    console.log('[finalize-spec] Emitted spec:completed and cleared in-progress flag');
+    return {};
+  };
 }
 
 /**
@@ -170,6 +228,7 @@ export async function createMainDesignGraph(
   workflow.addNode("execute_spec", specExecute);
   workflow.addNode("generate_narratives", generateNarratives);
   workflow.addNode("generate_diff", specDiff);
+  workflow.addNode("finalize_spec", createFinalizeSpec());
   
   // TODO: Metadata subgraph invocation
   // workflow.addNode("update_metadata", async (state) => {
@@ -184,7 +243,8 @@ export async function createMainDesignGraph(
   workflow.addConditionalEdges("plan_spec" as any, routeFromSpecPlan as any);
   workflow.addConditionalEdges("execute_spec" as any, routeFromSpecExecute as any);
   workflow.addEdge("generate_narratives" as any, "generate_diff" as any);
-  workflow.addConditionalEdges("generate_diff" as any, routeAfterSpecDiff as any);
+  workflow.addEdge("generate_diff" as any, "finalize_spec" as any);
+  workflow.addConditionalEdges("finalize_spec" as any, routeAfterSpecDiff as any);
   // workflow.addEdge("update_metadata" as any, END);
   
   console.log("[MainDesignGraph] Graph compiled successfully");

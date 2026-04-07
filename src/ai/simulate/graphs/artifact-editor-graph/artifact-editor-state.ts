@@ -59,6 +59,18 @@ export const ArtifactEditorState = Annotation.Root({
     default: () => ({}),
   }),
 
+  /** Generated mechanic code keyed by mechanic ID (e.g. transitionId → TypeScript source) */
+  generatedMechanics: Annotation<Record<string, string>>({
+    reducer: (a, b) => ({ ...a, ...b }),
+    default: () => ({}),
+  }),
+
+  /** TypeScript interfaces generated from schema (for tsc validation context) */
+  stateInterfaces: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => '',
+  }),
+
   // ─── Coordinator Output ───
 
   /** The change plan produced by the coordinator */

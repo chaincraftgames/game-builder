@@ -61,6 +61,19 @@ export function buildCoordinatorSystemPrompt(state: ArtifactEditorStateType): st
     ? `\nPREVIOUS EDIT FAILURES (these changes were attempted but FAILED — choose a different strategy):\n${state.editFailures.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : '';
 
+  // Build mechanics context (only included when mechanics are present)
+  let mechanicsSection = '';
+  const mechanics = state.generatedMechanics;
+  if (mechanics && Object.keys(mechanics).length > 0) {
+    const mechanicIds = Object.keys(mechanics);
+    const lines: string[] = [`Generated mechanics (${mechanicIds.length}):`];
+    for (const id of mechanicIds) {
+      const code = mechanics[id];
+      lines.push(`\n--- ${id} ---\n${code}`);
+    }
+    mechanicsSection = `\n${lines.join('\n')}\n`;
+  }
+
   return `${COORDINATOR_SYSTEM_PROMPT}
 
 ## Current Task
@@ -77,7 +90,7 @@ Schema fields: ${state.schemaFields}
 ${transitionsSummary}
 
 Instruction coverage: ${instructionCoverage}
-
+${mechanicsSection}
 Produce a ChangePlan to resolve all validation errors.`;
 }
 
@@ -97,6 +110,8 @@ export async function invokeCoordinator(
     transitionInstructions: input.transitionInstructions === '{}'
       ? {}
       : JSON.parse(input.transitionInstructions),
+    generatedMechanics: input.generatedMechanics ?? {},
+    stateInterfaces: input.stateInterfaces ?? '',
     changePlan: null,
     attemptNumber: 0,
     changesApplied: [],

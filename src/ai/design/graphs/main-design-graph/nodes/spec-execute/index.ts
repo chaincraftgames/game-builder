@@ -10,6 +10,7 @@ import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import type { GameDesignState, GameDesignSpecification } from "#chaincraft/ai/design/game-design-state.js";
 import { SYSTEM_PROMPT, getPreservationGuidance } from "./prompts.js";
 import { getBus } from "#chaincraft/events/game-creation-status-bus.js";
+import { setSpecInProgress, clearSpecInProgress } from "#chaincraft/events/game-creation-status-bus.js";
 
 /**
  * Extracts all narrative markers from a skeleton specification.
@@ -78,8 +79,10 @@ export function createSpecExecute(model: ModelWithOptions) {
   
   return async (state: typeof GameDesignState.State, config?: any) => {
     console.log('[spec-execute] Node started');
-    const bus = getBus(config?.configurable?.thread_id);
+    const threadId = config?.configurable?.thread_id;
+    const bus = getBus(threadId);
     
+    if (threadId) setSpecInProgress(threadId);
     try {
       // 1. Get the pending spec changes from state
       const pendingPlans = state.pendingSpecChanges || [];
@@ -179,7 +182,8 @@ export function createSpecExecute(model: ModelWithOptions) {
 
     // 10. Return state updates
     console.log('[spec-execute] Node completed successfully - returning state updates');
-    bus?.emit({ type: 'spec:completed' });
+    // Note: spec:completed and clearSpecInProgress are handled by finalize_spec
+    // node which runs AFTER narrative generation and diff are complete.
     return {
       currentSpec: spec,
       updatedSpec: spec, // Store in updatedSpec for diff comparison
@@ -200,6 +204,7 @@ export function createSpecExecute(model: ModelWithOptions) {
         messageCount: state.messages?.length || 0
       });
       console.error('[spec-execute] ====================================');
+      if (threadId) clearSpecInProgress(threadId);
       throw error; // Re-throw to fail the graph execution
     }
   };

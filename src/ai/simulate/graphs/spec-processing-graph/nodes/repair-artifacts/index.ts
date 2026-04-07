@@ -19,9 +19,7 @@ import type { SpecProcessingStateType } from '#chaincraft/ai/simulate/graphs/spe
 import { getFromStore, type GraphConfigWithStore } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js';
 import { resolvePositionalPlayerTemplates } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/utils.js';
 import type { InstructionsArtifact } from '#chaincraft/ai/simulate/schema.js';
-import { createMechanicsGraph, buildMechanicTargets } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/index.js';
 import { generateStateInterfaces } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/generate-state-interfaces.js';
-import type { MechanicTarget } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/schema.js';
 
 // ─── Helpers ───
 
@@ -303,13 +301,11 @@ export function createRepairArtifactsNode() {
 /**
  * Create a repair node for mechanics tsc validation failures.
  *
- * Re-invokes the mechanics generation subgraph with error-enriched targets
- * for failed mechanics only. The LLM receives its prior code + tsc errors
- * and regenerates a corrected version.
- *
- * This handles simple tsc errors (TS2339, TS2322, TS2345). Cross-artifact
- * errors (schema missing fields needed by mechanics) require the full
- * coordinator-driven artifact editor flow (future work).
+ * Invokes the full artifact editor graph with mechanics errors. The
+ * coordinator diagnoses whether errors are code bugs (fix mechanics),
+ * schema gaps (fix schema + regenerate), or instruction ambiguities
+ * (fix instructions + regenerate).  This replaces the old simple-retry
+ * approach that bypassed the coordinator.
  */
 export function createRepairMechanicsNode() {
   return async (
@@ -324,48 +320,22 @@ export function createRepairMechanicsNode() {
 
     const generatedMechanics = state.generatedMechanics ?? {};
 
-    console.log(`[RepairMechanics] ${errors.length} mechanic(s) with tsc errors, rebuilding targets`);
+    // Format tsc errors as human-readable strings for the coordinator
+    const formattedErrors: string[] = [];
+    for (const mechanicError of errors) {
+      for (const e of mechanicError.errors) {
+        formattedErrors.push(
+          `TS${e.code} in ${e.mechanicId} (line ${e.line}, col ${e.column}): ${e.message}`,
+        );
+      }
+    }
 
-    // Build the original targets so we can find the ones that failed
-    const allTargets = buildMechanicTargets(
-      state.transitionInstructions || {},
-      state.playerPhaseInstructions || {},
+    console.log(
+      `[RepairMechanics] Invoking artifact editor for ${formattedErrors.length} tsc error(s) ` +
+        `across ${errors.length} mechanic(s)`,
     );
 
-    // Build repair targets — only for failed mechanics, enriched with error context
-    const failedIds = new Set(errors.map(e => e.mechanicId));
-    const repairTargets: MechanicTarget[] = [];
-
-    for (const mechanicError of errors) {
-      const originalTarget = allTargets.find(t => t.id === mechanicError.mechanicId);
-      if (!originalTarget) {
-        console.warn(`[RepairMechanics] No original target found for failed mechanic: ${mechanicError.mechanicId}`);
-        continue;
-      }
-
-      const previousCode = generatedMechanics[mechanicError.mechanicId];
-      if (!previousCode) {
-        console.warn(`[RepairMechanics] No previous code found for: ${mechanicError.mechanicId}`);
-        continue;
-      }
-
-      repairTargets.push({
-        ...originalTarget,
-        repairContext: {
-          previousCode,
-          tscErrors: mechanicError.errors.map(e =>
-            `TS${e.code} (line ${e.line}, col ${e.column}): ${e.message}`
-          ),
-        },
-      });
-    }
-
-    if (repairTargets.length === 0) {
-      console.warn('[RepairMechanics] Could not build repair targets');
-      return {};
-    }
-
-    // Generate fresh interfaces from current schema
+    // Generate stateInterfaces from current schema
     if (!state.stateSchema) {
       console.error('[RepairMechanics] No stateSchema available');
       return {};
@@ -374,35 +344,50 @@ export function createRepairMechanicsNode() {
     const fields: GameStateField[] = JSON.parse(state.stateSchema);
     const stateInterfaces = generateStateInterfaces(fields);
 
-    console.log(
-      `[RepairMechanics] Invoking mechanics subgraph for ${repairTargets.length} repair target(s): ` +
-      repairTargets.map(t => t.id).join(', '),
-    );
+    const graph = await createArtifactEditorGraph();
+    const threadId = config?.configurable?.thread_id || 'repair-mechanics';
+    const graphConfig = createArtifactEditorGraphConfig(`${threadId}-repair-mechanics`);
 
-    const mechanicsGraph = await createMechanicsGraph();
-    const result = await mechanicsGraph.invoke({
-      targets: repairTargets,
+    const editorInput = {
+      gameSpecification: state.gameSpecification,
+      errors: formattedErrors,
+      schemaFields: deriveSchemaFieldsSummary(state.stateSchema),
+      stateSchema: state.stateSchema,
+      stateTransitions: state.stateTransitions,
+      playerPhaseInstructions: parseInstructionMap(state.playerPhaseInstructions ?? {}),
+      transitionInstructions: parseInstructionMap(state.transitionInstructions ?? {}),
+      generatedMechanics,
       stateInterfaces,
-      existingCode: generatedMechanics,
-    }, config);
+    };
 
-    // Merge repaired mechanics into existing (keep successful ones from first pass)
-    const mergedMechanics = { ...generatedMechanics, ...result.generatedMechanics };
+    const result = await graph.invoke(editorInput, graphConfig);
 
-    if (result.mechanicsErrors.length === 0) {
-      console.log('[RepairMechanics] ✓ All mechanics repaired successfully');
+    if (result.editSucceeded) {
+      console.log('[RepairMechanics] ✓ Repair succeeded');
       return {
-        generatedMechanics: mergedMechanics,
+        generatedMechanics: result.generatedMechanics ?? generatedMechanics,
         mechanicsErrors: [],
+        // Propagate any cross-artifact fixes the coordinator made
+        stateSchema: result.stateSchema || state.stateSchema,
+        stateTransitions: result.stateTransitions || state.stateTransitions,
+        playerPhaseInstructions: serializeInstructionMap(
+          (result.playerPhaseInstructions ?? {}) as Record<string, unknown>,
+        ),
+        transitionInstructions: serializeInstructionMap(
+          (result.transitionInstructions ?? {}) as Record<string, unknown>,
+        ),
       };
     }
 
     console.warn(
-      `[RepairMechanics] ✗ ${result.mechanicsErrors.length} mechanic(s) still have errors after repair`,
+      `[RepairMechanics] ✗ Repair failed, ${result.remainingErrors?.length ?? 0} error(s) remain`,
     );
+
+    // Merge any partially repaired mechanics back in
+    const mergedMechanics = { ...generatedMechanics, ...(result.generatedMechanics ?? {}) };
     return {
       generatedMechanics: mergedMechanics,
-      mechanicsErrors: result.mechanicsErrors,
+      mechanicsErrors: errors, // Keep original errors — repair didn't fully resolve
     };
   };
 }

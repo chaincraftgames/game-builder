@@ -6,10 +6,10 @@
  * nodes to apply patches. Supports a retry loop if errors remain.
  *
  * Flow:
- *   START → coordinator → edit_schema → edit_transitions → edit_instructions → revalidate
- *                                                                                 ↓
- *                                                                           coordinator (retry)
- *                                                                           or END (done)
+ *   START → coordinator → edit_schema → edit_transitions → edit_instructions → edit_mechanics → revalidate
+ *                                                                                                   ↓
+ *                                                                                             coordinator (retry)
+ *                                                                                             or END (done)
  *
  * Each edit node is skippable — if the coordinator's ChangePlan has no
  * changes for that artifact type, the node returns {} (no state change).
@@ -23,13 +23,14 @@ import {
   setupArtifactEditorCoordinatorModel,
   setupArtifactEditorModel,
 } from '#chaincraft/ai/model-config.js';
-import { ArtifactEditorState } from './artifact-editor-state.js';
-import { MAX_EDIT_ATTEMPTS } from './node-shared.js';
-import { createCoordinatorNode } from './nodes/coordinator/index.js';
-import { createEditSchemaNode } from './nodes/edit-schema/index.js';
-import { createEditTransitionsNode } from './nodes/edit-transitions/index.js';
-import { createEditInstructionsNode } from './nodes/edit-instructions/index.js';
-import { createRevalidateNode } from './nodes/revalidate/index.js';
+import { ArtifactEditorState } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/artifact-editor-state.js';
+import { MAX_EDIT_ATTEMPTS } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/node-shared.js';
+import { createCoordinatorNode } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/nodes/coordinator/index.js';
+import { createEditSchemaNode } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/nodes/edit-schema/index.js';
+import { createEditTransitionsNode } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/nodes/edit-transitions/index.js';
+import { createEditInstructionsNode } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/nodes/edit-instructions/index.js';
+import { createEditMechanicsNode } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/nodes/edit-mechanics/index.js';
+import { createRevalidateNode } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/nodes/revalidate/index.js';
 
 /**
  * Creates and compiles the artifact editor subgraph.
@@ -49,6 +50,7 @@ export async function createArtifactEditorGraph() {
   const editSchemaNode = createEditSchemaNode();
   const editTransitionsNode = createEditTransitionsNode(editorModel);
   const editInstructionsNode = createEditInstructionsNode(editorModel);
+  const editMechanicsNode = createEditMechanicsNode();
   const revalidateNode = createRevalidateNode();
 
   // Add nodes
@@ -56,6 +58,7 @@ export async function createArtifactEditorGraph() {
   workflow.addNode('edit_schema', editSchemaNode);
   workflow.addNode('edit_transitions', editTransitionsNode);
   workflow.addNode('edit_instructions', editInstructionsNode);
+  workflow.addNode('edit_mechanics', editMechanicsNode);
   workflow.addNode('revalidate', revalidateNode);
 
   // ─── Edges ───
@@ -69,7 +72,8 @@ export async function createArtifactEditorGraph() {
   workflow.addEdge('coordinator' as any, 'edit_schema' as any);
   workflow.addEdge('edit_schema' as any, 'edit_transitions' as any);
   workflow.addEdge('edit_transitions' as any, 'edit_instructions' as any);
-  workflow.addEdge('edit_instructions' as any, 'revalidate' as any);
+  workflow.addEdge('edit_instructions' as any, 'edit_mechanics' as any);
+  workflow.addEdge('edit_mechanics' as any, 'revalidate' as any);
 
   // revalidate → END (if succeeded or max attempts), coordinator (retry)
   workflow.addConditionalEdges(
