@@ -51,9 +51,40 @@ export function reversePlayerMapping(mapping: PlayerMapping): Record<string, str
 }
 
 /**
+ * Recursively walk an object and replace any string value that appears as a
+ * key in `valueMap` with the corresponding mapped value.
+ *
+ * Used to translate player UUIDs ↔ aliases embedded inside game-state
+ * objects (e.g. game.currentBidderPlayerId, game.challengerPlayerId).
+ * Arrays and nested objects are traversed depth-first.
+ * Non-string scalar values (numbers, booleans, null) are returned unchanged.
+ */
+export function translateValuesDeep(obj: unknown, valueMap: Record<string, string>): unknown {
+  if (typeof obj === 'string') {
+    return valueMap[obj] ?? obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => translateValuesDeep(item, valueMap));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(
+        ([k, v]) => [k, translateValuesDeep(v, valueMap)]
+      )
+    );
+  }
+  return obj;
+}
+
+/**
  * Transform game state from canonical (UUID keys) to aliased (player1, player2, ... keys).
  * Used before passing state to LLM.
- * 
+ *
+ * In addition to renaming the player-keyed entries in `state.players`, this also
+ * replaces any UUID *values* embedded inside `state.game` (e.g. `currentBidderPlayerId`)
+ * with their corresponding aliases so that generated mechanic code sees a fully
+ * aliased picture of the world.
+ *
  * @param state - Canonical game state with UUID player keys
  * @param mapping - Player mapping (alias -> UUID)
  * @returns Aliased game state with player1, player2, ... player keys
@@ -65,7 +96,7 @@ export function transformStateToAliases(
   const reverseMap = reversePlayerMapping(mapping);
   
   return {
-    game: state.game,
+    game: translateValuesDeep(state.game, reverseMap) as BaseRuntimeState['game'],
     players: Object.fromEntries(
       Object.entries(state.players || {}).map(([uuid, playerState]) => {
         const alias = reverseMap[uuid];
@@ -82,7 +113,11 @@ export function transformStateToAliases(
 /**
  * Transform game state from aliased (player1, player2, ... keys) to canonical (UUID keys).
  * Used after receiving state from LLM.
- * 
+ *
+ * In addition to restoring UUID keys in `state.players`, this also replaces any alias
+ * *values* embedded inside `state.game` (e.g. `currentBidderPlayerId = "player1"`) back
+ * to their canonical UUIDs.
+ *
  * @param state - Aliased game state with player1, player2, ... player keys
  * @param mapping - Player mapping (alias -> UUID)
  * @returns Canonical game state with UUID player keys
@@ -92,7 +127,7 @@ export function transformStateFromAliases(
   mapping: PlayerMapping
 ): BaseRuntimeState {
   return {
-    game: state.game,
+    game: translateValuesDeep(state.game, mapping) as BaseRuntimeState['game'],
     players: Object.fromEntries(
       Object.entries(state.players || {}).map(([alias, playerState]) => {
         const uuid = mapping[alias];

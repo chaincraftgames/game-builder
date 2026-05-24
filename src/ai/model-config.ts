@@ -47,6 +47,8 @@ Your response MUST be valid JSON matching the provided schema.
 }
 
 This applies to ALL nested structures - arrays of objects, objects containing arrays, etc.
+- Do NOT include XML tags or tool-call markup in any field values.
+- Never emit <parameter ...>, </parameter>, or closing-tag fragments like </fieldName>.
 `;
 
 const DEFAULT_API_KEY = process.env.ANTHROPIC_API_KEY || "";
@@ -292,6 +294,21 @@ const ARTIFACT_EDITOR_DEFAULTS = {
     process.env.CHAINCRAFT_ARTIFACT_EDITOR_MODEL ||
     process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
     "",
+};
+
+/**
+ * Default configuration for sim assistant (diagnostic ReAct agent).
+ * Uses Haiku — tool selection and structured retrieval + explanation
+ * don't require Sonnet-level reasoning. Override via env var if needed.
+ */
+const SIM_ASSISTANT_DEFAULTS = {
+  ...SIMULATION_DEFAULTS,
+  modelName:
+    process.env.CHAINCRAFT_SIM_ASSISTANT_MODEL ||
+    process.env.CHAINCRAFT_SIMULATION_MODEL_NAME ||
+    "",
+  tracerProjectName:
+    process.env.CHAINCRAFT_SIM_ASSISTANT_TRACER_PROJECT_NAME || "chaincraft-sim-assistant",
 };
 
 /**
@@ -572,6 +589,14 @@ export const setupArtifactEditorModel = createSetupFunction(
 );
 
 /**
+ * Setup model for the sim assistant diagnostic agent.
+ * Haiku by default — structured retrieval + conversational explanation.
+ */
+export const setupSimAssistantModel = createSetupFunction(
+  SIM_ASSISTANT_DEFAULTS
+);
+
+/**
  * Invoke the model with a prompt (backward compatible API)
  * @param model The ModelWithOptions to use
  * @param prompt The prompt text to send to the model
@@ -631,6 +656,74 @@ const logUsageStats = (usage: any, agent?: string) => {
 };
 
 /**
+ * Conservative scalar coercion for recovered XML parameter values.
+ * Keeps strings by default; only coerces obvious primitive literals.
+ */
+const coerceRecoveredScalar = (raw: string): unknown => {
+  const normalized = raw
+    .replace(/<\/parameter>\s*$/i, "")
+    .trim()
+    .replace(/^"([\s\S]*)"$/, "$1")
+    .trim();
+
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  if (normalized === "null") return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(normalized)) return Number(normalized);
+  return normalized;
+};
+
+/**
+ * Repair Anthropic XML bleed-through in structured outputs.
+ *
+ * Handles cases like:
+ *   diagnosis: "... </diagnosis>\n<parameter name=\"confidence\">medium"
+ *
+ * Strategy is intentionally narrow:
+ * - Only looks for explicit `<parameter name="...">...` bleed signatures
+ * - Cleans only the contaminated suffix from the current string field
+ * - Recovers the spilled parameter into the named sibling field only if absent
+ */
+const repairXmlParameterBleed = (
+  input: Record<string, any>,
+): { repaired: Record<string, any>; didRepair: boolean } => {
+  const repaired = structuredClone(input);
+  let didRepair = false;
+
+  const visit = (node: any) => {
+    if (!node || typeof node !== "object") return;
+
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === "string") {
+        const bleedMatch = value.match(
+          /<\/([A-Za-z_][A-Za-z0-9_-]*)>\s*<parameter\s+name="([A-Za-z_][A-Za-z0-9_-]*)">([\s\S]*)$/,
+        );
+
+        if (bleedMatch) {
+          const cleanValue = value.replace(/<\/[\s\S]*$/m, "").trim();
+          if (cleanValue !== value) {
+            node[key] = cleanValue;
+            didRepair = true;
+          }
+
+          const paramName = bleedMatch[2];
+          const paramValueRaw = bleedMatch[3];
+          if (node[paramName] === undefined) {
+            node[paramName] = coerceRecoveredScalar(paramValueRaw);
+            didRepair = true;
+          }
+        }
+      } else if (value && typeof value === "object") {
+        visit(value);
+      }
+    }
+  };
+
+  visit(repaired);
+  return { repaired, didRepair };
+};
+
+/**
  * Helper: Invoke model with structured output
  */
 const invokeWithSchema = async (
@@ -666,9 +759,9 @@ const invokeWithSchema = async (
       contentText = rawContent;
     }
 
-    // Auto-repair: some providers double-serialize object/array fields as
-    // JSON strings. Try to JSON.parse any string-valued top-level fields
-    // and re-validate with the schema before giving up.
+    // Auto-repair before failing hard:
+    // 1) recover double-serialized JSON fields
+    // 2) recover Anthropic XML parameter bleed-through in string fields
     if (rawInput && schema?.safeParse) {
       const repaired = { ...rawInput };
       let didRepair = false;
@@ -682,12 +775,19 @@ const invokeWithSchema = async (
           }
         }
       }
+
+      const xmlRepair = repairXmlParameterBleed(repaired);
+      if (xmlRepair.didRepair) {
+        didRepair = true;
+        Object.assign(repaired, xmlRepair.repaired);
+      }
+
       if (didRepair) {
         const retryResult = schema.safeParse(repaired);
         if (retryResult.success) {
           const agent = invokeOptions?.metadata?.agent || "unknown";
           console.warn(
-            `[${agent}] Auto-repaired double-serialized fields in structured output`,
+            `[${agent}] Auto-repaired malformed structured output before schema validation failure`,
           );
           return retryResult.data;
         }
@@ -696,7 +796,7 @@ const invokeWithSchema = async (
     
     const agent = invokeOptions?.metadata?.agent || "unknown";
     
-    throw new Error(
+    const err = new Error(
       `Structured output validation failed for agent '${agent}'.\n` +
       `The LLM response did not match the required schema.\n\n` +
       `Raw LLM output:\n${contentText}\n\n` +
@@ -706,6 +806,9 @@ const invokeWithSchema = async (
       `- A field contains invalid values\n\n` +
       `Check LangSmith trace for detailed Zod validation errors.`
     );
+    // Attach raw parsed input so callers can write it to the store for repair
+    (err as any).rawInput = rawInput;
+    throw err;
   }
   
   // Return just the parsed result (maintain backward compatibility)

@@ -1,6 +1,7 @@
 let config: Record<string, string> = {
     "design-graph-type": "game-design",
     "simulation-graph-type": "game-simulation",
+    "sim-assistant-graph-type": "sim-assistant",
 }
 
 export function getConfig(configKey: string): string {

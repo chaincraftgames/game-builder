@@ -14,7 +14,8 @@
 
 import type { ArtifactEditorStateType } from '../../artifact-editor-state.js';
 import type { SchemaOp } from '../../types.js';
-import type { GameStateField } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
+import type { GameStateField, FieldType } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
+import { generateStateInterfaces } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/generate-state-interfaces.js';
 
 // ─── GameStateField[] Helpers ───
 
@@ -30,10 +31,13 @@ function applySchemaOp(fields: GameStateField[], op: SchemaOp): string {
     }
     fields.push({
       name: op.field,
-      type: op.type ?? 'string',
+      type: (op.type as FieldType) ?? 'string',
       path: op.scope,
-      source: 'artifact-editor',
       purpose: op.description ?? '',
+      ...(op.valueType !== undefined && { valueType: op.valueType as FieldType }),
+      ...(op.enumValues !== undefined && { enumValues: op.enumValues }),
+      ...(op.fields !== undefined && { fields: op.fields as GameStateField[] }),
+      ...(op.required !== undefined && { required: op.required }),
     });
     return `ADD: ${op.scope}.${op.field} (${op.type ?? 'string'})`;
   }
@@ -71,7 +75,7 @@ function deriveSchemaFields(fields: GameStateField[]): string {
 export function createEditSchemaNode() {
   return async (state: ArtifactEditorStateType) => {
     const schemaChanges = state.changePlan?.changes.filter(c => c.artifact === 'schema') ?? [];
-    const schemaOps = state.changePlan?.schemaOps ?? [];
+    const schemaOps = schemaChanges.flatMap(c => c.schemaOps ?? []);
 
     if (schemaChanges.length === 0 && schemaOps.length === 0) {
       return {};
@@ -111,13 +115,17 @@ export function createEditSchemaNode() {
 
     console.log(`[ArtifactEditor:edit-schema] Applied ${schemaOps.length} schema op(s):`, results);
 
-    // Serialize back and update schemaFields
+    // Serialize back and update schemaFields + stateInterfaces
     const updatedStateSchema = JSON.stringify(fields);
     const updatedSchemaFields = deriveSchemaFields(fields);
+    const updatedStateInterfaces = generateStateInterfaces(fields);
+
+    console.log(`[ArtifactEditor:edit-schema] Regenerated stateInterfaces from updated schema (${fields.length} fields)`);
 
     return {
       stateSchema: updatedStateSchema,
       schemaFields: updatedSchemaFields,
+      stateInterfaces: updatedStateInterfaces,
     };
   };
 }

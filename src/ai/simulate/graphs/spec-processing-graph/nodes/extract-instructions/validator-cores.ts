@@ -25,6 +25,11 @@ import {
   getComputedContextFieldNames,
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js";
 import { TransitionGraph } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/transition-graph.js";
+import { StateDeltaOpSchema } from "#chaincraft/ai/simulate/logic/statedelta.js";
+import {
+  collectCurrentActionWrites,
+  collectCurrentActionReads,
+} from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/currentaction-scanner.js";
 
 // ─── Helper Functions (private) ───
 
@@ -47,15 +52,31 @@ function validatePathSegmentStructure(
 
     if (templateMatches.length === 1) {
       const isFullTemplate = segment === templateMatches[0];
-      if (isFullTemplate) continue;
+      if (isFullTemplate) {
+        // {{playerId}} is the ONLY supported path template variable.
+        // It is resolved to the acting player's UUID at runtime (player action phases only).
+        // Any other template — {{winnerId}}, {{game.X}}, {{input.X}} etc. — is NOT resolved
+        // and will be written as a literal key into state, creating phantom players/fields.
+        if (segment !== '{{playerId}}') {
+          errors.push(
+            `${context}: Path segment "${segment}" uses an unsupported template variable. ` +
+            `Only {{playerId}} is a valid path template — it resolves to the acting player's UUID ` +
+            `in player action stateDelta ops. No other template variables are resolved in paths. ` +
+            `To target all players use setForAllPlayers/setForRandomPlayer. ` +
+            `To target a specific player use a literal alias (e.g. 'player1'). ` +
+            `For any computation based on state values, use mechanicsGuidance instead of stateDelta.`,
+          );
+        }
+        continue;
+      }
     }
 
     errors.push(
       `${context}: Path segment "${segment}" mixes literal text with template variables. ` +
         `Each segment must be EITHER a literal value OR a complete template variable. ` +
         `Use dot notation for template variables, NEVER brackets. ` +
-        `Invalid: "scoreP{{id}}", "players[{{winnerId}}]". ` +
-        `Valid: "score", "{{fieldName}}", "players.{{winnerId}}.isGameWinner"`,
+        `Invalid: "scoreP{{id}}", "players[{{playerId}}]". ` +
+        `Valid: "score", "players.{{playerId}}.currentAction"`,
     );
   }
 }
@@ -95,18 +116,7 @@ function validateStateDelta(
   schemaFields?: Set<string>,
   validDataSourceIds?: Set<string>,
 ): void {
-  const validOps = [
-    "set",
-    "increment",
-    "append",
-    "delete",
-    "transfer",
-    "merge",
-    "rng",
-    "setForAllPlayers",
-    "setFromMap",
-    "setFromDataSource",
-  ];
+  const validOps = StateDeltaOpSchema.options.map((s) => s.shape.op._def.value as string);
 
   for (let i = 0; i < stateDelta.length; i++) {
     const op = stateDelta[i];
@@ -347,7 +357,7 @@ export function normalizePath(path: string): string {
  */
 export function getWrittenFieldsFromOp(op: any): string[] {
   if (!op) return [];
-  if (op.op === "setForAllPlayers" && op.field) {
+  if ((op.op === "setForAllPlayers" || op.op === "setForRandomPlayer") && op.field) {
     return [normalizePath(`players[*].${op.field}`)];
   }
   if (op.op === "transfer") {
@@ -496,11 +506,15 @@ export function validatePathStructureCore(
 
 /**
  * Core: Validate precondition coverage — all fields used in preconditions
- * must be written by some stateDelta op.
+ * must be written by some stateDelta op or generated mechanic.
+ *
+ * @param mechanicWrittenFields - Optional set of dot-paths written by generated mechanics
+ *   (from scanWrittenFields). When provided, these supplement stateDelta coverage.
  */
 export function validatePreconditionsCanPassCore(
   artifact: InstructionsArtifact,
   transitions: TransitionsArtifact,
+  mechanicWrittenFields?: Set<string>,
 ): string[] {
   const errors: string[] = [];
   const transitionList = transitions.transitions || [];
@@ -521,17 +535,16 @@ export function validatePreconditionsCanPassCore(
 
   if (preconditionFields.size === 0) return [];
 
-  // Router context fields computed at runtime (see buildRouterContext in jsonlogic.ts)
-  const ROUTER_CONTEXT_FIELDS = new Set([
-    "allPlayersCompletedActions",
-    "playersCount",
-    "playerCount",
-    "playersRequiringActionCount",
-    "allPlayersReady",
-    "anyPlayerReady",
+  // Fields managed by the runtime — exempt from "must have a stateDelta writer" checks.
+  // Router-computed context fields are derived directly from RouterContextSchema so this
+  // set stays in sync automatically when new fields are added to the schema.
+  const RUNTIME_MANAGED_FIELDS = new Set([
+    ...getComputedContextFieldNames(),
+    "game.currentPhase",
+    "game.gameEnded",
   ]);
 
-  // Collect all fields written by any stateDelta
+  // Collect all fields written by any stateDelta or generated mechanic
   const writtenFields = new Set<string>();
 
   const addPath = (path: string) => {
@@ -552,7 +565,7 @@ export function validatePreconditionsCanPassCore(
         addPath(op.path);
         addPath(op.fromPath);
         addPath(op.toPath);
-        if (op.field && op.op === "setForAllPlayers") {
+        if (op.field && (op.op === "setForAllPlayers" || op.op === "setForRandomPlayer")) {
           addPath(`players[*].${op.field}`);
         }
       });
@@ -566,28 +579,41 @@ export function validatePreconditionsCanPassCore(
         addPath(op.path);
         addPath(op.fromPath);
         addPath(op.toPath);
-        if (op.field && op.op === "setForAllPlayers") {
+        if (op.field && (op.op === "setForAllPlayers" || op.op === "setForRandomPlayer")) {
           addPath(`players[*].${op.field}`);
         }
       });
     });
   });
 
+  // Merge in written fields from generated mechanics (after addPath is defined)
+  if (mechanicWrittenFields) {
+    mechanicWrittenFields.forEach((path) => addPath(path));
+  }
+
   // Check coverage
   const missingFields: string[] = [];
   preconditionFields.forEach((field: string) => {
-    if (ROUTER_CONTEXT_FIELDS.has(field)) return;
+    if (RUNTIME_MANAGED_FIELDS.has(field)) return;
     if (writtenFields.has(field)) return;
     const normalizedField = field
       .replace(/\[\d+\]/g, "")
       .replace(/\.\d+\./g, ".");
     if (writtenFields.has(normalizedField)) return;
+    // A write to any ancestor path covers this field — e.g. writing "game.matchScore"
+    // covers "game.matchScore.p1" because the whole object is replaced at once.
+    const parts = normalizedField.split(".");
+    const hasAncestorWrite = parts.slice(1).some((_, i) => {
+      const ancestorPath = parts.slice(0, i + 2).join(".");
+      return writtenFields.has(ancestorPath);
+    });
+    if (hasAncestorWrite) return;
     missingFields.push(field);
   });
 
   missingFields.forEach((field: string) => {
     errors.push(
-      `Field "${field}" is used in transition preconditions but is never written by any stateDelta operation.`,
+      `Field "${field}" is used in transition preconditions but is never written by any stateDelta operation or generated mechanic.`,
     );
   });
 
@@ -595,39 +621,121 @@ export function validatePreconditionsCanPassCore(
 }
 
 /**
- * Core: Validate actionRequired is set in player actions.
+ * Core: Validate that player action stateDelta only writes to player.currentAction
+ * only, never to game state fields or other player fields.
  */
-export function validateActionRequiredSetCore(
+export function validatePlayerActionWritesCurrentActionCore(
   artifact: InstructionsArtifact,
 ): string[] {
   const errors: string[] = [];
 
-  for (const [phaseName, phaseInst] of Object.entries(
-    artifact.playerPhases || {},
-  )) {
+  // Paths that player action stateDelta is allowed to write
+  const ALLOWED_PLAYER_FIELDS = ['currentAction'];
+
+  for (const [phaseName, phaseInst] of Object.entries(artifact.playerPhases || {})) {
     for (const action of phaseInst.playerActions || []) {
-      if (!action.stateDelta || action.stateDelta.length === 0) {
-        continue;
-      }
+      for (const op of action.stateDelta || []) {
+        const path: string = (op as any).path || '';
 
-      const hasActionRequiredOp = action.stateDelta.some((op: any) => {
-        if (op.path && typeof op.path === "string") {
-          return (
-            op.path.includes(".actionRequired") ||
-            op.path.endsWith("actionRequired")
+        // setForAllPlayers is not allowed from player actions at all —
+        // actionRequired/actionsAllowed are set by mechanics, not players
+        if (op.op === 'setForAllPlayers') {
+          errors.push(
+            `Player action '${action.id}' in phase '${phaseName}': ` +
+            `setForAllPlayers is not allowed in player action stateDelta. ` +
+            `Player actions may only write to 'players.{{playerId}}.currentAction'. ` +
+            `actionRequired and actionsAllowed are set by mechanics.`
           );
+          continue;
         }
-        if (op.op === "setForAllPlayers" && op.field === "actionRequired") {
-          return true;
-        }
-        return false;
-      });
 
-      if (!hasActionRequiredOp) {
+        // Skip ops without a path (rng, etc.)
+        if (!path) continue;
+
+        // Reject writes to game.* fields
+        if (path.startsWith('game.') || path === 'game') {
+          errors.push(
+            `Player action '${action.id}' in phase '${phaseName}': ` +
+            `stateDelta writes to '${path}' which is a game-level field. ` +
+            `Player actions MUST only write to 'players.{{playerId}}.currentAction'. ` +
+            `Game outcome fields and actionRequired are written by automatic transition mechanics.`
+          );
+          continue;
+        }
+
+        // For player-scoped paths, only currentAction and actionRequired are allowed
+        if (path.includes('players.') || path.includes('player')) {
+          const segments = path.split('.');
+          // Find the field name (last meaningful segment, after playerId)
+          // e.g. "players.{{playerId}}.currentAction" → field = "currentAction"
+          // e.g. "players.{{playerId}}.score" → field = "score"
+          const playerIdx = segments.findIndex(s => s === 'players' || s.startsWith('player'));
+          if (playerIdx >= 0 && segments.length > playerIdx + 2) {
+            const fieldName = segments[playerIdx + 2];
+            if (fieldName && !fieldName.startsWith('{{') && !ALLOWED_PLAYER_FIELDS.includes(fieldName)) {
+              errors.push(
+                `Player action '${action.id}' in phase '${phaseName}': ` +
+                `stateDelta writes to '${path}' (field '${fieldName}'). ` +
+                `Player actions may only write to 'currentAction'. ` +
+                `actionRequired and actionsAllowed are set by mechanics, not player actions.`
+              );
+            }
+          }
+
+          // Reject parent-path currentAction assignment: path ends at currentAction with no sub-field
+          // (e.g. "players.{{playerId}}.currentAction" with value {type: ..., count: ...}).
+          // This pattern makes it impossible for collectCurrentActionWrites to detect which
+          // sub-fields are written, breaking the coherence validator.
+          // Each field must be a separate sub-field op: "players.{{playerId}}.currentAction.<field>".
+          if (
+            op.op === 'set' &&
+            /^players\.[^.]+\.currentAction$/.test(path)
+          ) {
+            const value = (op as any).value;
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+              errors.push(
+                `Player action '${action.id}' in phase '${phaseName}': ` +
+                `stateDelta uses a parent-path assignment to '${path}' with an object value. ` +
+                `This is FORBIDDEN — each field must be a separate op with path ` +
+                `'players.{{playerId}}.currentAction.<fieldName>' (e.g. ` +
+                `{ "op": "set", "path": "players.{{playerId}}.currentAction.count", "value": "{{input.count}}" }). ` +
+                `Parent-path object assignment prevents the coherence validator from detecting which sub-fields are written.`
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Core: Validate that every player action stateDelta includes a 'set' op that writes
+ * 'currentAction.type' (i.e. a path ending in '.currentAction.type').
+ * A missing write is an invalid artifact — the runtime verifier will reject it, so
+ * we catch it here at generation time rather than silently patching it at runtime.
+ */
+export function validatePlayerActionSetsActionTypeCore(
+  artifact: InstructionsArtifact,
+): string[] {
+  const errors: string[] = [];
+
+  for (const [phaseName, phaseInst] of Object.entries(artifact.playerPhases || {})) {
+    for (const action of phaseInst.playerActions || []) {
+      const ops: any[] = action.stateDelta || [];
+      const setsActionType = ops.some(
+        (op) =>
+          op.op === 'set' &&
+          typeof op.path === 'string' &&
+          op.path.endsWith('.currentAction.type'),
+      );
+      if (!setsActionType) {
         errors.push(
-          `Player action '${action.id}' must include a stateDelta operation that sets ` +
-            `'players.{{playerId}}.actionRequired' to true or false. This ensures the router ` +
-            `knows whether the player has completed their required actions for this phase.`,
+          `Player action '${action.id}' in phase '${phaseName}': ` +
+          `stateDelta must include a 'set' op that writes 'players.{{playerId}}.currentAction.type'. ` +
+          `The runtime identifies which action was taken from this field — omitting it is an invalid artifact.`,
         );
       }
     }
@@ -686,6 +794,20 @@ export function validateArtifactStructureCore(
   let schemaFields: Set<string> | undefined;
   if (stateSchema) {
     schemaFields = extractSchemaFields(stateSchema);
+    // Add runtime-injected player fields that are always present on every player
+    // regardless of the game schema. Without these, stateDelta ops referencing them
+    // produce false-positive "unknown field" warnings that would corrupt the repair agent.
+    // The sub-path check in isValidFieldReference means players.currentAction.* sub-paths
+    // (e.g. currentAction.weapon, currentAction.type) are covered by players.currentAction.
+    for (const runtimeField of [
+      "players.currentAction",
+      "players.actionRequired",
+      "players.illegalActionCount",
+      "players.privateMessage",
+      "players.isGameWinner",
+    ]) {
+      schemaFields.add(runtimeField);
+    }
   }
 
   // Check coverage
@@ -864,9 +986,18 @@ export function validateFieldCoverageCore(
     }
   }
 
+  // Fields managed by the runtime — exempt from deadlock field-coverage checks.
+  // Mirrors the same set used in validateFieldCoverage.
+  const RUNTIME_MANAGED_FIELDS = new Set([
+    ...getComputedContextFieldNames(),
+    "game.currentPhase",
+    "game.gameEnded",
+  ]);
+
   // Find fields read but never set
   const uninitializedFields: string[] = [];
   for (const field of fieldsRead) {
+    if (RUNTIME_MANAGED_FIELDS.has(field)) continue;
     const normalizedField = normalizePath(field);
     if (!fieldsSet.has(field) && !fieldsSet.has(normalizedField)) {
       uninitializedFields.push(field);
@@ -990,120 +1121,6 @@ export function validateInitialStatePreconditionsCore(
   ];
   if (!initInstructions) return [];
 
-  // Build mock initial state by applying init's stateDelta.
-  // This simulates what the state will look like after init runs,
-  // so we can check if the starting phase will deadlock.
-  //
-  // Limitations handled:
-  // - Template variables ({{game.activePlayer}}) can't be resolved statically,
-  //   so we use optimistic application: if a set targets players.{{...}}.field,
-  //   apply it to the first mock player (proving at least one player will have that value).
-  // - setForAllPlayers ops have 'field' not 'path', so need special handling.
-  // - RNG ops: use choices[0] as a stand-in value.
-  const mockState: any = { game: {}, players: {} };
-
-  // Helper: ensure mock players exist (player1 & player2 as defaults for 2-player games)
-  const ensureMockPlayers = () => {
-    if (Object.keys(mockState.players).length === 0) {
-      mockState.players.player1 = {};
-      mockState.players.player2 = {};
-    }
-  };
-
-  // Helper: set a value at a dot-notation path in an object, creating intermediates
-  const setAtPath = (obj: any, path: string, value: any) => {
-    const parts = path.split(".");
-    let current = obj;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
-      if (arrayMatch) {
-        const arrayName = arrayMatch[1];
-        const index = parseInt(arrayMatch[2], 10);
-        if (!current[arrayName]) current[arrayName] = [];
-        if (!current[arrayName][index]) current[arrayName][index] = {};
-        current = current[arrayName][index];
-      } else {
-        if (!current[part] || typeof current[part] !== "object")
-          current[part] = {};
-        current = current[part];
-      }
-    }
-    const lastPart = parts[parts.length - 1];
-    const arrayMatch = lastPart.match(/^(.+)\[(\d+)\]$/);
-    if (arrayMatch) {
-      const arrayName = arrayMatch[1];
-      const index = parseInt(arrayMatch[2], 10);
-      if (!current[arrayName]) current[arrayName] = [];
-      current[arrayName][index] = value;
-    } else {
-      current[lastPart] = value;
-    }
-  };
-
-  if (
-    initInstructions.stateDelta &&
-    Array.isArray(initInstructions.stateDelta)
-  ) {
-    initInstructions.stateDelta.forEach((op: any) => {
-      // Handle setForAllPlayers (has 'field' not 'path')
-      if (op.op === "setForAllPlayers" && op.field) {
-        ensureMockPlayers();
-        for (const playerId of Object.keys(mockState.players)) {
-          mockState.players[playerId][op.field] = op.value;
-        }
-        return;
-      }
-
-      if (!op.path || typeof op.path !== "string") return;
-
-      // Check if path contains template variables (e.g., {{game.activePlayer}})
-      const hasTemplate = /\{\{[^}]+\}\}/.test(op.path);
-
-      // Handle RNG
-      if (op.op === "rng") {
-        if (hasTemplate) return; // Can't resolve template in RNG path
-        const parts = op.path.split(".");
-        let current = mockState;
-        for (let i = 0; i < parts.length - 1; i++) {
-          if (!current[parts[i]]) current[parts[i]] = {};
-          current = current[parts[i]];
-        }
-        const lastPart = parts[parts.length - 1];
-        if (op.choices && Array.isArray(op.choices) && op.choices.length > 0) {
-          current[lastPart] = op.choices[0];
-        } else {
-          current[lastPart] = null;
-        }
-        return;
-      }
-
-      // Handle set operations
-      if (op.op === "set") {
-        if (hasTemplate) {
-          // Template path — try to resolve optimistically for player fields.
-          // Pattern: players.{{someVar}}.fieldName = value
-          // If we can extract the field name, apply it to the first mock player.
-          // This proves at least one player will have this value at runtime.
-          const templatePlayerMatch = op.path.match(
-            /^players\.\{\{[^}]+\}\}\.(.+)$/,
-          );
-          if (templatePlayerMatch) {
-            const field = templatePlayerMatch[1];
-            ensureMockPlayers();
-            const firstPlayer = Object.keys(mockState.players)[0];
-            if (firstPlayer) {
-              setAtPath(mockState.players[firstPlayer], field, op.value);
-            }
-          }
-          // For non-player template paths (e.g., game.{{...}}), skip — can't resolve
-          return;
-        }
-
-        setAtPath(mockState, op.path, op.value);
-      }
-    });
-  }
 
   // Find all transitions from the starting phase
   const startingTransitions = transitions.transitions.filter(
@@ -1118,142 +1135,48 @@ export function validateInitialStatePreconditionsCore(
     return errors;
   }
 
-  // Check if any transition's preconditions can be satisfied
-  const canFireTransitions = startingTransitions.filter((t: any) => {
-    if (!t.preconditions || !Array.isArray(t.preconditions)) return true;
-
-    const blockingConditions = t.preconditions.filter((p: any) => {
-      if (!p.logic) return false;
-
-      if (
-        p.logic.allPlayers &&
-        Array.isArray(p.logic.allPlayers) &&
-        p.logic.allPlayers.length === 3
-      ) {
-        const [field, op, expectedValue] = p.logic.allPlayers;
-        if (
-          typeof expectedValue === "boolean" &&
-          (op === "==" || op === "===")
-        ) {
-          const players = Object.values(mockState.players || {});
-          if (players.length > 0) {
-            const allMatch = players.every(
-              (player: any) => player[field] === expectedValue,
-            );
-            if (!allMatch) return true;
-          }
-        }
-      }
-
-      if (
-        p.logic.anyPlayer &&
-        Array.isArray(p.logic.anyPlayer) &&
-        p.logic.anyPlayer.length === 3
-      ) {
-        const [field, op, expectedValue] = p.logic.anyPlayer;
-        if (
-          typeof expectedValue === "boolean" &&
-          (op === "==" || op === "===")
-        ) {
-          const players = Object.values(mockState.players || {});
-          if (players.length > 0) {
-            const anyMatch = players.some(
-              (player: any) => player[field] === expectedValue,
-            );
-            if (!anyMatch) return true;
-          }
-        }
-      }
-
-      return false;
-    });
-
-    return blockingConditions.length === 0;
-  });
-
-  // Check deadlock conditions
+  // Static check 2: if the starting phase requires player input, the init stateDelta must
+  // set actionRequired=true for at least one player. A player-input phase with no player
+  // flagged as active is an immediate deadlock — no state simulation needed to detect this.
   const phaseMetadata = transitions.phaseMetadata?.find(
     (pm: any) => pm.phase === startingPhase,
   );
   const requiresPlayerInput = phaseMetadata?.requiresPlayerInput ?? false;
 
-  const players = Object.values(mockState.players || {});
-  const anyPlayerCanAct = players.some(
-    (player: any) => !!player.actionRequired,
-  );
+  if (requiresPlayerInput) {
+    const stateDelta: any[] = initInstructions.stateDelta ?? [];
 
-  const isDeadlock =
-    canFireTransitions.length === 0 &&
-    (!requiresPlayerInput || !anyPlayerCanAct);
+    const setsActionRequiredTrue = stateDelta.some((op: any) => {
+      // setForAllPlayers { field: "actionRequired", value: true }
+      if (op.op === "setForAllPlayers" && op.field === "actionRequired" && op.value === true) return true;
+      // setForRandomPlayer { field: "actionRequired", value: true }
+      if (op.op === "setForRandomPlayer" && op.field === "actionRequired" && op.value === true) return true;
+      // set players.<alias-or-template>.actionRequired = true
+      if (op.op === "set" && op.value === true && typeof op.path === "string") {
+        if (/^players\.[^.]+\.actionRequired$/.test(op.path)) return true;
+      }
+      // setFromMap where path ends in .actionRequired and at least one mapped value is true
+      if (op.op === "setFromMap" && typeof op.path === "string" && op.path.endsWith(".actionRequired")) {
+        if (op.map && typeof op.map === "object") {
+          if (Object.values(op.map).some((v: any) => v === true)) return true;
+        }
+      }
+      // merge targeting a player root (players.<id>) with actionRequired: true in the value
+      if (op.op === "merge" && typeof op.path === "string" && op.value && typeof op.value === "object") {
+        if (/^players\.[^.]+$/.test(op.path) && op.value.actionRequired === true) return true;
+      }
+      return false;
+    });
 
-  if (isDeadlock) {
-    console.error(
-      "[extract_instructions][validation] Deadlock detected in initial state!",
-    );
-    console.error(
-      `[extract_instructions][validation] Starting phase: ${startingPhase}, requiresPlayerInput: ${requiresPlayerInput}, anyPlayerCanAct: ${anyPlayerCanAct}`,
-    );
-    console.error(
-      "[extract_instructions][validation] Mock state:",
-      JSON.stringify(mockState, null, 2),
-    );
-
-    if (!requiresPlayerInput) {
+    if (!setsActionRequiredTrue) {
       errors.push(
-        `Init transition creates immediate deadlock. After initialization, game moves to phase "${startingPhase}" ` +
-          `but none of the ${startingTransitions.length} transition(s) from that phase can fire. ` +
-          `Phase does NOT require player input, so at least one automatic transition must be able to fire. ` +
-          `Common issue: init sets boolean fields to values that block all automatic transitions. ` +
-          `Review init transition stateDelta and starting transitions' preconditions to ensure compatibility.`,
-      );
-    } else {
-      errors.push(
-        `Init transition creates immediate deadlock. After initialization, game moves to phase "${startingPhase}" ` +
-          `but none of the ${startingTransitions.length} transition(s) from that phase can fire AND no players can act. ` +
-          `Phase requires player input but all players have actionRequired=false, preventing any player actions. ` +
-          `No transitions can fire and no players can act, creating a permanent deadlock. ` +
-          `Fix: Either set actionRequired=true for players OR ensure at least one transition can fire immediately.`,
+        `Init transition moves to phase "${startingPhase}" which requires player input, ` +
+          `but the init stateDelta never sets actionRequired=true for any player. ` +
+          `At least one player must have actionRequired=true after initialization or the game will deadlock immediately. ` +
+          `Fix: add a setForRandomPlayer op (e.g. { op: "setForRandomPlayer", field: "actionRequired", value: true }) ` +
+          `or a setFromMap op that maps to actionRequired=true for the starting player.`,
       );
     }
-
-    // Add details about each transition's blocking conditions
-    startingTransitions.forEach((t: any) => {
-      if (!t.preconditions || t.preconditions.length === 0) return;
-
-      const issues: string[] = [];
-      t.preconditions.forEach((p: any) => {
-        if (
-          p.logic?.allPlayers &&
-          Array.isArray(p.logic.allPlayers) &&
-          p.logic.allPlayers.length === 3
-        ) {
-          const [field, op, expectedValue] = p.logic.allPlayers;
-          if (typeof expectedValue === "boolean") {
-            const playerList = Object.values(mockState.players || {});
-            if (playerList.length > 0) {
-              const actualValues = playerList.map(
-                (player: any) => player[field],
-              );
-              const allMatch = playerList.every(
-                (player: any) => player[field] === expectedValue,
-              );
-              if (!allMatch) {
-                issues.push(
-                  `Precondition "${p.id}" requires all players have ${field}=${expectedValue}, ` +
-                    `but init sets it to ${JSON.stringify(actualValues)}`,
-                );
-              }
-            }
-          }
-        }
-      });
-
-      if (issues.length > 0) {
-        errors.push(
-          `  Transition "${t.id}" (${t.fromPhase} → ${t.toPhase}): ${issues.join("; ")}`,
-        );
-      }
-    });
   }
 
   return errors;
@@ -1272,49 +1195,46 @@ export function validateGameCompletionCore(
   try {
     const graph = new TransitionGraph(transitions, artifact);
 
-    // Check 1: At least one transition must set gameEnded
-    const gameEndedSetters = graph.findFieldSetters("game.gameEnded");
-    if (gameEndedSetters.length === 0) {
+    // Check 1: At least one path to "finished" exists (gameEnded is set automatically by the router)
+    const terminalPaths = graph.getTerminalPaths();
+    if (terminalPaths.length === 0) {
       errors.push(
-        "No transition sets game.gameEnded=true. At least one transition must explicitly end the game. " +
-          "Without this, the game cannot terminate properly.",
+        'No paths from init to "finished" phase found. The router sets game.gameEnded=true automatically when transitioning to "finished", but no such path exists.',
       );
     }
 
     // Check 2: At least one transition must set isGameWinner
-    const isGameWinnerSetters = graph.findFieldSetters(
-      "players.*.isGameWinner",
-    );
-    if (isGameWinnerSetters.length === 0) {
-      errors.push(
-        "No transition sets players.*.isGameWinner. At least one transition must mark winning players. " +
-          "Set isGameWinner=true for each winning player before or when the game ends. " +
-          "Runtime will automatically compute game.winningPlayers from these flags.",
-      );
-    }
+    // NOTE: Disabled — isGameWinner is now set by generated mechanic code, not static stateDelta.
+    // Re-enable when mechanic code validation is in place.
+    // const isGameWinnerSetters = graph.findFieldSetters(
+    //   "players.*.isGameWinner",
+    // );
+    // if (isGameWinnerSetters.length === 0) {
+    //   errors.push(
+    //     "No transition sets players.*.isGameWinner. At least one transition must mark winning players. " +
+    //       "Set isGameWinner=true for each winning player before or when the game ends. " +
+    //       "Runtime will automatically compute game.winningPlayers from these flags.",
+    //   );
+    // }
 
     // Check 3: All terminal paths set isGameWinner somewhere along the path
-    const terminalPaths = graph.getTerminalPaths();
-    if (terminalPaths.length === 0) {
-      errors.push(
-        'No paths from init to "finished" phase found. Game cannot end.',
-      );
-    } else {
-      let hasWinningPath = false;
-      for (const path of terminalPaths) {
-        if (graph.pathSetsField(path, "players.*.isGameWinner")) {
-          hasWinningPath = true;
-          break;
-        }
-      }
-      if (!hasWinningPath) {
-        errors.push(
-          'No path to "finished" sets players.*.isGameWinner. ' +
-            "If your game has winners, at least one ending path must set isGameWinner=true for winning players. " +
-            "If this is a draw-only game (no winners), you can ignore this warning.",
-        );
-      }
-    }
+    // NOTE: Disabled — same reason as Check 2.
+    // if (terminalPaths.length > 0) {
+    //   let hasWinningPath = false;
+    //   for (const path of terminalPaths) {
+    //     if (graph.pathSetsField(path, "players.*.isGameWinner")) {
+    //       hasWinningPath = true;
+    //       break;
+    //     }
+    //   }
+    //   if (!hasWinningPath) {
+    //     errors.push(
+    //       'No path to "finished" sets players.*.isGameWinner. ' +
+    //         "If your game has winners, at least one ending path must set isGameWinner=true for winning players. " +
+    //         "If this is a draw-only game (no winners), you can ignore this warning.",
+    //     );
+    //   }
+    // }
   } catch (error) {
     errors.push(
       `Error validating game completion: ${error instanceof Error ? error.message : String(error)}`,
@@ -1370,6 +1290,48 @@ export function validatePhaseConnectivityCore(
     errors.push(
       `Error validating phase connectivity: ${error instanceof Error ? error.message : String(error)}`,
     );
+  }
+
+  return errors;
+}
+
+/**
+ * Cross-artifact coherence check: currentAction shape.
+ *
+ * Compares the set of currentAction sub-fields written by player-action stateDelta ops
+ * (instructions artifact) with the set of currentAction sub-fields read by generated
+ * mechanic code (TS AST scan). Any field read by a mechanic that was never written by
+ * any player action is flagged as an error — it will always be undefined at runtime.
+ *
+ * Requires both artifacts to be present; returns [] if either is missing/empty.
+ */
+export function validateCurrentActionCoherenceCore(
+  artifact: InstructionsArtifact,
+  generatedMechanics: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+
+  if (
+    !artifact ||
+    Object.keys(generatedMechanics).length === 0
+  ) {
+    return errors;
+  }
+
+  const writtenFields = collectCurrentActionWrites(artifact);
+
+  for (const [mechanicId, code] of Object.entries(generatedMechanics)) {
+    const readFields = collectCurrentActionReads(code);
+    for (const field of readFields) {
+      if (!writtenFields.has(field)) {
+        errors.push(
+          `Mechanic '${mechanicId}' reads currentAction.${field} but no player action ` +
+          `stateDelta writes players.<player>.currentAction.${field}. ` +
+          `Written currentAction fields: [${[...writtenFields].join(', ')}]. ` +
+          `Either add an op to the player action stateDelta or fix the mechanic to use a written field.`,
+        );
+      }
+    }
   }
 
   return errors;

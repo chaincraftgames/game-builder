@@ -34,7 +34,9 @@ jsonLogic.add_operation("allPlayers", function(this: any, field: string, operato
   if (players.length === 0) return true; // vacuous truth
   
   return players.every((player: any) => {
-    const fieldValue = player[field];
+    const fieldValue = field.includes('.')
+      ? field.split('.').reduce((obj: any, key: string) => obj?.[key], player)
+      : player[field];
     const logic = { [operator]: [fieldValue, value] };
     return jsonLogic.apply(logic, data);
   });
@@ -46,7 +48,9 @@ jsonLogic.add_operation("anyPlayer", function(this: any, field: string, operator
   const players = data.players ? Object.values(data.players) : [];
   
   return players.some((player: any) => {
-    const fieldValue = player[field];
+    const fieldValue = field.includes('.')
+      ? field.split('.').reduce((obj: any, key: string) => obj?.[key], player)
+      : player[field];
     const logic = { [operator]: [fieldValue, value] };
     return jsonLogic.apply(logic, data);
   });
@@ -205,6 +209,16 @@ export const RouterContextSchema = z
     allPlayersCompletedActions: z
       .boolean()
       .describe("True when all players have completed their actions"),
+    anyPlayerCurrentActionType: z
+      .string()
+      .nullable()
+      .describe(
+        "The currentAction.type of any player who has a pending (non-null) currentAction, or null if no player has a pending action. " +
+        "Use this in preconditions for transitions from player-input phases to gate on what action type was submitted " +
+        "(e.g. { '==': [{ 'var': 'anyPlayerCurrentActionType' }, 'challenge'] }). " +
+        "This is always evaluated BEFORE the mechanic runs, so it safely reflects the submitted action, " +
+        "not any downstream state the mechanic would compute."
+      ),
   })
   .describe(
     "Computed context fields available during precondition evaluation. " +
@@ -233,25 +247,55 @@ export function buildRouterContext(state: BaseRuntimeState): RouterContext {
     return acc;
   }, 0);
 
-  const allPlayersCompletedActions = playersCount > 0 ? playersRequiringActionCount === 0 : true;
+  // Under the currentAction architecture, a player with actionRequired=true is considered
+  // "completed" if they have submitted a currentAction (pending mechanic processing).
+  // Players with actionRequired=true and currentAction=null are still waiting to act.
+  const playersBlockingCompletion = players.reduce((acc: number, p: RuntimePlayerState) => {
+    if (p?.actionRequired && (p as any)?.currentAction == null) return acc + 1;
+    return acc;
+  }, 0);
+
+  const allPlayersCompletedActions = playersCount > 0 ? playersBlockingCompletion === 0 : true;
+
+  // The action type submitted by any player who has a pending currentAction.
+  // Safe to check before mechanics run — written by the player action, not the mechanic.
+  const anyPlayerCurrentActionType: string | null =
+    players
+      .map((p) => (p as any)?.currentAction?.type)
+      .find((t) => t != null) ?? null;
 
   const ctx: RouterContext = {
     playersCount,
     playersRequiringActionCount,
     allPlayersCompletedActions,
+    anyPlayerCurrentActionType,
   };
 
   return ctx;
 }
 
 /**
- * Preprocess JsonLogic to handle .length accessor on arrays.
+ * Normalize a json-logic var path so that LLM-generated JavaScript bracket
+ * notation is understood by json-logic-js, which only supports dot-delimited paths.
+ *
+ * Converts every `[N]` (numeric array index) to `.N`:
+ *   "players.player1.currentAction.weapons[0].name"
+ *   → "players.player1.currentAction.weapons.0.name"
+ */
+function normalizeVarPath(path: string): string {
+  return path.replace(/\[(\d+)\]/g, '.$1');
+}
+
+/**
+ * Preprocess JsonLogic to handle .length accessor on arrays and normalize
+ * bracket array notation to dot notation in all var paths.
  * Converts {"var": "game.choices.length"} to the actual array length value.
- * This allows LLMs to use natural .length syntax like JavaScript/TypeScript.
+ * Converts {"var": "arr[0].field"} to {"var": "arr.0.field"}.
+ * This allows LLMs to use natural .length and [N] syntax like JavaScript/TypeScript.
  * 
  * @param logic - The JsonLogic expression to preprocess
  * @param context - The data context
- * @returns Preprocessed logic with .length resolved to actual lengths
+ * @returns Preprocessed logic with .length resolved and bracket notation normalized
  */
 function preprocessArrayLength(logic: any, context: any): any {
   if (!logic || typeof logic !== 'object') {
@@ -262,20 +306,26 @@ function preprocessArrayLength(logic: any, context: any): any {
     return logic.map(item => preprocessArrayLength(item, context));
   }
   
-  // Check if this is a {"var": "field.length"} expression
-  if (logic.var && typeof logic.var === 'string' && logic.var.endsWith('.length')) {
-    const arrayPath = logic.var.slice(0, -7); // Remove '.length'
-    
-    // Get the array from context
-    const arrayValue = jsonLogic.apply({ var: arrayPath }, context);
-    
-    // If it's an array, return its length
-    if (Array.isArray(arrayValue)) {
-      return arrayValue.length;
+  // Check if this is a {"var": "..."} expression
+  if (logic.var && typeof logic.var === 'string') {
+    // Normalize bracket notation first (e.g. weapons[0].name → weapons.0.name)
+    const normalizedPath = normalizeVarPath(logic.var);
+
+    // Handle .length suffix — resolve to actual array length
+    if (normalizedPath.endsWith('.length')) {
+      const arrayPath = normalizedPath.slice(0, -7); // Remove '.length'
+      const arrayValue = jsonLogic.apply({ var: arrayPath }, context);
+      if (Array.isArray(arrayValue)) {
+        return arrayValue.length;
+      }
+      return undefined;
     }
-    
-    // Not an array - return undefined (will fail the condition naturally)
-    return undefined;
+
+    // Return normalized var if path changed, otherwise return as-is
+    if (normalizedPath !== logic.var) {
+      return { var: normalizedPath };
+    }
+    return logic;
   }
   
   // Recursively process nested objects

@@ -20,7 +20,8 @@ import {
   validateJsonParseableCore,
   validatePathStructureCore,
   validatePreconditionsCanPassCore,
-  validateActionRequiredSetCore,
+  validatePlayerActionWritesCurrentActionCore,
+  validatePlayerActionSetsActionTypeCore,
   validateNarrativeMarkersCore,
   validateArtifactStructureCore,
   validateFieldCoverageCore,
@@ -127,16 +128,29 @@ export async function validatePreconditionsCanPass(
 }
 
 /**
- * Validate actionRequired is set in player actions
+ * Validate player action stateDelta only writes to currentAction / actionRequired
  */
-export async function validateActionRequiredSet(
+export async function validatePlayerActionWritesCurrentAction(
   state: SpecProcessingStateType,
   store: BaseStore,
   threadId: string,
 ): Promise<string[]> {
   const artifact = await getArtifactFromStore(store, threadId);
   if (!artifact) return ["Execution output is missing"];
-  return validateActionRequiredSetCore(artifact);
+  return validatePlayerActionWritesCurrentActionCore(artifact);
+}
+
+/**
+ * Validate that every player action stateDelta sets currentAction.type
+ */
+export async function validatePlayerActionSetsActionType(
+  state: SpecProcessingStateType,
+  store: BaseStore,
+  threadId: string,
+): Promise<string[]> {
+  const artifact = await getArtifactFromStore(store, threadId);
+  if (!artifact) return ["Execution output is missing"];
+  return validatePlayerActionSetsActionTypeCore(artifact);
 }
 
 /**

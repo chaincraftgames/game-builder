@@ -44,7 +44,8 @@ export interface RngOperation {
  */
 export function processStateDeltaWithRng(
   stateDelta: any[],
-  seed?: number
+  seed?: number,
+  playerMapping?: Record<string, string>
 ): any[] {
   if (!stateDelta || stateDelta.length === 0) {
     return stateDelta;
@@ -53,9 +54,30 @@ export function processStateDeltaWithRng(
   // Use seeded RNG if provided (for testing)
   const rng = seed !== undefined ? createSeededRng(seed) : Math.random;
 
-  return stateDelta.map((operation: any) => {
+  return stateDelta.flatMap((operation: any) => {
+    if (operation.op === 'setForRandomPlayer') {
+      const aliases = Object.keys(playerMapping ?? {});
+      if (aliases.length === 0) {
+        console.warn('[rng-utils] setForRandomPlayer: no players in mapping — op cannot be resolved');
+        return [operation];
+      }
+      const selectedAlias = aliases[Math.floor(rng() * aliases.length)];
+      const selectedUUID = (playerMapping ?? {})[selectedAlias];
+      console.log(`[rng-utils] setForRandomPlayer: selected ${selectedAlias} (${selectedUUID.slice(0, 8)}) for field "${operation.field}"`);
+      const ops: any[] = [{
+        op: 'set',
+        path: `players.${selectedUUID}.${operation.field}`,
+        value: operation.value,
+      }];
+      if (operation.recordTo) {
+        console.log(`[rng-utils] setForRandomPlayer: recording chosen alias "${selectedAlias}" to "${operation.recordTo}"`);
+        ops.push({ op: 'set', path: operation.recordTo, value: selectedAlias });
+      }
+      return ops;
+    }
+
     if (operation.op !== 'rng') {
-      // Not an RNG operation - return as-is
+      // Not an RNG/random-player operation - return as-is
       return operation;
     }
 
@@ -110,16 +132,23 @@ function selectRandomChoice(
 /**
  * Create a seeded pseudo-random number generator.
  * Uses a simple LCG (Linear Congruential Generator) for reproducibility.
- * 
+ *
+ * Uses BigInt arithmetic to avoid floating-point precision loss:
+ * state * 1103515245 can exceed Number.MAX_SAFE_INTEGER, causing low-bit
+ * corruption before the & 0x7fffffff mask is applied if done in float64.
+ *
  * @param seed - Initial seed value
  * @returns Function returning random numbers in [0, 1)
  */
 function createSeededRng(seed: number): () => number {
-  let state = seed;
+  let state = BigInt(Math.trunc(seed));
+  const M = 1103515245n;
+  const C = 12345n;
+  const MASK = 0x7fffffffn;
   return () => {
-    // LCG parameters (same as java.util.Random)
-    state = (state * 1103515245 + 12345) & 0x7fffffff;
-    return state / 0x7fffffff;
+    // LCG parameters (same as java.util.Random) — BigInt keeps all 31 bits exact
+    state = (state * M + C) & MASK;
+    return Number(state) / 0x7fffffff;
   };
 }
 
@@ -135,7 +164,8 @@ function createSeededRng(seed: number): () => number {
  */
 export function processRngInstructions(
   instructions: string | object,
-  seed?: number
+  seed?: number,
+  playerMapping?: Record<string, string>
 ): string {
   const instructionsObj = typeof instructions === 'string' 
     ? JSON.parse(instructions) 
@@ -148,7 +178,7 @@ export function processRngInstructions(
   }
 
   // Process stateDelta, converting RNG ops to set ops
-  instructionsObj.stateDelta = processStateDeltaWithRng(instructionsObj.stateDelta, seed);
+  instructionsObj.stateDelta = processStateDeltaWithRng(instructionsObj.stateDelta, seed, playerMapping);
 
   return JSON.stringify(instructionsObj);
 }

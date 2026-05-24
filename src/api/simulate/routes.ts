@@ -22,6 +22,7 @@ import {
   GenerateTokenImageResponseSchema,
 } from "#chaincraft/api/simulate/schemas.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { registerAssistantRoutes } from "./assistant/routes.js";
 
 export async function registerSimulateRoutes(server: FastifyInstance) {
   // Create simulation
@@ -120,4 +121,7 @@ export async function registerSimulateRoutes(server: FastifyInstance) {
     },
     handler: handleGenerateTokenImage,
   });
+
+  // Sim assistant routes (SSE stream + message)
+  await registerAssistantRoutes(server);
 }

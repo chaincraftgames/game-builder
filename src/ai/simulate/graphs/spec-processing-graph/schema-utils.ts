@@ -128,8 +128,15 @@ export function classifyInvalidFieldReference(
     return 'valid';
   }
   
+  // Normalize before checking prefix — array notation like players[*].foo must be
+  // treated the same as players.foo for scope classification purposes.
+  const normalizedForPrefix = fieldRef
+    .replace(/\[\*\]/g, '')
+    .replace(/\[\d+\]/g, '')
+    .replace(/\[[\w-]+\]/g, '');
+
   // Check if it's unscoped: no game. or players. prefix and not a computed context field
-  const hasValidPrefix = fieldRef.startsWith('game.') || fieldRef.startsWith('players.');
+  const hasValidPrefix = normalizedForPrefix.startsWith('game.') || normalizedForPrefix.startsWith('players.');
   if (!hasValidPrefix && !isComputedContextField(fieldRef)) {
     return 'unscoped';
   }
@@ -182,7 +189,9 @@ export function isValidFieldReference(fieldRef: string, schemaFields: Set<string
   }
   
   // Also check if any schema field with wildcard notation would match
-  // For example, if schema has "players[*].score", check if our normalized ref matches
+  // For example, if schema has "players[*].score", check if our normalized ref matches.
+  // Also treat the normalized ref as valid if it is a sub-path of a known schema field
+  // (e.g. players.currentAction.weapon is valid if players.currentAction is in schema).
   for (const schemaField of schemaFields) {
     const normalizedSchema = schemaField
       .replace(/\[\*\]/g, '')
@@ -190,6 +199,11 @@ export function isValidFieldReference(fieldRef: string, schemaFields: Set<string
       .replace(/\[[\w-]+\]/g, '');
     
     if (normalizedRef === normalizedSchema) {
+      return true;
+    }
+
+    // Sub-path check: ref is valid if it descends from a known schema field
+    if (normalizedRef.startsWith(normalizedSchema + '.')) {
       return true;
     }
   }
