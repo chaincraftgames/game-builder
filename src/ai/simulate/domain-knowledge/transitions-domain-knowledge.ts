@@ -23,7 +23,69 @@ Example (round_scored transition):
 If you find yourself writing a precondition like "computed result exists" or "generated content is non-null",
 that is a postcondition of this transition — it belongs in the instruction stateDelta, not here.
 
-### 3. Deterministic Preconditions (CRITICAL)
+### 3. Detecting Pending Player Actions in Preconditions
+
+#### Design Rule: Transitions from player-input phases MUST gate on action type or completion
+
+Every transition whose \`fromPhase\` has \`requiresPlayerInput: true\` **MUST** include at least one
+precondition from the following safe signals:
+
+| Signal | When to use |
+|---|---|
+| \`anyPlayerCurrentActionType\` (computed context) | Gate on WHAT action was submitted (e.g. bid vs challenge) |
+| \`allPlayersCompletedActions\` (computed context) | Gate on WHETHER all required players have submitted |
+
+These two signals are evaluated **before the mechanic runs**, so they are always accurate.
+
+Additional preconditions MAY check pre-existing game state (fields set in previous phases/rounds)
+as long as they do NOT check state that the mechanic for this action will write.
+
+**Why this rule exists:** Player actions write ONLY to \`players.{{playerId}}.currentAction\`. The mechanic
+then reads that field, validates it, and writes game outcome fields (scores, round winners, etc.).
+Until the mechanic fires, those outcome fields are still null/stale — checking them causes
+transitions to never fire → game deadlock.
+
+**Correct pattern — route by submitted action type:**
+\`\`\`json
+// Use anyPlayerCurrentActionType computed context field
+{{"==": [{{"var": "anyPlayerCurrentActionType"}}, "challenge"]}}
+{{"==": [{{"var": "anyPlayerCurrentActionType"}}, "bid"]}}
+\`\`\`
+
+**Correct pattern — all players have submitted (simultaneous-play games):**
+\`\`\`json
+{{"var": "allPlayersCompletedActions"}}
+\`\`\`
+
+**Correct pattern — route by action type AND pre-existing game state:**
+\`\`\`json
+// roundNumber was set in a prior phase — safe to combine with action type check
+{{
+  "and": [
+    {{"==": [{{"var": "anyPlayerCurrentActionType"}}, "challenge"]}},
+    {{">": [{{"var": "game.roundNumber"}}, 1]}}
+  ]
+}}
+\`\`\`
+
+**❌ NEVER do this — checking outcome fields before the mechanic fires:**
+\`\`\`json
+// Wrong: game.currentBidCount is written BY the mechanic, not the player action
+{{"!=": [{{"var": "game.currentBidCount"}}, null]}}
+
+// Wrong: game.challengerId is written BY the mechanic — it's null when the router checks
+{{"!=": [{{"var": "game.challengerId"}}, null]}}
+
+// Wrong: actionRequired is NOT cleared by the player action; player keeps actionRequired=true
+//        until the mechanic explicitly rotates the turn
+{{"==": [{{"var": "players.player1.actionRequired"}}, false]}}
+\`\`\`
+
+**Summary:** For transitions from player-input phases, ALWAYS include \`anyPlayerCurrentActionType\`
+or \`allPlayersCompletedActions\` as a precondition. Pre-existing game state may be combined.
+Never check state that the mechanic for this action will write.
+
+### 4. Deterministic Preconditions (CRITICAL)
 All preconditions must be deterministic using only supported JsonLogic operations.
 
 **Handling Randomness (Two-Step Pattern):**
@@ -103,7 +165,7 @@ Use custom anyPlayer/allPlayers operators - this is the ONLY valid way to check 
 **Why this matters:**
 Player IDs at runtime are UUIDs, not \`player1\` or \`p1\`. Direct references like \`players.player1\` will always evaluate to \`undefined\`, causing logic errors. The allPlayers/anyPlayer operations work with ANY player ID structure.
 
-### 4. JsonLogic Operators
+### 5. JsonLogic Operators
 
 **Standard operators:**
 \`==\`, \`!=\`, \`>\`, \`>=\`, \`<\`, \`<=\`, \`and\`, \`or\`, \`if\`, \`!\`, \`var\`, \`in\`

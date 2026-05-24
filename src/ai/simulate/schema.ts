@@ -144,9 +144,17 @@ export type BaseRuntimeState = z.infer<typeof baseGameStateSchema>;
  */
 const JsonLogicValidator = z
   .any()
-  .nullable()
   .superRefine((val, ctx) => {
-    if (val === null) return; // null is allowed for non-deterministic
+    if (val === null || val === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "logic cannot be null — all preconditions must have valid JsonLogic. " +
+          "For player field checks use anyPlayer/allPlayers operators. " +
+          "Example: {\"anyPlayer\": [\"diceRemaining\", \"==\", 1]}.",
+      });
+      return;
+    }
 
     const unsupportedOps = validateJsonLogicOperations(val);
     if (unsupportedOps.length > 0) {
@@ -164,7 +172,7 @@ export const TransitionPreconditionSchema = z.object({
     .string()
     .describe("Stable id for the precondition, e.g. 'allSubmitted'"),
   logic: JsonLogicValidator.describe(
-    "JsonLogic predicate object or null for non-deterministic/custom checks",
+    "Required JsonLogic predicate object. Must not be null. For player field checks use anyPlayer/allPlayers operators: {\"anyPlayer\": [\"fieldName\", \"op\", value]}.",
   ),
   deterministic: z
     .boolean()
@@ -360,7 +368,11 @@ export const PlayerActionInstructionSchema = z.object({
   // Messages (may contain {{templates}})
   messages: z
     .object({
-      private: z.array(MessageTemplateSchema).nullable().optional(),
+      // LLMs sometimes return a single object instead of array — normalize it
+      private: z.preprocess(
+        (v) => (v !== null && v !== undefined && !Array.isArray(v) ? [v] : v),
+        z.array(MessageTemplateSchema).nullable().optional()
+      ),
       public: MessageTemplateSchema.nullable().optional(),
     })
     .nullable()
@@ -394,7 +406,11 @@ export const AutomaticTransitionInstructionSchema = z.object({
   // Messages (may contain {{templates}})
   messages: z
     .object({
-      private: z.array(MessageTemplateSchema).nullable().optional(),
+      // LLMs sometimes return a single object instead of array — normalize it
+      private: z.preprocess(
+        (v) => (v !== null && v !== undefined && !Array.isArray(v) ? [v] : v),
+        z.array(MessageTemplateSchema).nullable().optional()
+      ),
       public: MessageTemplateSchema.nullable().optional(),
     })
     .nullable()
@@ -407,6 +423,14 @@ export const AutomaticTransitionInstructionSchema = z.object({
     .optional()
     .describe(
       "Brief description of image content to generate for this transition. ONLY include if the game specification explicitly requests image generation for this moment (e.g., 'display an image depicting the final battle'). Null if the spec does not mention generating an image.",
+    ),
+
+  // Narrative keys to look up in specNarratives at callLLM time
+  narrativeKeys: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Keys from specNarratives that provide style/tone guidance for message generation. Runtime looks these up and injects the content into the callLLM system prompt.",
     ),
 });
 

@@ -14,6 +14,10 @@ import type {
   PlayerPhaseInstructions,
   MechanicsGuidance,
 } from "#chaincraft/ai/simulate/schema.js";
+import type {
+  AutomaticTransitionHint,
+  PhaseInstructionsHint,
+} from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/schema.js";
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -108,6 +112,80 @@ export function buildMechanicTargets(
       console.warn(
         `[target_builder] Failed to parse playerPhaseInstructions: ${phaseName}`,
       );
+    }
+  }
+
+  return targets;
+}
+
+// ---------------------------------------------------------------------------
+// Planner-hint direct path
+// ---------------------------------------------------------------------------
+
+/**
+ * Format message purpose strings from planner hints into message guidance.
+ */
+function formatHintMessageGuidance(
+  publicPurpose?: string | null,
+  privatePurpose?: string | null,
+): string | undefined {
+  const parts: string[] = [];
+  if (publicPurpose) parts.push(`Public message: ${publicPurpose}`);
+  if (privatePurpose) parts.push(`Private messages: ${privatePurpose}`);
+  return parts.length > 0 ? `## Message Guidance\n${parts.join("\n")}` : undefined;
+}
+
+/**
+ * Build MechanicTarget[] directly from planner hints — bypasses the extractor.
+ *
+ * Only selects transitions/actions where `mechanicsDescription` is non-null.
+ * Appends randomness guidance to instructions when `usesRandomness` is true.
+ *
+ * This is the "planner → codegen direct path" — one fewer LLM call for
+ * mechanic-targeted transitions because the extractor is skipped entirely.
+ */
+export function buildTargetsFromHints(
+  transitions: AutomaticTransitionHint[],
+  playerPhases: PhaseInstructionsHint[],
+): MechanicTarget[] {
+  const targets: MechanicTarget[] = [];
+
+  // 1. Automatic transitions with mechanicsDescription
+  for (const hint of transitions) {
+    if (!hint.mechanicsDescription) continue;
+
+    let instructions = hint.mechanicsDescription;
+    if (hint.usesRandomness && hint.randomnessDescription) {
+      instructions += `\n\nRandomness: ${hint.randomnessDescription}`;
+    }
+
+    targets.push({
+      id: hint.id,
+      type: "transition",
+      functionName: hint.id,
+      instructions,
+      messageGuidance: formatHintMessageGuidance(
+        hint.publicMessagePurpose,
+        hint.privateMessagesPurpose,
+      ),
+    });
+  }
+
+  // 2. Player actions with mechanicsDescription
+  for (const phase of playerPhases) {
+    for (const action of phase.playerActions) {
+      if (!action.mechanicsDescription) continue;
+
+      targets.push({
+        id: action.id,
+        type: "action",
+        functionName: action.id,
+        instructions: action.mechanicsDescription,
+        messageGuidance: formatHintMessageGuidance(
+          action.publicMessagePurpose,
+          action.privateMessagePurpose,
+        ),
+      });
     }
   }
 

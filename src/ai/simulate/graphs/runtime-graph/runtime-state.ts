@@ -10,6 +10,24 @@
 import { Annotation } from "@langchain/langgraph";
 import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
 
+// ─── Repair History Types ─────────────────────────────────────────────────────
+
+/** Record of a single repair attempt, persisted on the runtime checkpoint. */
+export interface RepairRecord {
+  /** Monotonically increasing attempt number (1-based). */
+  attempt: number;
+  /** Symptom descriptions passed by the sim assistant. */
+  symptoms: string[];
+  /** Summary of changes applied (from changesApplied). */
+  changesSummary: string[];
+  /** Whether the repair succeeded (editor graph returned editSucceeded). */
+  succeeded: boolean;
+  /** ISO timestamp. */
+  timestamp: string;
+}
+
+import type { ArtifactSnapshot } from '#chaincraft/ai/simulate/artifacts.js';
+
 export type RuntimeStateType = typeof RuntimeState.State;
 
 export const RuntimeState = Annotation.Root({
@@ -130,5 +148,19 @@ export const RuntimeState = Annotation.Root({
   imagePrompt: Annotation<string | undefined>({
     reducer: (_, y) => y,
     default: () => undefined,
+  }),
+
+  // ─── Repair tracking (persisted across restarts) ──────────────────────────
+
+  /** History of repair attempts for coordinator cross-repair awareness. */
+  repairHistory: Annotation<RepairRecord[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+
+  /** Pre-repair artifact snapshot for rollback. Cleared on successful restart. */
+  artifactSnapshot: Annotation<ArtifactSnapshot | null>({
+    reducer: (_, y) => y,
+    default: () => null,
   }),
 });

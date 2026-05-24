@@ -224,14 +224,51 @@ describe('gameStateFieldSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  test('rejects invalid type value', () => {
+  test('rejects type=object with no fields', () => {
     const result = gameStateFieldSchema.safeParse({
       name: 'foo',
       type: 'object',
       path: 'game',
-      purpose: 'Bad type',
+      purpose: 'Structured object without sub-fields',
     });
     expect(result.success).toBe(false);
+  });
+
+  test('rejects type=array with no valueType', () => {
+    const result = gameStateFieldSchema.safeParse({
+      name: 'items',
+      type: 'array',
+      path: 'player',
+      purpose: 'Array without valueType',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects type=array valueType=object with no fields', () => {
+    const result = gameStateFieldSchema.safeParse({
+      name: 'weapons',
+      type: 'array',
+      path: 'player',
+      purpose: 'Array of objects without fields definition',
+      valueType: 'object',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test('accepts type=array valueType=object with fields', () => {
+    const result = gameStateFieldSchema.safeParse({
+      name: 'weapons',
+      type: 'array',
+      path: 'player',
+      purpose: 'Player weapons',
+      valueType: 'object',
+      fields: [
+        { name: 'id', type: 'string', path: 'player', purpose: 'Weapon id' },
+        { name: 'name', type: 'string', path: 'player', purpose: 'Weapon name' },
+        { name: 'rpsValue', type: 'enum', path: 'player', purpose: 'RPS value', enumValues: ['rock', 'paper', 'scissors'] },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 
   test('accepts field with enumValues', () => {

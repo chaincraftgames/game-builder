@@ -61,7 +61,7 @@ export function validateMechanics(
     const fileName = mechanicFileName(transitionId);
     // Prepend the import so mechanic code can reference state types
     const fullSource =
-      `import { MechanicState, CallLLM, MechanicResult } from './state-interfaces';\n` +
+      `import { MechanicState, CallLLM, RollDice, MechanicResult, setGame, getGame, setPlayer, getPlayer, setPublicMessage, setPrivateMessage, rejectAction, buildResult } from './state-interfaces';\n` +
       source;
     virtualFiles.set(fileName, fullSource);
     mechanicFileNames.push(fileName);

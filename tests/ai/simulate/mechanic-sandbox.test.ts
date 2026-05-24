@@ -150,6 +150,9 @@ function makeAliasedState() {
 
 // ─── Tests ───
 
+const mockRollDice = (min: number, max: number): number =>
+  min + Math.floor(Math.random() * (max - min + 1));
+
 describe('executeMechanic — sandbox execution', () => {
 
   it('both_weapons_ready: generates deterministic weapon mappings', async () => {
@@ -157,7 +160,7 @@ describe('executeMechanic — sandbox execution', () => {
     const mockCallLLM = jest.fn<(prompt: string) => Promise<string>>()
       .mockResolvedValue('Both warriors stand ready — Round 1 begins!');
 
-    const partial = await executeMechanic(BOTH_WEAPONS_READY_BODY, state, mockCallLLM);
+    const partial = await executeMechanic(BOTH_WEAPONS_READY_BODY, state, mockCallLLM, mockRollDice);
 
     console.log('both_weapons_ready partial:', JSON.stringify(partial, null, 2));
 
@@ -176,7 +179,7 @@ describe('executeMechanic — sandbox execution', () => {
     }
 
     // Should be deterministic — running again gives same result
-    const partial2 = await executeMechanic(BOTH_WEAPONS_READY_BODY, state, mockCallLLM);
+    const partial2 = await executeMechanic(BOTH_WEAPONS_READY_BODY, state, mockCallLLM, mockRollDice);
     expect(partial2.game.weaponMappings).toEqual(mappings);
     console.log('✓ Deterministic: second run matches');
 
@@ -213,7 +216,7 @@ describe('executeMechanic — sandbox execution', () => {
     const mockCallLLM = jest.fn<(prompt: string) => Promise<string>>()
       .mockResolvedValue('The Banana Launcher explodes into Pillow Cannon, sending feathers everywhere!');
 
-    const partial = await executeMechanic(RESOLVE_ROUND_OUTCOME_BODY, state, mockCallLLM);
+    const partial = await executeMechanic(RESOLVE_ROUND_OUTCOME_BODY, state, mockCallLLM, mockRollDice);
 
     console.log('resolve_round_outcome (p1 wins):', JSON.stringify(partial, null, 2));
 
@@ -246,7 +249,7 @@ describe('executeMechanic — sandbox execution', () => {
     const mockCallLLM = jest.fn<(prompt: string) => Promise<string>>()
       .mockResolvedValue('Banana Launcher and Glitter Bomb collide in a bewildering stalemate!');
 
-    const partial = await executeMechanic(RESOLVE_ROUND_OUTCOME_BODY, state, mockCallLLM);
+    const partial = await executeMechanic(RESOLVE_ROUND_OUTCOME_BODY, state, mockCallLLM, mockRollDice);
 
     console.log('resolve_round_outcome (tie):', JSON.stringify(partial, null, 2));
 
@@ -271,7 +274,7 @@ describe('executeMechanic — sandbox execution', () => {
     const mockCallLLM = jest.fn<(prompt: string) => Promise<string>>();
 
     await expect(
-      executeMechanic(mutatingBody, state, mockCallLLM)
+      executeMechanic(mutatingBody, state, mockCallLLM, mockRollDice)
     ).rejects.toThrow();
 
     // Original state should be unchanged
@@ -285,7 +288,7 @@ describe('executeMechanic — sandbox execution', () => {
     const mockCallLLM = jest.fn<(prompt: string) => Promise<string>>();
 
     await expect(
-      executeMechanic(badReturnBody, state, mockCallLLM)
+      executeMechanic(badReturnBody, state, mockCallLLM, mockRollDice)
     ).rejects.toThrow(/partial state object/);
 
     console.log('✓ Non-object return rejected');

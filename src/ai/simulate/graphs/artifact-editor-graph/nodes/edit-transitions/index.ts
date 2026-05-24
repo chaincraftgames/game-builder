@@ -40,6 +40,25 @@ export function extractTransitionFragment(
 }
 
 /**
+ * Append a new transition to the transitions artifact.
+ * Returns the full artifact with the new transition appended.
+ */
+export function appendTransitionFragment(
+  transitionsArtifact: TransitionsArtifact,
+  newTransition: unknown,
+): ReplaceResult {
+  const resolved =
+    typeof newTransition === 'string'
+      ? JSON.parse(newTransition)
+      : newTransition;
+  const updated = {
+    ...transitionsArtifact,
+    transitions: [...transitionsArtifact.transitions, resolved],
+  };
+  return { artifact: JSON.stringify(updated, null, 2), replaced: true };
+}
+
+/**
  * Replace a single transition in the transitions artifact by ID.
  * Returns the full artifact with the matching transition replaced.
  */
@@ -132,7 +151,38 @@ export function createEditTransitionsNode(model: ModelWithOptions) {
         failures.push(msg);
         continue;
       }
+      // Add operation — generate a brand-new transition and append it
+      if (change.operation === 'add') {
+        const newId = change.fragmentAddress
+          ? change.fragmentAddress.replace(/^transitions\./, '')
+          : 'new_transition';
+        console.log(`[ArtifactEditor:edit-transitions] Adding new transition: ${newId}`);
 
+        const editInput: FragmentEditInput = {
+          fragment: `(none — create a brand-new transition from scratch with id: "${newId}")`,
+          fragmentAddress: newId,
+          changeDescription: change.description,
+          schemaFields: state.schemaFields,
+          validationErrors: change.errorsAddressed,
+        };
+
+        const editResult = await editTransition(model, editInput);
+        if (!editResult.success) {
+          const msg = `transitions:add LLM generation failed for "${newId}": ${editResult.error}`;
+          console.error(`[ArtifactEditor:edit-transitions] ${msg}`);
+          failures.push(msg);
+          continue;
+        }
+
+        const appendResult = appendTransitionFragment(
+          currentArtifact,
+          editResult.updatedFragment,
+        );
+        currentArtifact = JSON.parse(appendResult.artifact);
+        applied.push(change);
+        console.log(`[ArtifactEditor:edit-transitions] ✓ ${newId} added`);
+        continue;
+      }
       // Patch operation
       if (!change.fragmentAddress) {
         const msg = `transitions:patch missing fragmentAddress for change: "${change.description}"`;

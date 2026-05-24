@@ -43,7 +43,8 @@
     "pm2:status": "pm2 status",
     "pm2:monit": "pm2 monit",
     "import-game": "npm run build && node ./dist/scripts/import-game.js",
-    "invalidate-artifacts": "npm run build && node ./dist/scripts/invalidate-artifacts.js"
+    "invalidate-artifacts": "npm run build && node ./dist/scripts/invalidate-artifacts.js",
+    "dump-artifacts": "npm run build && node ./dist/scripts/dump-runtime-artifacts.js"
   },
   "keywords": [],
   "author": "",

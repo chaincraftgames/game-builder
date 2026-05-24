@@ -116,8 +116,9 @@ async function resolveInstructions(
   gameState: any,
   playerMapping?: string,
 ): Promise<string> {
-  // Phase 1: Resolve RNG ops (synchronous)
-  let resolved = processRngInstructions(instructions);
+  // Phase 1: Resolve RNG ops and random-player selection (synchronous, seeded)
+  const parsedMapping = playerMapping ? deserializePlayerMapping(playerMapping) : undefined;
+  let resolved = processRngInstructions(instructions, undefined, parsedMapping);
 
   // Phase 2: Resolve data-source ops (async, only if data sources configured)
   if (Object.keys(dataSourceMap).length > 0) {
@@ -365,21 +366,28 @@ export function router() {
         `[router] Phase metadata requiresPlayerInput: ${phaseMetadata?.requiresPlayerInput}, resolved to: ${phaseRequiresInput}`,
       );
 
-      // Check if any player actually needs to act
-      const playerInputRequired =
+      // True when at least one player still needs to submit their action:
+      // actionRequired=true (their turn obligation isn't fulfilled) AND
+      // currentAction=null (they haven't submitted yet).
+      // This correctly handles both single-player and simultaneous-submission phases:
+      // - After P1 submits in a simultaneous phase, P2 still has actionRequired=true
+      //   and currentAction=null, so we keep waiting for P2.
+      // - Once all required players have submitted, this is false and we proceed
+      //   to evaluate automatic transitions (allPlayersCompletedActions will be true).
+      const hasPendingPlayerAction =
         gameState.players && typeof gameState.players === "object"
           ? Object.values(gameState.players).some(
-              ({ actionRequired }) => actionRequired,
+              (p: any) => p.actionRequired && p.currentAction == null,
             )
           : false;
       console.log(
-        `[router] Any player has actionRequired=true: ${playerInputRequired}`,
+        `[router] Any player has pending currentAction: ${hasPendingPlayerAction}`,
       );
 
       // Only wait for player input if:
       // 1. The phase accepts player input (phaseRequiresInput === true), AND
-      // 2. At least one player needs to act (playerInputRequired === true)
-      if (phaseRequiresInput && playerInputRequired) {
+      // 2. At least one player still needs to submit (hasPendingPlayerAction === true)
+      if (phaseRequiresInput && hasPendingPlayerAction) {
         console.log("[router] Waiting for player input");
         return {
           currentPhase,

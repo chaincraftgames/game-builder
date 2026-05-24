@@ -62,6 +62,10 @@ export const generateMechanicResultSchema = z.object({
   code: z.string().describe("Generated TypeScript source (always present — needed for repair even on failure)"),
   errors: z.array(tscErrorSchema).optional().describe("tsc errors (present only when validation fails)"),
   valid: z.boolean().describe("Whether tsc validation passed"),
+  writtenFields: z.array(z.string()).optional().describe(
+    "Dot-paths written by this mechanic via setGame/setPlayer (e.g. 'game.challengeWinnerId', 'players.*.diceCount'). " +
+    "Used for precondition coverage validation."
+  ),
 });
 
 export type GenerateMechanicResult = z.infer<typeof generateMechanicResultSchema>;

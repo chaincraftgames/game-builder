@@ -10,6 +10,7 @@
 
 import { Annotation } from '@langchain/langgraph';
 import type { ChangePlan, ArtifactChange } from './types.js';
+import type { RepairRecord } from '#chaincraft/ai/simulate/graphs/runtime-graph/runtime-state.js';
 
 export type ArtifactEditorStateType = typeof ArtifactEditorState.State;
 
@@ -31,6 +32,12 @@ export const ArtifactEditorState = Annotation.Root({
   schemaFields: Annotation<string>({
     reducer: (_, y) => y,
     default: () => '',
+  }),
+
+  /** History of prior repair attempts (passed from repair bridge for cross-repair awareness). */
+  repairHistory: Annotation<RepairRecord[]>({
+    reducer: (_, y) => y,
+    default: () => [],
   }),
 
   // ─── Artifact State (current versions, mutated by editor nodes) ───

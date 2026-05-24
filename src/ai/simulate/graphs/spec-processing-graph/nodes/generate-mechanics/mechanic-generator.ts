@@ -16,13 +16,37 @@ import { generateMechanicTsPrompt, repairContextSection } from "./prompts.js";
 import type { MechanicTarget, GenerateMechanicResult } from "./schema.js";
 
 /**
+ * Scan generated mechanic code for fields written via setGame/setPlayer.
+ * Returns a set of dot-paths like "game.challengeWinnerId" or "players.*.diceCount".
+ * Used for precondition coverage validation.
+ */
+export function scanWrittenFields(code: string): Set<string> {
+  const written = new Set<string>();
+  // setGame('fieldName', ...) → game.fieldName
+  for (const m of code.matchAll(/\bsetGame\(\s*['"`]([^'"`]+)['"`]/g)) {
+    written.add(`game.${m[1]}`);
+  }
+  // setPlayer(anyExpr, 'fieldName', ...) → players.*.fieldName
+  for (const m of code.matchAll(/\bsetPlayer\([^,]+,\s*['"`]([^'"`]+)['"`]/g)) {
+    written.add(`players.*.${m[1]}`);
+  }
+  return written;
+}
+
+/**
  * Strip markdown code fences from LLM output.
+ * Handles both:
+ * - Pure code block (```typescript\n...\n```)
+ * - Prose + code block (LLM explains itself before the code)
  */
 function stripMarkdownFences(code: string): string {
-  return code
-    .replace(/^```(?:typescript|ts)?\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim();
+  // If there's a code fence anywhere in the response, extract its contents
+  const fenceMatch = code.match(/```(?:typescript|ts)?\n([\s\S]*?)\n?```/i);
+  if (fenceMatch) {
+    return fenceMatch[1].trim();
+  }
+  // No code fence found — return trimmed as-is
+  return code.trim();
 }
 
 /**
@@ -93,11 +117,27 @@ export async function generateAndValidateMechanic(
     [target.id]: code,
   });
 
+  // 4b. Scan for `as any` usage — bypasses typed setter enforcement
+  const asAnyMatches = [...code.matchAll(/\bas\s+any\b/g)];
+  const asAnyErrors: string[] = asAnyMatches.map((m) => {
+    const lineNum = code.slice(0, m.index).split('\n').length;
+    return `Forbidden: 'as any' at line ${lineNum} bypasses type-safe setter enforcement. Use setGame/setPlayer with a typed value instead.`;
+  });
+
+  const allErrors = [...(tscResult.errors ?? []), ...asAnyErrors.map(msg => ({
+    code: 0,
+    message: msg,
+    mechanicId: target.id,
+    line: 0,
+    column: 0,
+  }))];
+
   // 5. Return result — always include code (needed for repair even on failure)
   return {
     mechanicId: target.id,
     code,
-    valid: tscResult.valid,
-    ...(tscResult.errors.length > 0 ? { errors: tscResult.errors } : {}),
+    valid: tscResult.valid && asAnyErrors.length === 0,
+    ...(allErrors.length > 0 ? { errors: allErrors } : {}),
+    writtenFields: [...scanWrittenFields(code)],
   };
 }

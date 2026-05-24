@@ -17,16 +17,17 @@ import {
 import {
   validatePathStructureCore,
   validatePreconditionsCanPassCore,
-  validateActionRequiredSetCore,
   validateArtifactStructureCore,
   validateSelfBlockingTransitionsCore,
   validateInitialStatePreconditionsCore,
   validateGameCompletionCore,
   validatePhaseConnectivityCore,
+  validateCurrentActionCoherenceCore,
 } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/validator-cores.js';
 import type { InstructionsArtifact, TransitionsArtifact } from '#chaincraft/ai/simulate/schema.js';
 import type { SpecProcessingStateType } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js';
 import { validateMechanics } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/tsc-validator.js';
+import { scanWrittenFields } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/mechanic-generator.js';
 import type { ArtifactEditorStateType } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/artifact-editor-state.js';
 
 /**
@@ -95,13 +96,18 @@ export function createRevalidateNode() {
         ? (typeof state.stateSchema === 'string' ? JSON.parse(state.stateSchema) : state.stateSchema)
         : undefined;
 
+      // Collect written fields from all generated mechanics for precondition coverage
+      const mechWrittenFields = new Set<string>();
+      for (const code of Object.values(state.generatedMechanics ?? {})) {
+        scanWrittenFields(code).forEach((f) => mechWrittenFields.add(f));
+      }
+
       // Run validator cores that don't need store access
       const coreResults = await Promise.all([
         validatePathStructureCore(artifact),
-        validateActionRequiredSetCore(artifact),
         validateArtifactStructureCore(artifact, stateSchema),
         ...(transitions ? [
-          validatePreconditionsCanPassCore(artifact, transitions),
+          validatePreconditionsCanPassCore(artifact, transitions, mechWrittenFields.size > 0 ? mechWrittenFields : undefined),
           validateSelfBlockingTransitionsCore(artifact, transitions),
           validateInitialStatePreconditionsCore(artifact, transitions),
           validateGameCompletionCore(artifact, transitions),
@@ -127,7 +133,7 @@ export function createRevalidateNode() {
       }
     }
 
-    // ── Layer 3: Mechanics validation (tsc) ──
+    // ── Layer 3: Mechanics validation (tsc + currentAction coherence) ──
     const hasMechanics = Object.keys(state.generatedMechanics ?? {}).length > 0;
     if (hasMechanics && state.stateInterfaces) {
       const tscResult = validateMechanics(state.stateInterfaces, state.generatedMechanics);
@@ -139,6 +145,17 @@ export function createRevalidateNode() {
         console.log(`[ArtifactEditor:revalidate] ${tscErrors.length} tsc error(s) in mechanics`);
       } else {
         console.log(`[ArtifactEditor:revalidate] ✓ All mechanics pass tsc validation`);
+      }
+    }
+
+    if (hasMechanics && hasInstructions) {
+      const artifact = buildInstructionsArtifact(state);
+      const coherenceErrors = validateCurrentActionCoherenceCore(artifact, state.generatedMechanics ?? {});
+      allErrors.push(...coherenceErrors);
+      if (coherenceErrors.length > 0) {
+        console.log(`[ArtifactEditor:revalidate] ${coherenceErrors.length} currentAction coherence error(s)`);
+      } else {
+        console.log(`[ArtifactEditor:revalidate] ✓ currentAction shape coherence passed`);
       }
     }
 

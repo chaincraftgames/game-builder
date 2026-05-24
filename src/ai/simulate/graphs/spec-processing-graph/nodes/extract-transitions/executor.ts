@@ -84,15 +84,33 @@ export function transitionsExecutorNode(model: ModelWithOptions) {
       transitionsArtifactSchema: TransitionsArtifactSchemaJson,
     });
 
-    const response = await model.invokeWithSystemPrompt(
-      executorSystemMessage.content as string,
-      undefined,
-      {
-        agent: "transitions-executor",
-        workflow: "spec-processing",
-      },
-      TransitionsArtifactSchema
-    );
+    let response: any;
+    try {
+      response = await model.invokeWithSystemPrompt(
+        executorSystemMessage.content as string,
+        undefined,
+        {
+          agent: "transitions-executor",
+          workflow: "spec-processing",
+        },
+        TransitionsArtifactSchema
+      );
+    } catch (err: any) {
+      // If validation failed, write the raw (invalid) response to the store so the
+      // repair node has something to work with instead of finding an empty key.
+      if (err?.rawInput && store) {
+        console.warn(
+          "[transitions_executor] Zod validation failed; writing raw response to store for repair"
+        );
+        await putToStore(
+          store,
+          ["transitions", "execution", "output"],
+          threadId,
+          JSON.stringify(err.rawInput)
+        );
+      }
+      throw err;
+    }
 
     console.debug("[transitions_executor] Transitions generation complete");
 

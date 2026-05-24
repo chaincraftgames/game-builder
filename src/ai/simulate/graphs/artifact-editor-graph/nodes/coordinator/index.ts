@@ -61,6 +61,19 @@ export function buildCoordinatorSystemPrompt(state: ArtifactEditorStateType): st
     ? `\nPREVIOUS EDIT FAILURES (these changes were attempted but FAILED — choose a different strategy):\n${state.editFailures.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : '';
 
+  // Include repair history from prior invocations so coordinator avoids regressing
+  let repairHistorySection = '';
+  if (state.repairHistory && state.repairHistory.length > 0) {
+    const historyLines = state.repairHistory.map((r) => {
+      const status = r.succeeded ? 'SUCCEEDED' : 'FAILED';
+      const changes = r.changesSummary.length > 0
+        ? r.changesSummary.map(c => `    - ${c}`).join('\n')
+        : '    (no changes applied)';
+      return `  Repair #${r.attempt} [${status}] — Symptoms: ${r.symptoms.join('; ')}\n${changes}`;
+    });
+    repairHistorySection = `\nPRIOR REPAIR HISTORY (do NOT undo or contradict changes from successful prior repairs unless the current symptoms prove they were wrong):\n${historyLines.join('\n')}\n`;
+  }
+
   // Build mechanics context (only included when mechanics are present)
   let mechanicsSection = '';
   const mechanics = state.generatedMechanics;
@@ -83,7 +96,7 @@ ${state.gameSpecification}
 
 VALIDATION ERRORS:
 ${errorsToFix.map((e, i) => `${i + 1}. ${e}`).join('\n')}
-${editFailuresSection}
+${editFailuresSection}${repairHistorySection}
 CURRENT ARTIFACTS:
 Schema fields: ${state.schemaFields}
 
@@ -112,6 +125,7 @@ export async function invokeCoordinator(
       : JSON.parse(input.transitionInstructions),
     generatedMechanics: input.generatedMechanics ?? {},
     stateInterfaces: input.stateInterfaces ?? '',
+    repairHistory: [],
     changePlan: null,
     attemptNumber: 0,
     changesApplied: [],

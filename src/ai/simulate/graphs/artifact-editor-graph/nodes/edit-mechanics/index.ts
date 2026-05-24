@@ -161,6 +161,17 @@ export function createEditMechanicsNode() {
       const mechanicId = change.fragmentAddress;
 
       if (!mechanicId) {
+        if (change.operation === 'reextract') {
+          // Null/missing fragmentAddress on a reextract means "regenerate all mechanics"
+          console.log(
+            `[ArtifactEditor:edit-mechanics] reextract with no fragmentAddress — regenerating all ${allTargets.length} mechanic(s)`,
+          );
+          for (const target of allTargets) {
+            targets.push(target);
+          }
+          applied.push(change);
+          continue;
+        }
         const msg =
           `mechanics:${change.operation} missing fragmentAddress for change: "${change.description}"`;
         console.error(`[ArtifactEditor:edit-mechanics] ${msg}`);

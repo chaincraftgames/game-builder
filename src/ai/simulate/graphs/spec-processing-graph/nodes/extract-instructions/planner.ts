@@ -16,6 +16,24 @@ import {
 } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js";
 import { getAllAggregators, getNumericDataSourceIds } from "#chaincraft/ai/design/data-sources.js";
 
+/**
+ * Remove router-controlled fields (currentPhase, gameEnded) from the stateSchema
+ * before passing it to the instructions LLM. These fields cannot be set by mechanics
+ * or stateDelta — the router owns them exclusively. Hiding them prevents the LLM from
+ * generating ops that target them, which would be silently dropped at runtime.
+ */
+function filterRouterControlledFields(stateSchema: string): string {
+  try {
+    const fields = JSON.parse(stateSchema);
+    if (!Array.isArray(fields)) return stateSchema;
+    const ROUTER_FIELDS = new Set(['currentPhase', 'gameEnded']);
+    const filtered = fields.filter((f: any) => !ROUTER_FIELDS.has(f.name));
+    return JSON.stringify(filtered);
+  } catch {
+    return stateSchema;
+  }
+}
+
 export function instructionsPlannerNode(model: ModelWithOptions) {
   return async (
     state: SpecProcessingStateType,
@@ -38,8 +56,8 @@ export function instructionsPlannerNode(model: ModelWithOptions) {
     
     const narrativeMarkers = Object.keys(state.specNarratives || {});
     const narrativeMarkersSection = narrativeMarkers.length > 0
-      ? `Available markers: ${narrativeMarkers.map(m => `!___ NARRATIVE:${m} ___!`).join(', ')}`
-      : "No narrative markers (purely mechanical game).";
+      ? `Available keys: ${narrativeMarkers.join(', ')}\nFor transitions that generate messages with style/tone, list applicable key names in the \`narrativeKeys\` field.`
+      : "No narrative keys (purely mechanical game).";
 
     // Format valid data source IDs for the prompt
     const dataSources = state.dataSources || [];
@@ -68,7 +86,7 @@ export function instructionsPlannerNode(model: ModelWithOptions) {
       transitionIdsList: transitionIds.map((t: any, i: number) => 
         `${i + 1}. id="${t.id}" (${t.fromPhase} → ${t.toPhase})`
       ).join('\n'),
-      stateSchema: String(state.stateSchema ?? ""),
+      stateSchema: filterRouterControlledFields(String(state.stateSchema ?? "")),
       planningSchemaJson: JSON.stringify(InstructionsPlanningResponseSchemaJson, null, 2),
       narrativeMarkersSection,
       validDataSourceIds,

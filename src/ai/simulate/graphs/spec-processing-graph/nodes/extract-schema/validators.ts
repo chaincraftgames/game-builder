@@ -35,6 +35,7 @@ export function extractExecutorFields(executorOutput: string): GameStateField[] 
           if (field.enumValues) f.enumValues = field.enumValues;
           if (field.valueType) f.valueType = field.valueType;
           if (field.required !== undefined) f.required = field.required;
+          if (Array.isArray(field.fields)) f.fields = field.fields;
           fields.push(f);
         }
       });

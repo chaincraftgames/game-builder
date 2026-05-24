@@ -277,4 +277,172 @@ describe('generateStateInterfaces', () => {
 
     assertValidTypeScript(output);
   });
+
+  // -----------------------------------------------------------------------
+  // 13. Object type — basic sub-interface generation
+  // -----------------------------------------------------------------------
+  test('object type — generates named sub-interface with typed fields', () => {
+    const fields: GameStateField[] = [
+      { name: 'currentBid', type: 'object', path: 'game', purpose: 'Active bid', fields: [
+        { name: 'count', type: 'number', path: 'game', purpose: 'Bid quantity' },
+        { name: 'faceValue', type: 'number', path: 'game', purpose: 'Target value' },
+        { name: 'bidderId', type: 'string', path: 'game', purpose: 'Who placed the bid' },
+      ]},
+      { name: 'round', type: 'number', path: 'game', purpose: 'Round number' },
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    // Sub-interface should be emitted
+    expect(output).toContain('export interface GameState_CurrentBid {');
+    expect(output).toContain('  count: number;');
+    expect(output).toContain('  faceValue: number;');
+    expect(output).toContain('  bidderId: string;');
+
+    // Main interface references the sub-interface
+    expect(output).toContain('currentBid: GameState_CurrentBid;');
+    expect(output).toContain('round: number;');
+
+    // Sub-interface appears BEFORE GameState
+    const subIdx = output.indexOf('export interface GameState_CurrentBid {');
+    const mainIdx = output.indexOf('export interface GameState {');
+    expect(subIdx).toBeLessThan(mainIdx);
+
+    assertValidTypeScript(output);
+  });
+
+  // -----------------------------------------------------------------------
+  // 14. Object type — optional sub-fields
+  // -----------------------------------------------------------------------
+  test('object type — optional sub-fields produce optional properties', () => {
+    const fields: GameStateField[] = [
+      { name: 'result', type: 'object', path: 'game', purpose: 'Outcome', fields: [
+        { name: 'winner', type: 'string', path: 'game', purpose: 'Winner ID' },
+        { name: 'reason', type: 'string', path: 'game', purpose: 'Win reason', required: false },
+      ]},
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    expect(output).toContain('  winner: string;');
+    expect(output).toContain('  reason?: string;');
+    expect(output).not.toContain('winner?');
+
+    assertValidTypeScript(output);
+  });
+
+  // -----------------------------------------------------------------------
+  // 15. Object type — mixed sub-field types
+  // -----------------------------------------------------------------------
+  test('object type — sub-fields with heterogeneous types', () => {
+    const fields: GameStateField[] = [
+      { name: 'challenge', type: 'object', path: 'game', purpose: 'Challenge state', fields: [
+        { name: 'challengerId', type: 'string', path: 'game', purpose: 'Who challenged' },
+        { name: 'targetId', type: 'string', path: 'game', purpose: 'Who was challenged' },
+        { name: 'succeeded', type: 'boolean', path: 'game', purpose: 'Challenge outcome' },
+        { name: 'penalty', type: 'number', path: 'game', purpose: 'Penalty amount' },
+        { name: 'status', type: 'enum', path: 'game', purpose: 'Challenge status', enumValues: ['pending', 'resolved'] },
+      ]},
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    expect(output).toContain('export interface GameState_Challenge {');
+    expect(output).toContain('  challengerId: string;');
+    expect(output).toContain('  targetId: string;');
+    expect(output).toContain('  succeeded: boolean;');
+    expect(output).toContain('  penalty: number;');
+    expect(output).toContain('  status: "pending" | "resolved";');
+    expect(output).toContain('challenge: GameState_Challenge;');
+
+    assertValidTypeScript(output);
+  });
+
+  // -----------------------------------------------------------------------
+  // 16. Object type — empty fields falls back to Record<string, unknown>
+  // -----------------------------------------------------------------------
+  test('object type — empty or missing fields falls back to Record<string, unknown>', () => {
+    const fields: GameStateField[] = [
+      { name: 'emptyObj', type: 'object', path: 'game', purpose: 'Empty object', fields: [] },
+      { name: 'noFields', type: 'object', path: 'game', purpose: 'No fields' },
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    expect(output).toContain('emptyObj: Record<string, unknown>;');
+    expect(output).toContain('noFields: Record<string, unknown>;');
+    // No sub-interface should be generated
+    expect(output).not.toContain('GameState_EmptyObj');
+    expect(output).not.toContain('GameState_NoFields');
+
+    assertValidTypeScript(output);
+  });
+
+  // -----------------------------------------------------------------------
+  // 17. Object type — multiple object fields produce distinct sub-interfaces
+  // -----------------------------------------------------------------------
+  test('object type — multiple object fields in same interface', () => {
+    const fields: GameStateField[] = [
+      { name: 'currentBid', type: 'object', path: 'game', purpose: 'Active bid', fields: [
+        { name: 'amount', type: 'number', path: 'game', purpose: 'Bid amount' },
+        { name: 'bidderId', type: 'string', path: 'game', purpose: 'Bidder' },
+      ]},
+      { name: 'lastAction', type: 'object', path: 'game', purpose: 'Last action', fields: [
+        { name: 'type', type: 'string', path: 'game', purpose: 'Action type' },
+        { name: 'playerId', type: 'string', path: 'game', purpose: 'Actor' },
+        { name: 'timestamp', type: 'number', path: 'game', purpose: 'When' },
+      ]},
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    expect(output).toContain('export interface GameState_CurrentBid {');
+    expect(output).toContain('export interface GameState_LastAction {');
+    expect(output).toContain('currentBid: GameState_CurrentBid;');
+    expect(output).toContain('lastAction: GameState_LastAction;');
+
+    assertValidTypeScript(output);
+  });
+
+  // -----------------------------------------------------------------------
+  // 18. Object type — in PlayerState uses PlayerState_ prefix
+  // -----------------------------------------------------------------------
+  test('object type — player-path object uses PlayerState_ prefix', () => {
+    const fields: GameStateField[] = [
+      { name: 'hand', type: 'object', path: 'player', purpose: 'Player hand', fields: [
+        { name: 'cards', type: 'array', path: 'player', purpose: 'Card list', valueType: 'string' },
+        { name: 'size', type: 'number', path: 'player', purpose: 'Hand size' },
+      ]},
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    expect(output).toContain('export interface PlayerState_Hand {');
+    expect(output).toContain('  cards: string[];');
+    expect(output).toContain('  size: number;');
+    expect(output).toContain('hand: PlayerState_Hand;');
+    // Should NOT use GameState_ prefix
+    expect(output).not.toContain('GameState_Hand');
+
+    assertValidTypeScript(output);
+  });
+
+  // -----------------------------------------------------------------------
+  // 19. Optional object field
+  // -----------------------------------------------------------------------
+  test('object type — optional object field produces optional property', () => {
+    const fields: GameStateField[] = [
+      { name: 'activeTrade', type: 'object', path: 'game', purpose: 'Current trade', required: false, fields: [
+        { name: 'offeredBy', type: 'string', path: 'game', purpose: 'Offerer' },
+        { name: 'amount', type: 'number', path: 'game', purpose: 'Trade amount' },
+      ]},
+    ];
+
+    const output = generateStateInterfaces(fields);
+
+    expect(output).toContain('export interface GameState_ActiveTrade {');
+    expect(output).toContain('activeTrade?: GameState_ActiveTrade;');
+
+    assertValidTypeScript(output);
+  });
 });

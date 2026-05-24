@@ -189,6 +189,25 @@ export const SetForAllPlayersOpSchema = z.object({
 });
 
 /**
+ * SetForRandomPlayer operation: randomly selects one player and sets a field on their state.
+ * Use this in init-phase stateDelta to assign turn order without game-specific heuristics.
+ * The selected player alias is chosen uniformly at random from all players in the game.
+ */
+export const SetForRandomPlayerOpSchema = z.object({
+  op: z.literal("setForRandomPlayer"),
+  field: z.string().describe(
+    "Player state field name (without 'players.' prefix) to set on the randomly selected player. "
+    + "Example: 'actionRequired'"
+  ),
+  value: z.any().describe("Value to set on the randomly selected player's field"),
+  recordTo: z.string().optional().describe(
+    "Optional dot-notation game-state path where the chosen player's alias will be recorded. "
+    + "Example: 'game.roundStartingPlayerId' — after resolution, that field will contain 'player1' or 'player2', "
+    + "which can then be referenced in message templates as {{game.roundStartingPlayerId}}."
+  ),
+});
+
+/**
  * SetFromMap operation: looks up a key (read from game state) in a hardcoded map
  * and writes the corresponding value to a target path.
  * Useful for translating player choices to derived constants (e.g. ticker → dataSourceId,
@@ -281,6 +300,7 @@ export const StateDeltaOpSchema = z.discriminatedUnion("op", [
   MergeOpSchema,
   RngOpSchema,
   SetForAllPlayersOpSchema,
+  SetForRandomPlayerOpSchema,
   SetFromMapOpSchema,
   SetFromDataSourceOpSchema,
 ]);
@@ -299,6 +319,7 @@ export type TransferOp = z.infer<typeof TransferOpSchema>;
 export type RngOp = z.infer<typeof RngOpSchema>;
 export type MergeOp = z.infer<typeof MergeOpSchema>;
 export type SetForAllPlayersOp = z.infer<typeof SetForAllPlayersOpSchema>;
+export type SetForRandomPlayerOp = z.infer<typeof SetForRandomPlayerOpSchema>;
 export type SetFromMapOp = z.infer<typeof SetFromMapOpSchema>;
 export type SetFromDataSourceOp = z.infer<typeof SetFromDataSourceOpSchema>;
 
@@ -503,12 +524,13 @@ export function applyStateDeltas(state: any, deltas: StateDeltaOp[]): ApplyDelta
   const touchedPaths = new Set<string>();
   
   for (const delta of deltas) {
-    // CRITICAL: Filter out any operation attempting to set game.currentPhase
-    // Phase changes are ONLY handled by the router based on transition preconditions
-    if (delta.op === 'set' && delta.path === 'game.currentPhase') {
+    // CRITICAL: Filter out operations targeting system-controlled fields.
+    // These fields (currentPhase, gameEnded) are managed exclusively by the
+    // router based on transition preconditions — never by mechanics or LLM output.
+    if ('path' in delta && (delta.path === 'game.currentPhase' || delta.path === 'game.gameEnded')) {
       console.warn(
-        `[statedelta] Ignoring forbidden operation: Cannot set 'game.currentPhase' via stateDelta. ` +
-        `Phase changes are controlled exclusively by the router based on transition preconditions.`
+        `[statedelta] Ignoring forbidden operation: Cannot set '${(delta as any).path}' via stateDelta. ` +
+        `This field is system-controlled and managed exclusively by the router.`
       );
       continue; // Skip this operation, don't add to errors
     }
