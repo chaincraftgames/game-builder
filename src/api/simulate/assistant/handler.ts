@@ -11,6 +11,7 @@ import { LRUCache } from 'lru-cache';
 
 import { getSaver } from '#chaincraft/ai/memory/checkpoint-memory.js';
 import { getConfig } from '#chaincraft/config.js';
+import { createSimAssistantGraphConfig } from '#chaincraft/ai/graph-config.js';
 import {
   createSimAssistantGraph,
   type SimAssistantGraphResult,
@@ -76,7 +77,7 @@ export async function handleAssistantMessage(
       assistantCache.set(sessionId, cached);
     }
 
-    const config = { configurable: { thread_id: sessionId } };
+    const config = createSimAssistantGraphConfig(sessionId);
 
     // Invoke the graph
     const result = await cached.graph.invoke(

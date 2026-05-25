@@ -390,7 +390,7 @@ export function createRepairTool(
         return `Repair succeeded. ${summary}. The artifact cache has been refreshed. You can now restart the simulation if needed.`;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[repair-bridge] Repair failed for ${sessionId}:`, msg);
+        console.error(`[repair-bridge] Repair failed for ${sessionId}:`, err);
         bus?.emit({ type: "repair:error", error: msg });
         return `Repair failed with an unexpected error: ${msg}`;
       }
