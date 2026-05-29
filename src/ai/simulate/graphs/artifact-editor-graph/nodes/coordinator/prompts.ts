@@ -134,6 +134,17 @@ Changes to Schema may require cascading changes to Transitions, Instructions, an
 - Artifacts affected: schema + mechanics (approach 1), OR mechanics only (approach 2)
 - Confidence: HIGH (tsc provides exact field name; TS2551 sometimes suggests the correct spelling)
 
+### Pattern 11b: Missing generated sub-interface type (TS2304: Cannot find name 'GameState_X')
+- Error: "TS2304 in <mechanicId> (line Y, col Z): Cannot find name 'GameState_XyzAbc'"
+- Root cause: Sub-interface types like 'GameState_FieldName' or 'PlayerState_FieldName' are ONLY generated when the corresponding schema field has type="object" with explicit sub-fields. If the field has type="record" (a dynamic mapping) or any non-object type, NO sub-interface is generated — the referenced type name does not exist.
+- Diagnostic: Convert the suffix from PascalCase to camelCase to find the schema field (e.g., 'GameState_LastRoundChoices' → field 'lastRoundChoices'). Check whether it is type="record" or type="object".
+- Fix strategy:
+  1. (REQUIRED) Patch the mechanic at the error line: replace 'GameState_FieldName' with the correct inline TypeScript type. If the field is a player-keyed map (e.g., lastRoundChoices), use 'Record<string, string | null>'. If it is a numeric map, use 'Record<string, number>'. Match to the schema valueType.
+  2. Do NOT change the schema unless the field genuinely needs fixed named sub-fields. For dynamic player-id-keyed mappings, type="record" is correct and should stay.
+- CRITICAL: Do NOT use operation="reextract" for the mechanic. The mechanic generator LLM will reproduce the same non-existent type. Use operation="patch" with the exact type substitution in the description.
+- Artifacts affected: mechanics only
+- Confidence: HIGH (TS2304 pinpoints the exact line; the fix is a type annotation substitution)
+
 ### Pattern 12: Return type mismatch (TS2322)
 - Error: "TS2322 in <mechanicId>: Type 'X' is not assignable to type 'Y'"
 - Root cause: Generated mechanic returns a value of the wrong type for a state field (e.g., string instead of number)
@@ -256,7 +267,7 @@ Example — array of structured objects (e.g., a player weapon inventory):
 8. When instructions are empty ({}) but transitions exist, use 'reextract' for instructions — there's nothing to patch
 9. Read the game specification carefully — it defines the game's intent. Not all validation warnings require code changes (e.g., isGameWinner warnings for no-winner games).
 10. When any change has artifact="schema" and operation != "reextract", you MUST include a non-empty \`schemaOps\` array INSIDE that change item. Schema editing is deterministic — schemaOps inside the change item is the only way schema changes are applied.
-11. For mechanics errors (TS2339/TS2551/TS2322): use artifact="mechanics", operation="patch" with the mechanic ID as fragmentAddress. If the root cause is a missing schema field, also include a schema change (with schemaOps inside it) BEFORE the mechanics change.
+11. For mechanics errors (TS2339/TS2551/TS2322): use artifact="mechanics", operation="patch" with the mechanic ID as fragmentAddress. If the root cause is a missing schema field, also include a schema change (with schemaOps inside it) BEFORE the mechanics change. For TS2304 (Cannot find name 'GameState_X' or 'PlayerState_X'): always use operation="patch" (never "reextract") — see Pattern 11b.
 12. For mechanics 'reextract': regenerates the mechanic from scratch using the instructions plan. Use when the code is fundamentally wrong, not just a type error.
 13. UPSTREAM-FIRST PRINCIPLE: Downstream artifacts (mechanics) are regenerated from upstream artifacts (instructions, schema) each time the pipeline runs. If a failure could be caused by an upstream artifact being vague, incomplete, or incorrect, you MUST fix the upstream artifact — even if you could also fix the downstream artifact directly. A downstream-only fix will be lost the next time artifacts are regenerated, and the same problem will recur. When the root cause is ambiguous between upstream and downstream, ALWAYS fix upstream first. After upstream is corrected, downstream artifacts will be regenerated and may self-heal; if they don't, they can be repaired in a subsequent pass. Concretely for mechanics: the code generator follows the mechanicsGuidance "computation" field as its primary implementation spec. If the "computation" is missing a constraint or algorithm detail that would have prevented the error, the instructions must be patched to make "computation" explicit — even if the "rules" array already hints at the requirement. Rules alone are insufficient; the computation must operationalize them.
 14. ONE ACTION TYPE PER TRANSITION: When adding or patching player-input transitions, each transition must handle exactly ONE player action type and route to the ONE correct toPhase for that action. NEVER create (or leave in place) a transition that accepts two different action types (e.g., "bid" and "challenge", "raise" and "fold") and routes both to the same toPhase — this is the action-type routing deadlock antipattern (Pattern 14). If a repair restructures transitions, verify afterwards that every distinct player action type has its own dedicated transition with a mutually exclusive precondition (anyPlayer.currentAction.type == "<type>").
