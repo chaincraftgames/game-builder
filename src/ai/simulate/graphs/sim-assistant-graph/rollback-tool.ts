@@ -76,7 +76,7 @@ export function createRollbackTool(deps: RollbackToolDeps): StructuredToolInterf
 
         // Write back
         const metadata = tuple.metadata ?? { source: 'update' as const, step: -1, parents: {} };
-        await (runtimeSaver as any).put(tuple.config, tuple.checkpoint, metadata);
+        await (runtimeSaver as any).put(tuple.config, tuple.checkpoint, metadata, tuple.checkpoint.channel_versions ?? {});
 
         // Also roll back the spec cache so future sessions get the pre-repair artifacts
         await promoteArtifactsToSpecCache(sessionId);

@@ -65,13 +65,12 @@ export async function updateRuntimeArtifacts(
   }
 
   // Write back with the same checkpoint ID (in-place overwrite).
-  // Concrete savers (SqliteSaver, MemorySaver) accept 3 args.
   const metadata = tuple.metadata ?? {
     source: "update" as const,
     step: -1,
     parents: {},
   };
-  await (saver as any).put(tuple.config, tuple.checkpoint, metadata);
+  await (saver as any).put(tuple.config, tuple.checkpoint, metadata, tuple.checkpoint.channel_versions ?? {});
 
   console.log(
     `[repair-bridge] Updated runtime artifacts for session ${sessionId}`,
@@ -152,7 +151,7 @@ async function saveSnapshotAndGetHistory(
     step: -1,
     parents: {},
   };
-  await (saver as any).put(tuple.config, tuple.checkpoint, metadata);
+  await (saver as any).put(tuple.config, tuple.checkpoint, metadata, tuple.checkpoint.channel_versions ?? {});
 
   console.log(
     `[repair-bridge] Saved artifact snapshot for session ${sessionId}`,
@@ -182,7 +181,7 @@ async function appendRepairRecord(
     step: -1,
     parents: {},
   };
-  await (saver as any).put(tuple.config, tuple.checkpoint, metadata);
+  await (saver as any).put(tuple.config, tuple.checkpoint, metadata, tuple.checkpoint.channel_versions ?? {});
 
   console.log(
     `[repair-bridge] Appended repair record #${record.attempt} for session ${sessionId}`,
