@@ -59,9 +59,12 @@ export function validateMechanics(
   const mechanicFileNames: string[] = [];
   for (const [transitionId, source] of Object.entries(mechanicSources)) {
     const fileName = mechanicFileName(transitionId);
-    // Prepend the import so mechanic code can reference state types
+    // Prepend the import so mechanic code can reference state types.
+    // Include GameState and PlayerState so mechanics can use them in type annotations
+    // (e.g. `getPlayer('p', 'field') as PlayerState['field']`). The mechanic generator
+    // prompt documents these patterns — they must be in scope for tsc to accept them.
     const fullSource =
-      `import { MechanicState, CallLLM, RollDice, MechanicResult, setGame, getGame, setPlayer, getPlayer, setPublicMessage, setPrivateMessage, rejectAction, buildResult } from './state-interfaces';\n` +
+      `import { GameState, PlayerState, MechanicState, CallLLM, RollDice, MechanicResult, setGame, getGame, setPlayer, getPlayer, setPublicMessage, setPrivateMessage, rejectAction, buildResult } from './state-interfaces';\n` +
       source;
     virtualFiles.set(fileName, fullSource);
     mechanicFileNames.push(fileName);

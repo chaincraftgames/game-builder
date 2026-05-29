@@ -62,6 +62,7 @@ Types and functions are already imported — do NOT add import statements.
 9. ⛔ **MANDATORY: After reading \`currentAction\`, always clear it.** For every player whose \`currentAction\` you read, call \`setPlayer(alias, 'currentAction', null)\` before returning. This is required regardless of whether the action succeeded or was skipped. Failure to clear \`currentAction\` will break turn detection for future rounds.
 10. Do NOT re-validate player input — JsonLogic validation already ran. If \`currentAction\` is present, the action is legal.
 10. Handle edge cases (ties, missing data) gracefully.
+11. ⛔ **NEVER reference \`GameState_*\` or \`PlayerState_*\` sub-interface type names unless they are explicitly defined in the State Interfaces section below.** Fields with type \`Record<string, T>\` do NOT have a generated sub-interface — use \`Record<string, T>\` inline. If you need to type a value extracted from a record field, look up its type in the stateInterfaces (e.g. if \`lastRoundChoices\` is \`Record<string, string | null>\`, use that type directly, not \`GameState_LastRoundChoices\`).
 
 ## Example Pattern
 
