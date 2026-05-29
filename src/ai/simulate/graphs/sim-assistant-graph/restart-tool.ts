@@ -75,7 +75,7 @@ export async function resetCheckpointToArtifacts(
 
   // Write back with same checkpoint ID (in-place overwrite)
   const metadata = tuple.metadata ?? { source: 'update' as const, step: -1, parents: {} };
-  await (saver as any).put(tuple.config, tuple.checkpoint, metadata);
+  await (saver as any).put(tuple.config, tuple.checkpoint, metadata, tuple.checkpoint.channel_versions ?? {});
 
   console.log(`[restart-tool] Reset checkpoint to artifact-only state for session ${sessionId}`);
   return players;

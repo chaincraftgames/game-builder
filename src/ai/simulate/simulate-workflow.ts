@@ -206,7 +206,7 @@ export async function promoteArtifactsToSpecCache(sessionId: string): Promise<vo
 
   // 4. Write back with same checkpoint ID (in-place overwrite)
   const metadata = specTuple.metadata ?? { source: 'update' as const, step: -1, parents: {} };
-  await (specSaver as any).put(specTuple.config, specTuple.checkpoint, metadata);
+  await (specSaver as any).put(specTuple.config, specTuple.checkpoint, metadata, specTuple.checkpoint.channel_versions ?? {});
 
   console.log(`[simulate] Promoted repaired artifacts to spec cache: ${specKey} (from session ${sessionId})`);
 }
