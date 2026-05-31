@@ -56,16 +56,19 @@ export function validateMechanics(
   const virtualFiles = new Map<string, string>();
   virtualFiles.set(INTERFACES_FILE, stateInterfaces);
 
+  // Count lines in stateInterfaces so error line numbers can be offset back to
+  // 1-based lines within the mechanic source (used in the diagnostic loop below).
+  const stateInterfaceLineCount = stateInterfaces.split('\n').length;
+
   const mechanicFileNames: string[] = [];
   for (const [transitionId, source] of Object.entries(mechanicSources)) {
     const fileName = mechanicFileName(transitionId);
-    // Prepend the import so mechanic code can reference state types.
-    // Include GameState and PlayerState so mechanics can use them in type annotations
-    // (e.g. `getPlayer('p', 'field') as PlayerState['field']`). The mechanic generator
-    // prompt documents these patterns — they must be in scope for tsc to accept them.
-    const fullSource =
-      `import { GameState, PlayerState, MechanicState, CallLLM, RollDice, MechanicResult, setGame, getGame, setPlayer, getPlayer, setPublicMessage, setPrivateMessage, rejectAction, buildResult } from './state-interfaces';\n` +
-      source;
+    // Concatenate stateInterfaces directly into each mechanic compilation unit so
+    // all generated types — including sub-interfaces like GameState_LastRoundChoices
+    // produced from 'object'-typed schema fields — are in scope without needing an
+    // explicit named import. A named import can only list statically-known symbols;
+    // concatenation makes every exported declaration available automatically.
+    const fullSource = stateInterfaces + '\n' + source;
     virtualFiles.set(fileName, fullSource);
     mechanicFileNames.push(fileName);
   }
@@ -151,9 +154,12 @@ export function validateMechanics(
 
       if (diag.file && diag.start !== undefined) {
         const pos = diag.file.getLineAndCharacterOfPosition(diag.start);
-        // Adjust for the prepended import line (line 0 in the virtual file
-        // is our synthetic import, so subtract 1 from the reported line)
-        line = pos.line; // 0-based, but line 0 is the import → mechanic starts at line 1
+        // Convert the 0-based position in the concatenated virtual file back to
+        // a 1-based line number within the mechanic source itself.
+        // The mechanic starts at line index `stateInterfaceLineCount` (0-based)
+        // because stateInterfaces occupies lines 0..stateInterfaceLineCount-1,
+        // followed by a blank separator line, then the mechanic source.
+        line = pos.line - stateInterfaceLineCount + 1;
         column = pos.character;
       }
 
