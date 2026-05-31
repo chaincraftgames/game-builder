@@ -147,8 +147,11 @@ Detection:
    (c) The transition has a mechanic (it appears in Mechanic Field I/O)
    If (b) shows "Sends messages: public" or "Sends messages: private (per-player)",
    the notification requirement is SATISFIED — do NOT flag this transition.
-2. For the init transition (fromPhase == "init"): NEVER flag as missing_player_notification.
-   The init transition fires before any player interaction and requires no notification.
+2. For the init transition (fromPhase == "init"): ALWAYS flag as missing_player_notification
+   if the Instructions Summary shows publicMessage: (none). The init transition MUST produce
+   a public message announcing the game has started and describing the first action players
+   should take — the runtime requires at least one public message before the first player
+   input turn.
 
 Root cause artifact: instructions`,
 

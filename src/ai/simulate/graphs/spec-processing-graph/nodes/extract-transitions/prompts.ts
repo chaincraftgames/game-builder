@@ -60,6 +60,18 @@ Start from this initial template:
 
 #### Initialize Transition
 The initialize_game transition MUST set initial values for every schema field:
+
+#### Narrative Opening Pattern
+If the game requires an LLM-generated narrative opening (e.g., a dungeon crawler that needs
+to set the scene, reveal a secret role, or generate atmospheric intro text), do NOT try to
+produce that narrative in \`initialize_game\`. Instead:
+1. \`initialize_game\` transitions from "init" to an intermediate automatic phase (e.g. "opening_scene").
+2. Add a second automatic transition (e.g. \`generate_opening_scene\`) from "opening_scene" to the
+   first player-input phase. This transition uses mechanicsGuidance + narrativeKeys so the generated
+   mechanic can call \`callLLM\` at runtime to produce the narrative opening message.
+
+For simple games that only need a static welcome message, \`initialize_game\` transitions directly
+from "init" to the first gameplay phase and includes a static \`messages.public.template\`.
 - All **input fields** (set to null/0/false/empty — no player has acted yet)
 - All **outcome fields** (set to null — no outcomes computed yet)
 - All player fields for every player

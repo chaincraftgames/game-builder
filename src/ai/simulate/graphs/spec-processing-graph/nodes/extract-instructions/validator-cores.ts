@@ -725,17 +725,24 @@ export function validatePlayerActionSetsActionTypeCore(
   for (const [phaseName, phaseInst] of Object.entries(artifact.playerPhases || {})) {
     for (const action of phaseInst.playerActions || []) {
       const ops: any[] = action.stateDelta || [];
-      const setsActionType = ops.some(
+      const typeOp = ops.find(
         (op) =>
           op.op === 'set' &&
           typeof op.path === 'string' &&
           op.path.endsWith('.currentAction.type'),
       );
-      if (!setsActionType) {
+      if (!typeOp) {
         errors.push(
           `Player action '${action.id}' in phase '${phaseName}': ` +
           `stateDelta must include a 'set' op that writes 'players.{{playerId}}.currentAction.type'. ` +
           `The runtime identifies which action was taken from this field — omitting it is an invalid artifact.`,
+        );
+      } else if (typeOp.value !== action.id) {
+        errors.push(
+          `Player action '${action.id}' in phase '${phaseName}': ` +
+          `the 'currentAction.type' value must equal the action's own id. ` +
+          `Found value '${typeOp.value}' but expected '${action.id}'. ` +
+          `The runtime looks up validation rules by matching currentAction.type against playerAction ids — a mismatch causes every player action to be rejected at runtime.`,
         );
       }
     }
