@@ -107,6 +107,82 @@ npm run pm2:reload
 pm2 save
 ```
 
+## CI/CD Secret Injection
+
+Integration tests that require live API keys (e.g., `npm run test:simulation`) must **never** use secrets stored in committed files. All CI/CD pipelines should inject secrets via the platform's secrets management — not via a `.env` file checked into the repository.
+
+### GitHub Actions
+
+Store `ANTHROPIC_API_KEY` (and any other required keys) as [encrypted repository secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets):
+
+1. Go to **Settings → Secrets and variables → Actions → New repository secret**.
+2. Name it `ANTHROPIC_API_KEY` and paste the key value.
+
+Reference the secret in your workflow file:
+
+```yaml
+name: Integration Tests
+
+on: [push, pull_request]
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run simulation tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LATEST_SONNET_MODEL: claude-sonnet-4-6
+          LATEST_HAIKU_MODEL: claude-haiku-4-5-20251001
+        run: npm run test:simulation
+```
+
+> **Note**: Never write `ANTHROPIC_API_KEY=...` directly in the workflow file. Always use `${{ secrets.SECRET_NAME }}`.
+
+### GitLab CI
+
+Store the key as a [masked CI/CD variable](https://docs.gitlab.com/ee/ci/variables/) (**Settings → CI/CD → Variables → Add variable**, tick *Mask variable*):
+
+```yaml
+integration_tests:
+  stage: test
+  script:
+    - npm ci
+    - npm run build
+    - npm run test:simulation
+  variables:
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY   # Injected from CI/CD settings
+    LATEST_SONNET_MODEL: "claude-sonnet-4-6"
+    LATEST_HAIKU_MODEL: "claude-haiku-4-5-20251001"
+```
+
+### Verifying No Committed Secrets
+
+After setting up CI/CD, confirm that no real keys exist in the repository:
+
+```bash
+# Search entire git history for Anthropic key patterns
+git log --all -p | grep -E 'sk-ant-'
+
+# Check all tracked files
+git grep -E 'sk-ant-'
+```
+
+---
+
 ## Environment Configuration
 
 ### Required Environment Variables
