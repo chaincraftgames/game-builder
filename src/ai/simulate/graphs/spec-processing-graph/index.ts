@@ -123,12 +123,9 @@ export async function createSpecProcessingGraph(
   });
   workflow.addNode("repair_artifacts", repairArtifactsNode);
   workflow.addNode("generate_mechanics", async (state, config) => {
-    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
-    bus?.emit({ type: 'artifact:started', artifact: 'generatedMechanics' });
     // Thin wrapper: build targets + interfaces, invoke subgraph, map outputs back
     if (!state.stateSchema) {
       console.warn("[generate_mechanics] No stateSchema, skipping");
-      bus?.emit({ type: 'artifact:completed', artifact: 'generatedMechanics' });
       return {};
     }
 
@@ -162,7 +159,6 @@ export async function createSpecProcessingGraph(
 
     if (targets.length === 0) {
       console.debug("[generate_mechanics] No targets with mechanicsGuidance, skipping");
-      bus?.emit({ type: 'artifact:completed', artifact: 'generatedMechanics' });
       return {};
     }
 
@@ -176,12 +172,10 @@ export async function createSpecProcessingGraph(
       existingCode: state.generatedMechanics || {},
     }, config);
 
-    const output = {
+    return {
       generatedMechanics: result.generatedMechanics,
       mechanicsErrors: result.mechanicsErrors,
     };
-    bus?.emit({ type: 'artifact:completed', artifact: 'generatedMechanics' });
-    return output;
   });
   workflow.addNode("repair_mechanics", repairMechanicsNode);
   workflow.addNode("repair_coherence", repairCoherenceNode);
