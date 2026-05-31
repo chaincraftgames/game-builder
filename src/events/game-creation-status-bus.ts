@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 
-export type ArtifactName = 'stateSchema' | 'actionDefinitions' | 'transitions' | 'instructions' | 'producedTokens' | 'coherenceCheck';
+export type ArtifactName = 'stateSchema' | 'actionDefinitions' | 'transitions' | 'instructions' | 'generatedMechanics' | 'producedTokens' | 'coherenceCheck';
 export type RepairTarget = 'transitions' | 'instructions' | 'coherence';
 
 export type GameCreationStatusEvent =
