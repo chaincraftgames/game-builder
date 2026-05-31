@@ -12,10 +12,10 @@ The creator can interact with the sim assistant at any point before, during, or 
 
 | Capability | Description |
 |---|---|
-| **Explain behavior** | Answer "why did X happen?" by retrieving relevant artifacts, state history, and transition rationale |
+| **Explain behavior** | Answer "why did X happen?" by retrieving mechanic code, instructions, and before/after state snapshots from recent checkpoints |
 | **Diagnose issues** | Identify root cause: code bug, instruction gap, schema gap, or design issue |
 | **Repair artifacts** | On creator confirmation, invoke the artifact editor graph to fix instructions/mechanics/schema |
-| **Restart simulation** | After repair, start a fresh simulation with corrected artifacts |
+| **Restart simulation** | After repair, reset the runtime graph and re-initialize from corrected artifacts (no spec-processing re-run) |
 | **Block published edits** | If artifacts are published, redirect creator to design workflow for versioning |
 
 ### Future
@@ -23,8 +23,9 @@ The creator can interact with the sim assistant at any point before, during, or 
 | Capability | Description |
 |---|---|
 | **Design agent handoff** | Pass structured diagnosis to design agent for spec-level changes |
-| **Checkpoint replay** | Replay simulation from the last checkpoint before anomalous behavior |
-| **Persistent history** | Store-backed conversation history across sessions |
+| **Checkpoint replay** | Replay simulation from a specific checkpoint before anomalous behavior |
+| **Transition rationale capture** | Persist executor reasoning per transition for richer diagnosis |
+| **Persistent history** | Store-backed conversation history across page refreshes |
 | **Mechanic scoping** | `mechanicsToReview` filter on coordinator to limit context for large games |
 
 ## Architecture
@@ -44,8 +45,7 @@ POST /api/simulate/:sessionId/assistant/message
 │              │         - getGameSpec                          │
 │              │         - getArtifact                          │
 │              │         - getMechanicCode                      │
-│              │         - getStateAtStep                       │
-│              │         - getTransitionRationale               │
+│              │         - getRecentStates                      │
 │              │         - getActionLog                         │
 │              │                                                │
 │              │         [action tools]                         │
@@ -78,12 +78,14 @@ SSE event flow:
 **Event types**:
 
 ```typescript
+type RepairOperation = 'patch' | 'reextract';
+
 type SimAssistantEvent =
   | { type: 'connected'; sessionId: string }
   | { type: 'message'; content: string }           // streamed response tokens
   | { type: 'message:complete'; content: string }   // full final response
   | { type: 'repair:started'; description: string }
-  | { type: 'repair:progress'; step: string }
+  | { type: 'repair:progress'; step: string; operation?: RepairOperation; artifact?: string }
   | { type: 'repair:completed'; summary: string }
   | { type: 'repair:error'; error: string }
   | { type: 'error'; error: string };
@@ -120,30 +122,28 @@ Internally:
 
 ### System Prompt Manifest
 
-A lightweight structural manifest injected into the system prompt (~300-500 tokens). Gives the LLM enough context to formulate targeted tool calls:
+A lightweight structural manifest injected into the system prompt (~300-500 tokens). Gives the LLM enough context to formulate targeted tool calls. Built from a single `getTuple()` call on the latest runtime checkpoint — no history iteration. The agent fetches action history on demand via retrieval tools.
 
 ```
 Game: "Weapon Inventor" (2 players)
 Phases: init → weapon_setup → round_start → weapon_selection → round_resolution → match_check → finished
 Transitions: 7 (initialize_game, both_weapons_ready, begin_round, both_weapons_submitted, resolve_round_outcome, player_wins_match, continue_to_next_round)
 Mechanics: 2 (resolve_round_outcome, both_weapons_ready)
-Sim status: running | completed | error
-Current step: 12 (phase: round_resolution, round 2)
-Last 3 actions: [player1: select_weapon "Banana Launcher", player2: select_weapon "Rubber Duck", auto: both_weapons_submitted]
+Sim status: running
+Current phase: round_resolution
 ```
 
 ### Retrieval Tools
 
-All tools are closures over the session's store — simple key lookups, no LLM intermediary.
+All tools read from the **runtime graph's checkpoints** via the session's `SqliteSaver`/`PostgresSaver`. They are closures over the checkpointer and sessionId — simple checkpoint lookups, no LLM intermediary.
 
 | Tool | Input | Returns |
 |---|---|---|
 | `getGameSpec` | none | Full game specification text |
 | `getArtifact` | `{ type: 'schema' \| 'transitions' \| 'instructions', id?: string }` | Full artifact or specific fragment by ID |
 | `getMechanicCode` | `{ mechanicId: string }` | TypeScript source code + associated mechanicsGuidance |
-| `getStateAtStep` | `{ step: number }` | Game + player state snapshot from checkpoint |
-| `getTransitionRationale` | `{ transitionId: string, step?: number }` | The LLM executor's reasoning for a specific state change |
-| `getActionLog` | `{ playerId?: string, fromStep?: number, toStep?: number }` | Filtered action history |
+| `getRecentStates` | `{ count?: number }` | Last N game + player state snapshots from checkpoint history (default 5). Each entry includes phase, gameState, and the action that triggered it. The assistant can call again with a larger count to look further back. |
+| `getActionLog` | `{ playerId?: string, lastN?: number }` | Filtered action history from recent checkpoints |
 
 ### What the LLM Does NOT See by Default
 
@@ -162,10 +162,8 @@ This keeps the base prompt small and the LLM in control of what context it needs
 Creator: "Player 2 won the round even though both chose rock"
 
 Assistant (internal):
-  → calls getTransitionRationale("resolve_round_outcome", step=8)
   → calls getMechanicCode("resolve_round_outcome")
-  → calls getStateAtStep(7)  // before the transition
-  → calls getStateAtStep(8)  // after the transition
+  → calls getRecentStates(5)   // last 5 state snapshots including before/after the bad transition
 
 Assistant (to creator):
   "The `resolve_round_outcome` mechanic doesn't handle ties. When both
@@ -188,8 +186,8 @@ Creator: "Yes, fix it"
 
 SSE events:
   → { type: "repair:started", description: "Fixing tie handling in resolve_round_outcome" }
-  → { type: "repair:progress", step: "Coordinator: patching instructions (computation field)" }
-  → { type: "repair:progress", step: "Regenerating mechanic from updated instructions" }
+  → { type: "repair:progress", step: "Coordinator: patching instructions (computation field)", operation: "patch", artifact: "instructions" }
+  → { type: "repair:progress", step: "Regenerating mechanic from updated instructions", operation: "reextract", artifact: "mechanics" }
   → { type: "repair:progress", step: "tsc validation passed" }
   → { type: "repair:completed", summary: "Patched instructions + regenerated mechanic" }
 
@@ -223,35 +221,39 @@ const result = await artifactEditorGraph.invoke({
 });
 ```
 
-The `repairArtifacts` tool wraps this: it gathers current artifacts from the store, adds the formulated error, and calls the editor graph.
+The `repairArtifacts` tool wraps this: it loads current artifacts from the **runtime graph's latest checkpoint**, adds the formulated error, and calls the editor graph.
 
 ## Conversation State
 
-### V1: Ephemeral
+Follows the same pattern as the design conversation (`src/ai/design/`):
 
-Message history is held in-memory for the duration of the session. Stored as a `BaseMessage[]` array in the graph state, following the standard LangGraph chat pattern.
-
-The sim assistant graph state:
+1. **LangGraph checkpointer**: Graph compiled with `SqliteSaver` or `PostgresSaver` (via `getSaver(sessionId, 'sim-assistant')`). Messages accumulate in checkpoints across invocations automatically.
+2. **GraphCache**: Compiled graph instances cached in an LRU `GraphCache` keyed by `sessionId`. Cache eviction doesn't lose state — checkpointed data persists in the database.
+3. **thread_id = sessionId**: Each `graph.stream()` call passes `{ configurable: { thread_id: sessionId } }`. The checkpointer loads prior messages, the reducer appends the new message.
+4. **Messages reducer**: Appends new messages, filters system messages, caps at a reasonable limit.
 
 ```typescript
 SimAssistantState = Annotation.Root({
-  // Conversation
-  messages: Annotation<BaseMessage[]>({ reducer: messagesReducer }),
+  // Conversation (accumulated via checkpointer across invocations)
+  messages: Annotation<BaseMessage[]>({
+    reducer: (x, y) => {
+      const combined = [...x, ...y];
+      return combined.filter(msg => msg.type !== 'system').slice(-50);
+    },
+  }),
 
   // Session context (set once at graph creation, read-only)
   sessionId: Annotation<string>(),
   gameId: Annotation<string>(),
 
-  // Manifest (rebuilt before each invocation from store)
+  // Manifest (rebuilt before each invocation from runtime checkpoint)
   manifest: Annotation<string>(),
 });
 ```
 
-Conversation history is lost when the session ends. Changes made via the repair tool persist in the store.
+### Future: Persistent across page refreshes
 
-### Future: Persistent
-
-Store-backed message history, loadable across sessions. Enables "pick up where we left off" after page refresh.
+V1 conversation survives as long as the checkpointer's backing store is alive (SQLite file or Postgres rows). A future enhancement would add explicit session resume from the frontend after page refresh, loading the last checkpoint for the thread.
 
 ## Published Artifact Guard
 
@@ -281,16 +283,19 @@ The sim assistant surfaces this to the creator and offers to summarize the neede
 
 ## File Structure
 
+### game-builder (backend)
+
 ```
 src/
   ai/
     simulate/
-      sim-assistant/
-        sim-assistant-graph.ts       # Graph definition (ReAct agent)
-        sim-assistant-state.ts       # Annotation.Root state
-        tools.ts                     # Retrieval + action tool definitions
-        prompts.ts                   # System prompt + manifest builder
-        repair-bridge.ts             # Error formulation for artifact editor
+      graphs/
+        sim-assistant-graph/
+          index.ts                   # Graph definition (ReAct agent)
+          sim-assistant-state.ts     # Annotation.Root state
+          tools.ts                   # Retrieval + action tool definitions
+          prompts.ts                 # System prompt + manifest builder
+          repair-bridge.ts           # Error formulation for artifact editor
   api/
     simulate/
       assistant/
@@ -300,25 +305,69 @@ src/
     sim-assistant-bus.ts             # SSE event bus (follows game-creation-status-bus pattern)
 ```
 
+### chaincraft-orchestrator (proxy)
+
+```
+src/
+  modules/
+    simulation/
+      simulation.routes.ts           # Add assistant proxy routes
+      simulation-service.ts          # Add assistant methods
+  infrastructure/
+    game-builder/
+      client.ts                      # Add assistant API methods
+```
+
+### chaincraft-frontend (UI — already mocked)
+
+The frontend UI is already built with a hardcoded stub backend. Files to update:
+
+```
+src/
+  contexts/
+    simulation/
+      AssistantContext.tsx            # Replace stub with real API + SSE
+  hooks/
+    simulation/
+      useAssistantStream.ts          # NEW: SSE EventSource hook
+```
+
+**Existing UI components (no changes needed):**
+- `SimulationChat.tsx` — dual-mode chat (player/assistant), renders assistant messages
+- `PlayersBar.tsx` — toggle button (Sim Assistant / sparkle icon)
+- `SessionContext.tsx` — `activeView: "player" | "assistant"` state
+- `AssistantContext.tsx` — `AssistantMessage` type, `sendAssistantMessage()`, `isAssistantLoading` (wiring exists, just needs real backend)
+
 ## Dependencies
 
 | Component | Status | Notes |
 |---|---|---|
-| Artifact editor graph | ✅ Complete | Tasks 1-8 done, tested |
-| Coordinator with mechanics | ✅ Complete | 3 scenarios passing |
-| Edit mechanics node | ✅ Complete | Patch, reextract, cascade |
+| Artifact editor graph | ✅ Complete | Full coordinator-driven repair with mechanics |
+| Coordinator with mechanics | ✅ Complete | Patterns 11-13, upstream-first principle |
+| Edit mechanics node | ✅ Complete | Patch, reextract, cascade detection |
 | Revalidate with tsc | ✅ Complete | Layer 3 validation |
-| SSE infrastructure | ✅ Exists | `game-creation-status-bus.ts` pattern |
-| Store/checkpoint access | ✅ Exists | `InMemoryStore` + sqlite checkpointer |
-| State history retrieval | ⚠️ Needs verification | Check what's captured in checkpoints |
-| Transition rationale capture | ⚠️ Needs verification | Check if executor logs this to store |
-| Sim restart API | ⚠️ May need work | Verify `createSimulation` can re-init with existing artifacts |
+| SSE infrastructure | ✅ Exists | `game-creation-status-bus.ts` pattern to copy |
+| Runtime checkpoint access | ✅ Exists | `SqliteSaver`/`PostgresSaver` via `getSaver()`, `saver.list()` for history |
+| GraphCache | ✅ Exists | LRU graph cache pattern from design workflow |
+| Sim restart | ⚠️ Needs work | Need to reset runtime graph + call `initializeSimulation()` with repaired artifacts (no spec-processing re-run) |
 
 ## Implementation Order
 
+### Phase 1: Backend Core (game-builder)
 1. **Event bus** — `SimAssistantBus` (copy pattern from `game-creation-status-bus.ts`)
-2. **Tools** — Retrieval tools (closures over store), verify data availability
-3. **Graph** — `createSimAssistantGraph()` with ReAct agent + tools
-4. **Repair bridge** — Error formulation + artifact editor invocation
-5. **Routes** — SSE endpoint + message endpoint
-6. **Integration test** — End-to-end: send message → diagnose → repair → verify fix
+2. **State + manifest** — `SimAssistantState`, manifest builder from runtime checkpoint
+3. **Retrieval tools** — `getGameSpec`, `getArtifact`, `getMechanicCode`, `getRecentStates`, `getActionLog` (closures over runtime checkpointer)
+4. **Graph** — `createSimAssistantGraph()` with ReAct agent + tools (diagnosis only, no repair yet)
+5. **Routes** — `GET .../assistant/stream` (SSE) + `POST .../assistant/message` (202 → background invoke)
+6. **Unit test** — Diagnosis flow: send message → tool calls → response
+
+### Phase 2: Repair + Restart (game-builder)
+7. **Repair bridge** — `repairArtifacts` tool: error formulation + artifact editor invocation
+8. **Restart tool** — `restartSimulation`: reset runtime graph + re-initialize with repaired artifacts
+9. **Integration test** — End-to-end: message → diagnose → repair → restart → verify
+
+### Phase 3: Frontend Wiring
+10. **Orchestrator proxy** — Add assistant routes to `simulation.routes.ts`, service methods, and `GameBuilderClient` methods
+11. **SSE hook** — `useAssistantStream.ts`: `EventSource` connection to orchestrator SSE endpoint, handles `message`, `repair:*`, `error` events
+12. **AssistantContext** — Replace stub `sendAssistantMessage()` with real API call + SSE streaming. Map SSE events to `AssistantMessage[]` state. Handle `repair:started/progress/completed` as system messages in the chat.
+13. **End-to-end test** — Frontend → orchestrator → game-builder → response via SSE
