@@ -37,16 +37,9 @@ export async function registerCreateRoutes(server: FastifyInstance) {
     // Send a connected ping immediately so the client can verify the stream is alive
     reply.raw.write(`data: ${JSON.stringify({ type: 'connected', gameId })}\n\n`);
 
-    // Send SSE comment heartbeats every 30s to keep the connection alive through
-    // infrastructure (proxies, load balancers) that close idle HTTP connections.
-    const heartbeatInterval = setInterval(() => {
-      reply.raw.write(': heartbeat\n\n');
-    }, 30_000);
-
     bus.on(send);
 
     request.raw.once('close', () => {
-      clearInterval(heartbeatInterval);
       bus.off(send);
       reply.raw.end();
     });
