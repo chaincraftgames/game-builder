@@ -72,19 +72,18 @@ export const schemaExtractionConfig: NodeConfig = {
     // Merge base schema fields with custom fields
     const allFields = [...baseSchemaFields, ...customFields];
     
-    // Extract natural summary from executor output (handles both quoted and unquoted)
-    let gameRules = "";
-    // Try quoted format first: Natural summary: "..."
-    let summaryMatch = executorOutput.match(/Natural summary:\s*"([^"]+)"/i);
-    if (summaryMatch) {
-      gameRules = summaryMatch[1];
-    } else {
-      // Try unquoted format: Natural summary: text... (until Fields: or end)
-      summaryMatch = executorOutput.match(/Natural summary:\s*([^\n]+(?:\n(?!Fields:)[^\n]+)*)/i);
-      if (summaryMatch) {
-        gameRules = summaryMatch[1].trim();
-      }
-    }
+    // gameRules is used by the repair agent and sim assistant as lightweight context.
+    // Elimination strategy: remove schema field blocks/code fences and keep the remaining prose.
+    const summaryByElimination = executorOutput
+      .replace(/Fields:\s*```[\s\S]*?```/gi, "")
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/Natural summary:\s*/i, "")
+      .replace(/^#+\s.*$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    // Keep context compact to avoid flooding downstream prompts.
+    const gameRules = (summaryByElimination || executorOutput.trim()).slice(0, 1200);
 
     // Return partial state to be merged
     // stateSchema stores the field definitions array in condensed format

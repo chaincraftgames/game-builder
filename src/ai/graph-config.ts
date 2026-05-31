@@ -50,6 +50,7 @@ const GRAPH_TRACER_PROJECTS = {
   artifactCreation: process.env.CHAINCRAFT_ARTIFACT_CREATION_TRACER_PROJECT_NAME || "chaincraft-simulation",
   artifactEditor: process.env.CHAINCRAFT_ARTIFACT_EDITOR_TRACER_PROJECT_NAME || "chaincraft-artifact-editor",
   play: process.env.CHAINCRAFT_PLAY_TRACER_PROJECT_NAME || "chaincraft-play",
+  simAssistant: process.env.CHAINCRAFT_SIM_ASSISTANT_TRACER_PROJECT_NAME || "chaincraft-sim-assistant",
 };
 
 /**
@@ -199,6 +200,32 @@ export function createPlayGraphConfig(
     configurable: { thread_id: threadId },
     callbacks: createPlayGraphCallbacks(),
     ...(store && { store }),
+    ...additionalConfig,
+  };
+}
+
+/**
+ * Create callbacks for the sim assistant graph
+ * Used by: sim-assistant-graph (ReAct diagnostic agent)
+ */
+export function createSimAssistantGraphCallbacks(): any[] {
+  return createTracerCallbacks(GRAPH_TRACER_PROJECTS.simAssistant);
+}
+
+/**
+ * Create a graph configuration with callbacks for the sim assistant
+ *
+ * @param threadId - Unique identifier for the graph execution thread (sessionId)
+ * @param additionalConfig - Optional additional configuration properties
+ * @returns Complete graph configuration ready for graph.invoke()
+ */
+export function createSimAssistantGraphConfig(
+  threadId: string,
+  additionalConfig?: Record<string, any>
+): GraphConfig {
+  return {
+    configurable: { thread_id: threadId },
+    callbacks: createSimAssistantGraphCallbacks(),
     ...additionalConfig,
   };
 }

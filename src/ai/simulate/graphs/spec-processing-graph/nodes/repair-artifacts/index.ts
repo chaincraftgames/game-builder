@@ -5,79 +5,25 @@
  * spec-processing pipeline. Handles state mapping between the two graph
  * state shapes and writes repaired artifacts back to SpecProcessingState.
  *
- * Two wrapper node factories:
+ * Three wrapper node factories:
  *   - createRepairTransitionsNode(): transitions-only repair (pre-instructions)
  *   - createRepairArtifactsNode(): full cross-artifact repair (post-instructions)
+ *   - createRepairCoherenceNode(): best-effort repair for coherence check findings
  */
 
 import { createArtifactEditorGraph } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/index.js';
+import { deriveSchemaFieldsSummary, parseInstructionMap, serializeInstructionMap } from '#chaincraft/ai/simulate/graphs/artifact-editor-graph/utils.js';
 import { createArtifactEditorGraphConfig } from '#chaincraft/ai/graph-config.js';
 import type { GameCreationBus } from '#chaincraft/events/game-creation-status-bus.js';
-import { extractSchemaFields } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/schema-utils.js';
-import type { GameStateField } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
 import type { SpecProcessingStateType } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/spec-processing-state.js';
 import { getFromStore, type GraphConfigWithStore } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/node-shared.js';
 import { resolvePositionalPlayerTemplates } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-instructions/utils.js';
 import type { InstructionsArtifact } from '#chaincraft/ai/simulate/schema.js';
+import { generateStateInterfaces } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/generate-state-interfaces.js';
+import type { GameStateField } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
+import type { CoherenceIssue } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/coherence-check/schema.js';
 
-// ─── Helpers ───
-
-/**
- * Derive a human-readable schemaFields summary from the stateSchema
- * (planner field array or JSON Schema) for the coordinator prompt.
- */
-function deriveSchemaFieldsSummary(stateSchema: string): string {
-  try {
-    const parsed = JSON.parse(stateSchema);
-
-    // GameStateField format: array of field definitions
-    if (Array.isArray(parsed)) {
-      return (parsed as GameStateField[]).map(f => {
-        const prefix = f.path === 'game' ? 'game.' : 'players.*.';
-        const name = f.name.startsWith('game.') || f.name.startsWith('players.')
-          ? f.name
-          : `${prefix}${f.name}`;
-        const desc = f.purpose ? ` (${f.purpose})` : '';
-        return `${name}: ${f.type}${desc}`;
-      }).join('\n');
-    }
-
-    // JSON Schema format: use extractSchemaFields for paths
-    const fields = extractSchemaFields(parsed);
-    return [...fields].sort().join('\n');
-  } catch {
-    return stateSchema || '';
-  }
-}
-
-/**
- * Parse instruction maps from SpecProcessingState format (Record<string, string>
- * where each value is a JSON string) into ArtifactEditorState format
- * (Record<string, unknown> where each value is a parsed object).
- */
-function parseInstructionMap(map: Record<string, string>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(map)) {
-    try {
-      result[key] = typeof value === 'string' ? JSON.parse(value) : value;
-    } catch {
-      result[key] = value;
-    }
-  }
-  return result;
-}
-
-/**
- * Serialize instruction maps back to SpecProcessingState format
- * (Record<string, string> where each value is a JSON string).
- */
-function serializeInstructionMap(map: Record<string, unknown>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(map)) {
-    result[key] = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-  }
-  return result;
-}
+// ─── Helpers (spec-processing-specific) ───
 
 /**
  * Read instructions from the InMemoryStore and parse into separated maps.
@@ -294,5 +240,187 @@ export function createRepairArtifactsNode() {
     return {
       instructionsValidationErrors: result.remainingErrors ?? errors,
     };
+  };
+}
+
+/**
+ * Create a repair node for mechanics tsc validation failures.
+ *
+ * Invokes the full artifact editor graph with mechanics errors. The
+ * coordinator diagnoses whether errors are code bugs (fix mechanics),
+ * schema gaps (fix schema + regenerate), or instruction ambiguities
+ * (fix instructions + regenerate).  This replaces the old simple-retry
+ * approach that bypassed the coordinator.
+ */
+export function createRepairMechanicsNode() {
+  return async (
+    state: SpecProcessingStateType,
+    config?: GraphConfigWithStore,
+  ): Promise<Partial<SpecProcessingStateType>> => {
+    const errors = state.mechanicsErrors ?? [];
+    if (errors.length === 0) {
+      console.log('[RepairMechanics] No errors to repair, skipping');
+      return {};
+    }
+
+    const generatedMechanics = state.generatedMechanics ?? {};
+
+    // Format tsc errors as human-readable strings for the coordinator
+    const formattedErrors: string[] = [];
+    for (const mechanicError of errors) {
+      for (const e of mechanicError.errors) {
+        formattedErrors.push(
+          `TS${e.code} in ${e.mechanicId} (line ${e.line}, col ${e.column}): ${e.message}`,
+        );
+      }
+    }
+
+    console.log(
+      `[RepairMechanics] Invoking artifact editor for ${formattedErrors.length} tsc error(s) ` +
+        `across ${errors.length} mechanic(s)`,
+    );
+
+    // Generate stateInterfaces from current schema
+    if (!state.stateSchema) {
+      console.error('[RepairMechanics] No stateSchema available');
+      return {};
+    }
+
+    const fields: GameStateField[] = JSON.parse(state.stateSchema);
+    const stateInterfaces = generateStateInterfaces(fields);
+
+    const graph = await createArtifactEditorGraph();
+    const threadId = config?.configurable?.thread_id || 'repair-mechanics';
+    const graphConfig = createArtifactEditorGraphConfig(`${threadId}-repair-mechanics`);
+
+    const editorInput = {
+      gameSpecification: state.gameSpecification,
+      errors: formattedErrors,
+      schemaFields: deriveSchemaFieldsSummary(state.stateSchema),
+      stateSchema: state.stateSchema,
+      stateTransitions: state.stateTransitions,
+      playerPhaseInstructions: parseInstructionMap(state.playerPhaseInstructions ?? {}),
+      transitionInstructions: parseInstructionMap(state.transitionInstructions ?? {}),
+      generatedMechanics,
+      stateInterfaces,
+    };
+
+    const result = await graph.invoke(editorInput, graphConfig);
+
+    if (result.editSucceeded) {
+      console.log('[RepairMechanics] ✓ Repair succeeded');
+      return {
+        generatedMechanics: result.generatedMechanics ?? generatedMechanics,
+        mechanicsErrors: [],
+        // Propagate any cross-artifact fixes the coordinator made
+        stateSchema: result.stateSchema || state.stateSchema,
+        stateTransitions: result.stateTransitions || state.stateTransitions,
+        playerPhaseInstructions: serializeInstructionMap(
+          (result.playerPhaseInstructions ?? {}) as Record<string, unknown>,
+        ),
+        transitionInstructions: serializeInstructionMap(
+          (result.transitionInstructions ?? {}) as Record<string, unknown>,
+        ),
+      };
+    }
+
+    console.warn(
+      `[RepairMechanics] ✗ Repair failed, ${result.remainingErrors?.length ?? 0} error(s) remain`,
+    );
+
+    // Merge any partially repaired mechanics back in
+    const mergedMechanics = { ...generatedMechanics, ...(result.generatedMechanics ?? {}) };
+    return {
+      generatedMechanics: mergedMechanics,
+      mechanicsErrors: errors, // Keep original errors — repair didn't fully resolve
+    };
+  };
+}
+
+/**
+ * Create a repair node for coherence check findings.
+ *
+ * Runs best-effort after coherence_check. Filters findings to confirmed/probable,
+ * formats them as diagnostic strings for the coordinator, then invokes the full
+ * artifact editor graph. The coordinator diagnoses root causes (schema gaps, wrong
+ * read sources, circular gates, etc.) and patches the appropriate artifacts.
+ *
+ * Best-effort: even if repair fails, the pipeline continues to extract_produced_tokens.
+ * Mechanics and stateInterfaces are included so the coordinator can fix mechanic code
+ * in-place without triggering a full regeneration cycle.
+ */
+export function createRepairCoherenceNode() {
+  return async (
+    state: SpecProcessingStateType,
+    config?: GraphConfigWithStore,
+  ): Promise<Partial<SpecProcessingStateType>> => {
+    const bus = config?.configurable?.statusBus as GameCreationBus | undefined;
+    const findings = state.coherenceFindings;
+
+    // Filter to issues that warrant a repair attempt
+    const actionableIssues: CoherenceIssue[] = (findings?.issues ?? []).filter(
+      (i) => i.confidence === 'confirmed' || i.confidence === 'probable',
+    );
+
+    if (actionableIssues.length === 0) {
+      console.log('[RepairCoherence] No actionable findings, skipping');
+      return {};
+    }
+
+    // Format each finding as a diagnostic string the coordinator can reason about.
+    // Include issueType and reasoning so the coordinator can map to a fix pattern.
+    const errors: string[] = actionableIssues.map((i) =>
+      `[${i.issueType}][${i.confidence}] affected: ${i.affectedIds.join(', ')} — ${i.description}. Reasoning: ${i.reasoning}`,
+    );
+
+    console.log(`[RepairCoherence] Invoking artifact editor for ${errors.length} coherence finding(s)`);
+    bus?.emit({ type: 'repair:started', target: 'coherence' });
+
+    const generatedMechanics = state.generatedMechanics ?? {};
+
+    // Generate stateInterfaces so the coordinator can fix mechanic code in-place
+    let stateInterfaces = '';
+    if (state.stateSchema) {
+      const fields: GameStateField[] = JSON.parse(state.stateSchema);
+      stateInterfaces = generateStateInterfaces(fields);
+    }
+
+    const graph = await createArtifactEditorGraph();
+    const threadId = config?.configurable?.thread_id || 'repair-coherence';
+    const graphConfig = createArtifactEditorGraphConfig(`${threadId}-repair-coherence`);
+
+    const editorInput = {
+      gameSpecification: state.gameSpecification,
+      errors,
+      schemaFields: deriveSchemaFieldsSummary(state.stateSchema),
+      stateSchema: state.stateSchema,
+      stateTransitions: state.stateTransitions,
+      playerPhaseInstructions: parseInstructionMap(state.playerPhaseInstructions ?? {}),
+      transitionInstructions: parseInstructionMap(state.transitionInstructions ?? {}),
+      generatedMechanics,
+      stateInterfaces,
+    };
+
+    const result = await graph.invoke(editorInput, graphConfig);
+
+    bus?.emit({ type: 'repair:completed', target: 'coherence' });
+
+    if (result.editSucceeded) {
+      console.log('[RepairCoherence] ✓ Repair succeeded');
+      return {
+        generatedMechanics: result.generatedMechanics ?? generatedMechanics,
+        stateSchema: result.stateSchema || state.stateSchema,
+        stateTransitions: result.stateTransitions || state.stateTransitions,
+        playerPhaseInstructions: serializeInstructionMap(
+          (result.playerPhaseInstructions ?? {}) as Record<string, unknown>,
+        ),
+        transitionInstructions: serializeInstructionMap(
+          (result.transitionInstructions ?? {}) as Record<string, unknown>,
+        ),
+      };
+    }
+
+    console.warn(`[RepairCoherence] ✗ Repair failed (best-effort — pipeline continues)`);
+    return {};
   };
 }

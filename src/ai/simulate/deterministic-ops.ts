@@ -114,15 +114,16 @@ export function isDeterministicOperation(op: StateDeltaOp): boolean {
  * - "game.roundNumber" → "game.roundNumber" (unchanged)
  */
 function transformPath(path: string, mapping: PlayerMapping): string {
-  // Check for player1/player2 alias pattern
-  const playerMatch = path.match(/^players\.player(\d+)\.(.+)$/);
+  // Check for player1/player2 alias pattern (with optional trailing field)
+  // Matches both "players.player1.field" and bare "players.player1" (e.g. merge ops)
+  const playerMatch = path.match(/^players\.player(\d+)(?:\.(.+))?$/);
   if (playerMatch) {
     const alias = `player${playerMatch[1]}`;
-    const field = playerMatch[2];
+    const field = playerMatch[2]; // undefined when no trailing field (e.g. merge on player root)
     const uuid = mapping[alias];
     
     if (uuid) {
-      return `players.${uuid}.${field}`;
+      return field ? `players.${uuid}.${field}` : `players.${uuid}`;
     }
     
     console.warn(`[deterministic-ops] No UUID found for alias ${alias} in path: ${path}`);
@@ -259,18 +260,17 @@ export function applyDeterministicOperations(
 
 /**
  * Merge LLM-generated state with deterministically-applied state.
- * Deterministic operations override LLM's values EXCEPT for paths the LLM explicitly touched.
+ * Deterministic operations always override LLM values for deterministic paths.
  * 
  * Strategy: Start with LLM state, then override specific fields that were
- * touched by deterministic operations, BUT skip any paths the LLM already set.
- * This preserves LLM's computed values (including expanded operations like setForAllPlayers)
- * while still applying deterministic overrides for fields the LLM didn't touch.
+ * touched by deterministic operations. Deterministic paths are authoritative
+ * for reliability and replayability, even when LLM touched the same fields.
  * 
  * @param llmState - State returned by LLM (may have forgotten some ops)
  * @param deterministicState - State after applying deterministic ops
  * @param deterministicOps - The operations that were applied deterministically
- * @param llmTouchedPaths - Set of paths the LLM explicitly modified
- * @returns Merged state with deterministic overrides (skipping LLM-touched paths)
+ * @param llmTouchedPaths - Set of paths the LLM explicitly modified (for logging only)
+ * @returns Merged state with deterministic overrides
  */
 export function mergeDeterministicOverrides(
   llmState: BaseRuntimeState,
@@ -282,25 +282,22 @@ export function mergeDeterministicOverrides(
     return llmState; // No overrides needed
   }
   
-  console.log(`[deterministic-ops] Merging with ${deterministicOps.length} deterministic overrides (skipping ${llmTouchedPaths.size} LLM-touched paths)`);
+  console.log(`[deterministic-ops] Merging with ${deterministicOps.length} deterministic overrides`);
   
   // Start with LLM's state (has all computed fields)
   const merged = JSON.parse(JSON.stringify(llmState)); // Deep clone
   
-  let skippedCount = 0;
-  
-  // For each deterministic op, override the specific field from deterministic state
-  // UNLESS the LLM already set that path
+  let overwrittenTouchedCount = 0;
+
+  // For each deterministic op, override the specific field from deterministic state.
+  // Deterministic updates are authoritative and always win on deterministic paths.
   for (const op of deterministicOps) {
     // Handle transfer operations (have fromPath/toPath, not path)
     if (op.op === 'transfer') {
       const transferOp = op as any;
       
-      // Skip if LLM touched the toPath
       if (llmTouchedPaths.has(transferOp.toPath)) {
-        console.debug(`[deterministic-ops] Skipping transfer to ${transferOp.toPath} (LLM touched)`);
-        skippedCount++;
-        continue;
+        overwrittenTouchedCount++;
       }
       
       // For transfer, override the toPath with the value from deterministic state
@@ -313,11 +310,8 @@ export function mergeDeterministicOverrides(
     if ('path' in op) {
       const path = (op as any).path;
       
-      // Skip if LLM touched this path
       if (llmTouchedPaths.has(path)) {
-        console.debug(`[deterministic-ops] Skipping override for ${path} (LLM touched)`);
-        skippedCount++;
-        continue;
+        overwrittenTouchedCount++;
       }
       
       const value = getByPath(deterministicState, path);
@@ -325,8 +319,8 @@ export function mergeDeterministicOverrides(
     }
   }
   
-  if (skippedCount > 0) {
-    console.log(`[deterministic-ops] Skipped ${skippedCount} deterministic overrides to preserve LLM values`);
+  if (overwrittenTouchedCount > 0) {
+    console.log(`[deterministic-ops] Overrode ${overwrittenTouchedCount} LLM-touched paths with deterministic values`);
   }
   
   return merged;

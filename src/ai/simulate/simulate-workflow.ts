@@ -23,7 +23,7 @@ import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.j
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
-import { getBus } from "#chaincraft/events/game-creation-status-bus.js";
+import { getOrCreateBus, setGenerationInProgress, clearGenerationInProgress } from "#chaincraft/events/game-creation-status-bus.js";
 import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
 import { InMemoryStore } from "@langchain/langgraph";
@@ -125,16 +125,8 @@ export function getActionsAllowed(playerState: RuntimePlayerState): boolean {
 /** Messages to the players.  Key is player id, value is message. */
 export type PlayerStates = Map<string, RuntimePlayerState>;
 
-export interface SpecArtifacts {
-  gameRules: string;
-  stateSchema: string;
-  stateTransitions: string;
-  playerPhaseInstructions: Record<string, string>;
-  transitionInstructions: Record<string, string>;
-  producedTokensConfiguration?: string;
-  specNarratives?: Record<string, string>;
-  dataSources?: DataSourceConfig[];
-}
+import type { SpecArtifacts } from '#chaincraft/ai/simulate/artifacts.js';
+import { SPEC_ARTIFACT_KEYS, SPEC_ARTIFACT_DEFAULTS, REPAIRABLE_ARTIFACT_KEYS } from '#chaincraft/ai/simulate/artifacts.js';
 
 /**
  * Get cached spec processing artifacts from checkpoint.
@@ -163,15 +155,60 @@ export async function getCachedSpecArtifacts(
   }
 
   const channelValues = latestCheckpoint.checkpoint.channel_values as any;
-  return {
-    gameRules: channelValues.gameRules,
-    stateSchema: channelValues.stateSchema,
-    stateTransitions: channelValues.stateTransitions,
-    playerPhaseInstructions: channelValues.playerPhaseInstructions,
-    transitionInstructions: channelValues.transitionInstructions,
-    producedTokensConfiguration: channelValues.producedTokensConfiguration,
-    dataSources: channelValues.dataSources,
-  };
+  const result = {} as SpecArtifacts;
+  for (const key of SPEC_ARTIFACT_KEYS) {
+    result[key] = channelValues[key] ?? SPEC_ARTIFACT_DEFAULTS[key];
+  }
+  return result;
+}
+
+/**
+ * Promotes the current REPAIRABLE_ARTIFACT_KEYS from the runtime checkpoint
+ * back to the spec artifact cache so future sessions inherit the repaired artifacts.
+ *
+ * Called after a successful sim assistant repair or rollback to keep
+ * the spec cache in sync with the runtime.
+ */
+export async function promoteArtifactsToSpecCache(sessionId: string): Promise<void> {
+  const graphType = getConfig("simulation-graph-type");
+
+  // 1. Read current runtime checkpoint to get artifacts + gameId + version
+  const runtimeSaver = await getSaver(sessionId, graphType);
+  const runtimeTuple = await runtimeSaver.getTuple({ configurable: { thread_id: sessionId } });
+  if (!runtimeTuple) {
+    throw new Error(`[promoteArtifactsToSpecCache] No runtime checkpoint for session ${sessionId}`);
+  }
+
+  const rv = runtimeTuple.checkpoint.channel_values as Record<string, unknown>;
+  const gameId = rv.gameId as string | undefined;
+  const gameSpecificationVersion = rv.gameSpecificationVersion as number | undefined;
+
+  if (!gameId) {
+    throw new Error(`[promoteArtifactsToSpecCache] gameId not found in runtime checkpoint for session ${sessionId}`);
+  }
+
+  const specKey = `${gameId}-v${gameSpecificationVersion ?? 0}`;
+
+  // 2. Read spec cache checkpoint
+  const specSaver = await getSaver(specKey, graphType);
+  const specTuple = await specSaver.getTuple({ configurable: { thread_id: specKey } });
+  if (!specTuple) {
+    throw new Error(`[promoteArtifactsToSpecCache] No spec cache checkpoint for specKey ${specKey}`);
+  }
+
+  // 3. Overwrite REPAIRABLE_ARTIFACT_KEYS in spec checkpoint with current runtime values
+  const sv = specTuple.checkpoint.channel_values as Record<string, unknown>;
+  for (const key of REPAIRABLE_ARTIFACT_KEYS) {
+    if (rv[key] !== undefined) {
+      sv[key] = rv[key];
+    }
+  }
+
+  // 4. Write back with same checkpoint ID (in-place overwrite)
+  const metadata = specTuple.metadata ?? { source: 'update' as const, step: -1, parents: {} };
+  await (specSaver as any).put(specTuple.config, specTuple.checkpoint, metadata, specTuple.checkpoint.channel_versions ?? {});
+
+  console.log(`[simulate] Promoted repaired artifacts to spec cache: ${specKey} (from session ${sessionId})`);
 }
 
 export interface SimResponse {
@@ -315,17 +352,12 @@ async function storeArtifactsInRuntimeGraph(
   );
 
   const storePayload: Record<string, any> = {
-    gameRules: artifacts.gameRules,
-    stateSchema: artifacts.stateSchema,
-    stateTransitions: artifacts.stateTransitions,
-    playerPhaseInstructions: artifacts.playerPhaseInstructions,
-    transitionInstructions: artifacts.transitionInstructions,
-    producedTokensConfiguration: artifacts.producedTokensConfiguration || "",
-    specNarratives: artifacts.specNarratives,
-    dataSources: artifacts.dataSources || [],
     gameId: gameId || "",
     gameSpecificationVersion: gameSpecificationVersion || 0,
   };
+  for (const key of SPEC_ARTIFACT_KEYS) {
+    storePayload[key] = artifacts[key] ?? SPEC_ARTIFACT_DEFAULTS[key];
+  }
 
   await runtimeGraph.invoke(storePayload, runtimeConfig);
 
@@ -532,7 +564,8 @@ export async function createSimulation(
 
       // Get or create spec processing graph for this spec
       const specGraph = await specGraphCache.getGraph(specKey);
-      const statusBus = gameId ? getBus(gameId) : undefined;
+      const statusBus = gameId ? getOrCreateBus(gameId) : undefined;
+      if (gameId) setGenerationInProgress(gameId);
       const specConfig = createArtifactCreationGraphConfig(
         specKey,
         new InMemoryStore(),
@@ -561,6 +594,7 @@ export async function createSimulation(
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         statusBus?.emit({ type: 'generation:error', error: errorMessage });
+        if (gameId) clearGenerationInProgress(gameId, { type: 'generation:error', error: errorMessage });
         throw err;
       }
 
@@ -588,13 +622,10 @@ export async function createSimulation(
         const errorMessage = `Spec processing failed validation with ${validationErrors.length} error(s):\n${validationErrors.join("\n")}`;
         console.error("[simulate]", errorMessage);
         statusBus?.emit({ type: 'generation:error', error: errorMessage });
+        if (gameId) clearGenerationInProgress(gameId, { type: 'generation:error', error: errorMessage });
         throw new Error(errorMessage);
       }
 
-      // ── Final artifact presence check ──
-      // Even if validation errors are empty, verify critical artifacts exist.
-      // This catches cases where repair reported success but artifacts were
-      // never actually produced (e.g., instructions:reextract not implemented).
       const missingArtifacts: string[] = [];
       if (!specResult.stateSchema) missingArtifacts.push('stateSchema');
       if (!specResult.stateTransitions) missingArtifacts.push('stateTransitions');
@@ -624,14 +655,20 @@ export async function createSimulation(
           typeof specResult.transitionInstructions === "object"
             ? (specResult.transitionInstructions as Record<string, string>)
             : {},
+        generatedMechanics:
+          specResult.generatedMechanics &&
+          typeof specResult.generatedMechanics === "object"
+            ? (specResult.generatedMechanics as Record<string, string>)
+            : {},
         producedTokensConfiguration: String(specResult.producedTokensConfiguration || ""),
         // Persist spec narratives alongside artifacts so runtime checkpoints include them
-        specNarratives: narrativesToUse || undefined,
+        specNarratives: narrativesToUse || {},
         // Persist blockchain data sources from design state for runtime resolution
-        dataSources: dataSourcesFromDesign || undefined,
-      };
+        dataSources: dataSourcesFromDesign || [],
+      } satisfies SpecArtifacts;
 
       statusBus?.emit({ type: 'generation:completed' });
+      if (gameId) clearGenerationInProgress(gameId, { type: 'generation:completed' });
       console.log("[simulate] Spec processing complete, artifacts cached");
     } else {
       console.log("[simulate] Using cached spec artifacts");
@@ -722,6 +759,22 @@ export async function initializeSimulation(
 
     // Extract response from return value
     const simResponse = getRuntimeResponse(result as RuntimeStateType);
+
+    // Runtime invariant: the full initialization sequence (initialize_game + all chained
+    // automatic transitions up to the first requiresPlayerInput phase) must produce at
+    // least one public message before the first player input turn.
+    // This check lives here — after invoke() returns — so that chained automatic transitions
+    // (e.g. generate_opening_narrative firing after initialize_game) have already run.
+    //
+    // TODO: Consider whether this can be moved to artifact validation (spec-processing phase).
+    // It would require the validator to statically prove that some path from initialize_game
+    // through all requiresPlayerInput=false automatic transitions always produces a message.
+    // Non-trivial for games with conditional branching in the opening sequence.
+    if (!simResponse.publicMessage) {
+      throw new Error(
+        "Runtime invariant violated: initialization completed without producing a public message.",
+      );
+    }
 
     return {
       publicMessage: simResponse.publicMessage,

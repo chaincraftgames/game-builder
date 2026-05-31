@@ -9,6 +9,8 @@
 
 import { Annotation } from "@langchain/langgraph";
 import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.js";
+import type { MechanicError } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/schema.js";
+import type { CoherenceCheckOutput } from "#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/coherence-check/schema.js";
 
 export type SpecProcessingStateType = typeof SpecProcessingState.State;
 
@@ -40,6 +42,11 @@ export const SpecProcessingState = Annotation.Root({
     reducer: (_, y) => y,
     default: () => "",
   }),
+
+  actionDefinitions: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => "",
+  }),
   
   stateTransitions: Annotation<string>({
     reducer: (_, y) => y,
@@ -54,6 +61,17 @@ export const SpecProcessingState = Annotation.Root({
   transitionInstructions: Annotation<Record<string, string>>({
     reducer: (_, y) => y,
     default: () => ({}),
+  }),
+
+  generatedMechanics: Annotation<Record<string, string>>({
+    reducer: (a, b) => ({ ...a, ...b }),
+    default: () => ({}),
+  }),
+
+  // tsc validation errors accumulated across all mechanic generations
+  mechanicsErrors: Annotation<MechanicError[]>({
+    reducer: (a, b) => [...a, ...b],
+    default: () => [],
   }),
 
   producedTokensConfiguration: Annotation<string>({
@@ -101,6 +119,12 @@ export const SpecProcessingState = Annotation.Root({
       if (y === undefined) return x;            // not mentioned, keep existing
       return [...(x || []), ...y];              // accumulate new errors
     },
+    default: () => undefined,
+  }),
+
+  // Coherence check findings — populated after all artifacts are generated
+  coherenceFindings: Annotation<CoherenceCheckOutput | undefined>({
+    reducer: (_, y) => y,
     default: () => undefined,
   }),
 });

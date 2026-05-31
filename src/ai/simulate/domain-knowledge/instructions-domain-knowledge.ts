@@ -17,14 +17,16 @@ ALL state changes must be expressed as atomic StateDelta operations:
 {{ "op": "set", "path": "game.phase", "value": "reveal" }}
 {{ "op": "set", "path": "game.publicMessage", "value": "Game starting!" }}
 
-**ARRAY ELEMENTS**: Use bracket notation to set array elements directly:
+**ARRAY ELEMENTS**: Use bracket notation to set array elements directly (game arrays only — NOT for player targeting):
 {{ "op": "set", "path": "game.colors[0]", "value": "red" }}
 {{ "op": "set", "path": "game.colors[1]", "value": "blue" }}
-{{ "op": "set", "path": "players[0].name", "value": "Alice" }}
+{{ "op": "set", "path": "game.scores[0]", "value": 0 }}
 This is simpler and more reliable than using intermediate fields with template expansion.
+⛔ **NEVER use \`set\` with a hardcoded number for dice or any random value** — use \`rng\` (see below). The runtime resolves \`rng\` ops using a proper RNG; hardcoded values are not random.
+⛔ Do NOT use \`players[N]\` — players are keyed by UUID, not by index. Use setForAllPlayers, setForRandomPlayer, or \`players.player1.field\` literals instead.
 
 **increment**: Add to a numeric value (REQUIRED: must include 'value' field)
-{{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
+{{ "op": "increment", "path": "game.roundNumber", "value": 1 }}
 
 **append**: Add item to array (REQUIRED: must include 'value' field)
 {{ "op": "append", "path": "game.history", "value": {{ "round": "{{{{game.round}}}}" }} }}
@@ -33,13 +35,17 @@ This is simpler and more reliable than using intermediate fields with template e
 {{ "op": "delete", "path": "players.{{{{playerId}}}}.choice" }}
 
 **transfer**: Move numeric value between paths (uses 'amount' not 'value')
-{{ "op": "transfer", "fromPath": "game.pot", "toPath": "players.{{{{winnerId}}}}.chips", "amount": 10 }}
+{{ "op": "transfer", "fromPath": "game.pot", "toPath": "game.playerFund", "amount": 10 }}
+Note: to transfer to a specific player, target a literal field like \`players.player1.chips\` or handle it in mechanicsGuidance.
 
 **merge**: Shallow merge object properties (REQUIRED: must include 'value' field)
 {{ "op": "merge", "path": "players.{{{{playerId}}}}", "value": {{ "ready": true }} }}
 
 **rng**: Random selection from choices with probabilities (NOTE: probabilities must sum to 1.0)
 **CRITICAL**: Each RNG operation generates ONE value only. To generate multiple values, use multiple separate RNG operations.
+**DICE ROLLING**: Always use \`rng\` for dice — NEVER hardcode die values with \`set\`:
+{{ "op": "rng", "path": "game.dice[0]", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.1667, 0.1667, 0.1667, 0.1667, 0.1667, 0.1665] }}
+{{ "op": "rng", "path": "game.dice[1]", "choices": [1, 2, 3, 4, 5, 6], "probabilities": [0.1667, 0.1667, 0.1667, 0.1667, 0.1667, 0.1665] }}
 **RECOMMENDED**: For populating array elements, use bracket notation directly in the path:
 {{ "op": "rng", "path": "game.options[0]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
 {{ "op": "rng", "path": "game.options[1]", "choices": ["A", "B", "C"], "probabilities": [0.33, 0.33, 0.34] }}
@@ -75,21 +81,31 @@ The resolvedDataSourceId field must be a valid data source ID string already wri
 - If the data source read fails, the op is skipped (game continues without the data)
 
 **Template Variables in Paths**: Use {{{{variableName}}}} for runtime values:
-{{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }}
-{{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }}
+{{ "op": "set", "path": "players.{{{{playerId}}}}.currentAction.type", "value": "submit-choice" }}
+{{ "op": "set", "path": "players.{{{{playerId}}}}.currentAction.choice", "value": "{{{{input.choice}}}}" }}
 
-**Path Structure Requirements (CRITICAL)**:
-- Each path segment must be EITHER a literal OR a complete template variable
+**Path Template Variables (CRITICAL — read carefully)**:
+⛔ **\`{{{{playerId}}}}\` is the ONLY valid template variable in any stateDelta path.** It resolves to the acting player's UUID and is only valid in player action \`stateDelta\` (e.g. \`players.{{{{playerId}}}}.currentAction\`).
+- ALL other template variables in paths — \`{{{{winnerId}}}}\`, \`{{{{game.someField}}}}\`, \`{{{{input.X}}}}\`, \`{{{{players[N]}}}}\`  etc. — are **NOT resolved at runtime**. They will be written as literal string keys into state, creating phantom fields or phantom players.
+- \`players[{{{{game.startingPlayerIndex}}}}]\` — ❌ FORBIDDEN: \`{{{{game.X}}}}\` is not resolved in paths
+- \`players[0]\`, \`players[1]\` — ❌ FORBIDDEN: players are keyed by UUID not index
+- \`players.{{{{winnerId}}}}.score\` — ❌ FORBIDDEN: \`{{{{winnerId}}}}\` is not resolved
+- \`players.{{{{playerId}}}}.currentAction\` — ✅ valid in player action stateDelta only
+- \`game.round\`, \`game.currentBid\`, \`game.communalDice[2]\` — ✅ always valid (literal paths)
+⛔ **Player action \`stateDelta\` MUST ONLY write \`players.{{{{playerId}}}}.currentAction\`.** Writing any other field from a player action is forbidden. The runtime will strip any other ops — they will be silently discarded. All other state changes (persisting player choices, updating game state, setting flags) MUST happen in the mechanic of the following automatic transition, which reads from \`currentAction\`.
+**To target players in init/automatic transitions:**
+- Target ALL players: use \`setForAllPlayers\` or \`setForRandomPlayer\` ops
+- Target a literal player alias: \`players.player1.field\` (only when game always has exactly 2 known aliases)
+- Complex targeting based on state (e.g. set actionRequired for game.roundWinner): put in **mechanicsGuidance** — the generated mechanic code has full state access
+
+Path segment structure:
+- Each path segment must be EITHER a literal OR \`{{{{playerId}}}}\` (the only exception)
 - NEVER mix literals and templates within a single segment
 - NEVER use bracket notation with template variables — always use dot notation
-- Valid: "players.{{{{playerId}}}}.score" (each segment is atomic, dot-separated)
-- Valid: "players.{{{{winnerId}}}}.isGameWinner" (dynamic player access via dots)
+- Valid: "players.{{{{playerId}}}}.currentAction" (player action stateDelta only)
+- Valid: "game.communalDice[2]" (numeric index for game arrays)
 - Invalid: "game.roundWinsP{{{{playerId}}}}" (mixes literal + template in one segment)
-- Invalid: "players[{{{{winnerId}}}}].isGameWinner" (bracket notation with template — use dots instead)
 - Invalid: "players[{{{{playerId}}}}]" (brackets around template variable)
-- If you need player-specific fields, structure the schema with nested player objects:
-  Use "players.{{{{playerId}}}}.roundsWon" NOT "game.roundWinsP{{{{playerId}}}}"
-  Use "players.{{{{winnerId}}}}.isGameWinner" NOT "players[{{{{winnerId}}}}].isGameWinner"
 
 ⛔ **NEVER put JS expressions inside template variables**: {{{{...}}}} is a state path lookup ONLY.
 - Valid: "{{{{players.player1.roundScore}}}}" (reads a stored value from state)
@@ -97,7 +113,7 @@ The resolvedDataSourceId field must be a valid data source ID string already wri
 - Invalid: "{{{{Math.abs(game.delta)}}}}" (function call — not supported)
 - Invalid: "{{{{a == 'UP' && b > 0}}}}" (boolean expression — not supported)
 - If you need conditional computation or arithmetic: use **mechanicsGuidance** (see section 3).
-  The runtime LLM reads mechanicsGuidance, computes the result from actual state values, and writes it back.
+  Generated mechanic code will implement the logic using actual state values.
 
 **Prefer Atomic Operations**: Break complex changes into simple atomic ops.
 
@@ -114,33 +130,51 @@ Express validation as an ordered array of named validation checks (for player ac
 Each check has: id, logic (JsonLogic), and errorMessage.
 The runtime evaluates checks in order and returns the first error message where logic evaluates to false.
 
+**How validation works:**
+The runtime applies the player's stateDelta to a CANDIDATE state first, THEN evaluates validation.
+This means players.{{{{playerId}}}}.currentAction is already written when checks run.
+Template variable {{{{playerId}}}} is resolved to the acting player's alias before JsonLogic evaluation.
+
 **Common JsonLogic patterns**:
 
 Check equality: {{ "==": [{{ "var": "game.phase" }}, "choice"] }}
-Check field exists: {{ "!!": {{ "var": "players.p1.choice" }} }}
+Check field exists: {{ "!!": {{ "var": "players.{{{{playerId}}}}.choice" }} }}
 Check field NOT exists: {{ "!": {{ "var": "players.{{{{playerId}}}}.choice" }} }}
 Multiple conditions (AND): {{ "and": [...] }}
 Multiple conditions (OR): {{ "or": [...] }}
-Check value in array: {{ "in": [{{ "var": "input.choice" }}, ["rock", "paper", "scissors"]] }}
+Check value in array: {{ "in": [{{ "var": "players.{{{{playerId}}}}.currentAction.choice" }}, ["rock", "paper", "scissors"]] }}
 Numeric comparisons: {{ "<": [...] }}, {{ ">=": [...] }}
 
-**Validation structure**:
+**Validation structure** (poker raise example — shows both simple bounds and cross-field comparison against game state):
 {{
   "validation": {{
     "checks": [
       {{
-        "id": "wrongPhase",
-        "logic": {{ "==": [{{ "var": "game.phase" }}, "choice"] }},
-        "errorMessage": "Cannot submit choice - not in choice phase"
+        "id": "raisePositive",
+        "logic": {{ ">": [{{ "var": "players.{{{{playerId}}}}.currentAction.raiseAmount" }}, 0] }},
+        "errorMessage": "Raise amount must be greater than 0"
       }},
       {{
-        "id": "alreadySubmitted",
-        "logic": {{ "!": {{ "var": "players.{{{{playerId}}}}.choice" }} }},
-        "errorMessage": "You have already submitted your choice"
-      }},
+        "id": "raiseMustExceedCurrentBet",
+        "logic": {{ "or": [
+          {{ "==": [{{ "var": "game.currentBet" }}, null] }},
+          {{ ">": [{{ "var": "players.{{{{playerId}}}}.currentAction.raiseAmount" }}, {{ "var": "game.currentBet" }}] }}
+        ]}},
+        "errorMessage": "Raise must exceed the current bet"
+      }}
+    ]
+  }}
+}}
+
+Note the null-guard on \`game.currentBet\`: if no bet has been placed yet the field may be null, so the first check (\`== null\`) allows any positive raise to pass. Always null-guard cross-field comparisons against fields that may not yet exist in state.
+
+**RPS example — validate choice value**:
+{{
+  "validation": {{
+    "checks": [
       {{
         "id": "invalidChoice",
-        "logic": {{ "in": [{{ "var": "input.choice" }}, ["rock", "paper", "scissors"]] }},
+        "logic": {{ "in": [{{ "var": "players.{{{{playerId}}}}.currentAction.choice" }}, ["rock", "paper", "scissors"]] }},
         "errorMessage": "Choice must be rock, paper, or scissors"
       }}
     ]
@@ -156,9 +190,11 @@ Numeric comparisons: {{ "<": [...] }}, {{ ">=": [...] }}
 - Winner determination by comparing player scores ("player with higher score wins")
 - Any computation that reads multiple state fields and derives a result
 
-**How it works with stateDelta**: Mix deterministic ops (setFromMap, setFromDataSource, set) for data-fetching/known values, and let mechanicsGuidance handle the conditional/arithmetic parts. The runtime LLM reads mechanicsGuidance, inspects the fetched data already in state, and emits the remaining set ops.
+**How it works**: Generated mechanic code reads \`mechanicsGuidance\`, inspects live state values, and writes the results. The \`mechanicsGuidance\` block tells the code generator what logic to implement — it does not execute at instruction-extraction time.
 
-**⚠️ CRITICAL — Computed winners still require isGameWinner in stateDelta**: Even when the winner is determined by runtime computation (via mechanicsGuidance), you MUST still declare players.{{{{winnerId}}}}.isGameWinner in the static stateDelta. The {{winnerId}} acts as a placeholder — the runtime LLM computes the actual winner ID via mechanicsGuidance, then populates the op. The validator scans stateDelta for this declaration; if it's missing, validation will fail with "No transition sets players.*.isGameWinner". For draw-only games (never any winner), omit the op and ignore the warning.
+**isGameWinner**: Generated mechanic code sets \`players.<playerId>.isGameWinner = true\` for the winning player.
+- Runtime automatically computes game.winningPlayers from these flags
+- For draw-only games (no winners): no op needed
 
 **Example: scoring after data fetch (Crypto Stock Duel pattern)**
 {{
@@ -169,13 +205,7 @@ Numeric comparisons: {{ "<": [...] }}, {{ ">=": [...] }}
       "After computing both scores: the player with the higher roundScore wins (set isGameWinner=true); equal scores = tie (no winner, leave isGameWinner false)"
     ],
     "computation": "For each player: read selectedDirection and the fetched pctChange from state. Compute roundScore and write to players.player1.roundScore and players.player2.roundScore. Then compare scores, determine winner or tie, and set isGameWinner accordingly. If tie, skip the isGameWinner op."
-  }},
-  "stateDelta": [
-    {{ "op": "setFromMap", "keyPath": "players.player1.selectedTicker", "map": {{ "BTC": "coinbase-btc-usd-price" }}, "path": "game.p1DataSourceId" }},
-    {{ "op": "setFromDataSource", "dataSourceId": "{{{{game.p1DataSourceId}}}}", "path": "game.p1PriceData", "aggregatorId": "30s-movement" }},
-    {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
-    {{ "op": "set", "path": "game.gameEnded", "value": true }}
-  ]
+  }}
 }}
 
 **Example: RPS winner determination (classic pattern)**
@@ -188,11 +218,7 @@ Numeric comparisons: {{ "<": [...] }}, {{ ">=": [...] }}
       "If both players choose the same option, the round is a tie (no winner)"
     ],
     "computation": "Compare player choices to determine winner, then increment winner's score by 1 (or no change if tie)"
-  }},
-  "stateDelta": [
-    {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
-    {{ "op": "set", "path": "game.gameEnded", "value": true }}
-  ]
+  }}
 }}
 
 ## 4. Message Templates
@@ -225,21 +251,6 @@ Common variable patterns:
 
 **Standard Player State Fields**:
 
-**actionRequired** (boolean) - REQUIRED field for EVERY player action:
-- ⚠️ CRITICAL: EVERY player action's stateDelta MUST include an operation to set actionRequired
-- Set to false when player has completed all required actions for this phase
-- Set to true when player must take additional actions (multi-step phases like bet-then-confirm)
-- The router uses this flag to determine if the game can proceed or must wait for player input
-- Missing this operation will cause deadlocks where transitions cannot fire
-- Example: {{ "op": "set", "path": "players.{{{{playerId}}}}.actionRequired", "value": false }}
-- DO NOT create custom completion flags (hasSubmitted, hasMoved, etc.) - use actionRequired only
-
-**actionsAllowed** (boolean) - OPTIONAL field for games with optional/voluntary actions:
-- For MOST games, omit actionsAllowed operations - it will default to match actionRequired
-- Only include actionsAllowed if the spec explicitly mentions optional or voluntary actions
-- Use when: player can act but isn't required to (actionRequired: false, actionsAllowed: true)
-- Example: {{ "op": "set", "path": "players.{{{{playerId}}}}.actionsAllowed", "value": true }}
-
 **illegalActionCount** (number) - Tracks invalid/illegal action attempts:
 - Increment on validation failures
 - Initialize to 0 in initialization transitions
@@ -247,39 +258,38 @@ Common variable patterns:
 
 **Game Completion Fields (CRITICAL - Required for ALL games)**:
 
-**game.gameEnded** (boolean) - REQUIRED in transitions that end the game:
-- ⚠️ CRITICAL: At least ONE transition must set game.gameEnded to true
-- This signals the game has reached a terminal state and should not continue
-- Set in transitions that move to the "finished" phase or when game ends
-- Example: {{ "op": "set", "path": "game.gameEnded", "value": true }}
-- Missing this will cause validation failure: "No transition sets game.gameEnded=true"
-
-**players.{{{{playerId}}}}.isGameWinner** (boolean) - Set to true for winning player(s):
-- ⚠️ CRITICAL: MUST be set on ALL paths to the "finished" phase (except no-winner scenarios)
-- Set to true for each player who won the game
-- Leave as false (default) for players who didn't win or in draw scenarios
-- Runtime automatically computes game.winningPlayers array from these flags
-- Can be set in same transition as gameEnded OR in an earlier transition
-- Examples:
-  * Single winner: {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }}
-  * Multiple winners (tie): Two ops - {{ "op": "set", "path": "players.{{{{player1Id}}}}.isGameWinner", "value": true }} and {{ "op": "set", "path": "players.{{{{player2Id}}}}.isGameWinner", "value": true }}
-  * No winner (draw/abandoned): No operations needed - all flags remain false
-- Missing this will cause validation failure: "Path [phases] does not set isGameWinner"
-- If game has multiple ending scenarios, EACH ending transition must set isGameWinner appropriately
-
-**Example: Complete game-ending transition stateDelta (sets BOTH required fields)**:
-{{
-  "stateDelta": [
-    {{ "op": "set", "path": "players.{{{{winnerId}}}}.isGameWinner", "value": true }},
-    {{ "op": "set", "path": "game.gameEnded", "value": true }},
-    {{ "op": "set", "path": "game.publicMessage", "value": "Game Over! {{{{winnerName}}}} wins!" }}
-  ]
-}}
+**players.{{{{playerId}}}}.isGameWinner** (boolean) - Set by generated mechanic code for the winning player(s).
+- Runtime automatically computes game.winningPlayers from these flags
+- Do NOT include game.gameEnded or game.currentPhase — the router sets these automatically
 
 **State cleanup**: If planner hints indicate fields should be cleared/reset 
 (e.g., "clear both players' choice fields"), use delete ops or set to null as specified
 
 **⚠️ CRITICAL: The Transition From "init" Phase (typically "initialize_game")**
+
+**⛔ mechanicsGuidance is STRICTLY FORBIDDEN for init-phase transitions.** The runtime applies init
+stateDelta ops directly without a sandbox mechanic. Express ALL initialization — including random
+dice rolling — as stateDelta ops only. Do NOT include a mechanicsGuidance block.
+
+**If the game uses dice arrays** (e.g. rolling N personal dice per player), always also set an explicit
+per-player count field alongside the array — validation checks read the count field directly, not array length:
+{{ "op": "setForAllPlayers", "field": "diceCount", "value": 5 }}
+
+**Setting actionRequired for a random starting player (REQUIRED pattern)**:
+Use \`setForRandomPlayer\` — it picks one player at random and sets the given field on their state.
+Always pair it with a prior \`setForAllPlayers\` to reset all players first:
+{{ "op": "setForAllPlayers", "field": "actionRequired", "value": false }}
+{{ "op": "setForRandomPlayer", "field": "actionRequired", "value": true }}
+
+This ensures exactly one player has \`actionRequired: true\` after init.
+
+**Recording which player was randomly chosen** (use when the game needs to reference the starting player):
+Add the optional \`recordTo\` field to write the chosen player's alias (e.g. "player1") to a game-state path.
+This alias can then be referenced in message templates:
+{{ "op": "setForRandomPlayer", "field": "actionRequired", "value": true, "recordTo": "game.roundStartingPlayerId" }}
+
+After this op, \`game.roundStartingPlayerId\` will contain "player1" or "player2" and can be used in templates:
+\`"template": "{{game.roundStartingPlayerId}} goes first!"\`
 
 **ABSOLUTE REQUIREMENT**: The transition from the "init" phase MUST initialize EVERY field that appears
 in ANY transition precondition throughout the entire game. If ANY later transition has a precondition that
@@ -321,24 +331,24 @@ Use the **setForAllPlayers** operation when setting the same value for all playe
     "checks": [
       {{
         "id": "wrongPhase",
-        "logic": {{ "==": [{{ "var": "game.phase" }}, "choice"] }},
+        "logic": {{ "==": [{{ "var": "game.currentPhase" }}, "choice"] }},
         "errorMessage": "Cannot submit choice - not in choice phase"
       }},
       {{
-        "id": "alreadySubmitted",
-        "logic": {{ "!": {{ "var": "players.{{{{playerId}}}}.choice" }} }},
-        "errorMessage": "You have already submitted your choice"
+        "id": "notYourTurn",
+        "logic": {{ "==": [{{ "var": "players.{{{{playerId}}}}.actionRequired" }}, true] }},
+        "errorMessage": "It is not your turn"
       }},
       {{
         "id": "invalidChoice",
-        "logic": {{ "in": [{{ "var": "input.choice" }}, ["rock", "paper", "scissors"]] }},
+        "logic": {{ "in": [{{ "var": "players.{{{{playerId}}}}.currentAction.choice" }}, ["rock", "paper", "scissors"]] }},
         "errorMessage": "Choice must be rock, paper, or scissors"
       }}
     ]
   }},
   "stateDelta": [
-    {{ "op": "set", "path": "players.{{{{playerId}}}}.choice", "value": "{{{{input.choice}}}}" }},
-    {{ "op": "set", "path": "players.{{{{playerId}}}}.actionRequired", "value": false }}
+    {{ "op": "set", "path": "players.{{{{playerId}}}}.currentAction.type", "value": "submit-choice" }},
+    {{ "op": "set", "path": "players.{{{{playerId}}}}.currentAction.choice", "value": "{{{{input.choice}}}}" }}
   ],
   "messages": {{
     "private": [
@@ -348,31 +358,7 @@ Use the **setForAllPlayers** operation when setting the same value for all playe
   }}
 }}
 
-# Example Automatic Transition (Deterministic)
-
-{{
-  "id": "resolve-round",
-  "transitionName": "Resolve Round",
-  "description": "Apply RPS rules and update score",
-  "priority": 10,
-  "mechanicsGuidance": {{
-    "rules": ["Rock beats scissors", "Scissors beats paper", "Paper beats rock", "Tie if same"],
-    "computation": "Compare choices, determine winner, increment winner's score by 1"
-  }},
-  "stateDelta": [
-    {{ "op": "increment", "path": "players.{{{{winnerId}}}}.score", "value": 1 }},
-    {{ "op": "delete", "path": "players.p1.choice" }},
-    {{ "op": "delete", "path": "players.p2.choice" }},
-    {{ "op": "set", "path": "players.p2.actionRequired", "value": true }}
-  ],
-  "messages": {{
-    "public": {{ "template": "Round {{{{game.round}}}}: {{{{p1Name}}}} ({{{{p1Choice}}}}) vs {{{{p2Name}}}} ({{{{p2Choice}}}}). {{{{outcome}}}}! Scores: {{{{p1Score}}}}-{{{{p2Score}}}}" }}
-  }}
-}}  "public": {{ "to": "all", "template": "Round {{{{game.round}}}}: {{{{p1Name}}}} ({{{{p1Choice}}}}) vs {{{{p2Name}}}} ({{{{p2Choice}}}}). {{{{outcome}}}}! Scores: {{{{p1Score}}}}-{{{{p2Score}}}}" }}
-  }}
-}}
-
-# Example Automatic Transition (With RNG)
+# Example Initialization Transition (With RNG)
 
 {{
   "id": "initialize-game",

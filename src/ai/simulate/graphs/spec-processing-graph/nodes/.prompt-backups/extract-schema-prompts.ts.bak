@@ -1,0 +1,159 @@
+/**
+ * Prompts for Schema Extraction Node
+ */
+
+/**
+ * Schema executor prompt - Analyzes game specification and extracts state fields
+ */
+export const executeSchemaTemplate = `
+!___ CACHE:universal-planner ___!
+You are a game design analyst planning the game state schema for a turn based game. 
+Using the provided game specification and the base schema, produce exactly two sections 
+only (no extra commentary):
+
+1) Natural summary (1–3 short sentences): a concise plain-English summary of the 
+minimal state the runtime must capture to run the game (keep it focused on 
+decision-relevant state).
+
+2) Fields: a compact JSON array describing any new fields required 
+beyond the provided base schema. Each field entry must be an object with the following keys:
+   - "name" (string): dot-path (example: "players.*.currentMove" or "game.round")
+   - "type" (string): MUST be one of these 7 values exactly: "string" | "number" | "boolean" | "enum" | "array" | "record" | "object"
+   - "path" (string): either "game" or "player" indicating whether the field is at the
+     game-level or player-level
+   - "purpose" (string): one short phrase (<=10 words) explaining why it is required
+   - "enumValues" (optional string[]): list of allowed values when "type" or "valueType" is "enum"
+     Example: ["rock","paper","scissors"]
+   - "valueType" (optional string): inner element/value type when "type" is "array" or "record".
+     Must also be one of: "string" | "number" | "boolean" | "enum" | "array" | "record"
+   - "fields" (optional array): sub-field definitions when "type" is "object". Each sub-field
+     has the same shape (name, type, path, purpose, etc.) but CANNOT itself be type "object"
+     (max 1 level of nesting).
+   - "required" (optional boolean): defaults to true if omitted. Set to false for optional fields.
+
+   TYPE GUIDANCE:
+   - Simple string field → {{"type":"string"}}
+   - Simple number field → {{"type":"number"}}
+   - Boolean flag → {{"type":"boolean"}}
+   - Fixed set of choices → {{"type":"enum","enumValues":["rock","paper","scissors"]}}
+   - List of strings → {{"type":"array","valueType":"string"}}
+   - List of enum values → {{"type":"array","valueType":"enum","enumValues":["rock","paper","scissors"]}}
+   - Dictionary with dynamic keys and uniform value type → {{"type":"record","valueType":"string"}}
+   - Dictionary with dynamic keys and enum values → {{"type":"record","valueType":"enum","enumValues":["rock","paper","scissors"]}}
+   - Structured data with known fixed fields of different types → {{"type":"object","fields":[...]}}
+
+   ⚠️ OBJECT vs RECORD — choose correctly:
+   - Use "object" when the field has a FIXED set of known sub-fields with DIFFERENT types.
+     This generates a typed interface that enforces exact field names at compile time.
+     Example: a bid with a numeric count, numeric face value, and string player reference
+     → {{"type":"object","fields":[{{"name":"count","type":"number","path":"game","purpose":"bid quantity"}},{{"name":"faceValue","type":"number","path":"game","purpose":"target value"}},{{"name":"bidderId","type":"string","path":"game","purpose":"who placed the bid"}}]}}
+   - Use "record" ONLY for truly dynamic/homogeneous maps where keys are not known in advance
+     and ALL values are the same type (e.g., player inventories, score lookups).
+     Example: mapping weapon names to categories → {{"type":"record","valueType":"string"}}
+   - If you are unsure, prefer "object" over "record" when the sub-fields are known at design time.
+
+⚠️ IMPORTANT: BASE SCHEMA FIELDS ALREADY PROVIDED
+The following fields are already available in the base schema and should NOT be redefined:
+<base_schema_fields>
+{baseSchemaFields}
+</base_schema_fields>
+
+Only add NEW fields that are specific to this game and not already covered by the base schema.
+
+Rules for the planner output:
+- Do NOT output full JSON schemas or example state objects
+- Do not include histories unless explicitly required by the game spec.  Prefer cumulative
+  updates to current state fields.
+- Do NOT add "players.*.ready" or player-join tracking fields unless the 
+  specification explicitly states players can join after the game starts.
+- Keep the field list to at most 6 entries. If no new fields are required, return an 
+  empty array "[]".
+- The Natural summary may be plain text (1–3 sentences). The Fields section MUST be valid 
+  JSON parseable by the executor.
+- ⚠️ CRITICAL: STATE STRUCTURE RULES
+  * game: Properties are ONE level deep directly under "game"
+    ✓ CORRECT: game.round, game.currentPhase, game.difficulty
+    ✗ INCORRECT: game.settings.difficulty (nested object)
+  * players: This is a map/record where each player ID is a key, with properties ONE level 
+    under that key
+    ✓ CORRECT: players.*.score, players.*.hand, players.*.currentMove
+    ✗ INCORRECT: players.*.inventory.gold (nested under player)
+    ✗ INCORRECT: game.scoreP1, game.player1Hand (player data under game with suffixes)
+  Player-specific data MUST be organized under the players map, NOT as separate fields 
+  under game with player suffixes. This ensures scalability to N-player games.
+- ⚠️ RANDOMNESS STORAGE: If the game specification mentions dice rolls, card draws, 
+  shuffling, random events, or any non-deterministic outcomes, add fields to store the 
+  random results. Examples: game.lastDiceRoll, game.monsterAttackRoll, game.deadlyScenario. 
+  These fields allow random values to be generated once and referenced deterministically in 
+  game logic.
+- ⚠️ NO IMAGE OR NARRATIVE STORAGE FIELDS: Do NOT create fields to store generated image 
+  URLs (e.g. "lastOutcomeImage", "roundImage") or narrative/narration text 
+  (e.g. "lastRoundNarration", "roundStory", "outcomeDescription"). Image generation and 
+  narrative output are handled entirely by the runtime through standard output channels: 
+  publicMessage for narrative text and the imageContentSpec → imagePrompt pipeline for 
+  images. Adding schema fields for these creates impossible template variables that the 
+  LLM cannot resolve at execution time.
+- ⚠️ CRITICAL: USE STANDARD PLAYER STATE FIELDS - The base schema provides "actionRequired" 
+  (boolean) to indicate whether a player must take an action for the game to progress. 
+  DO NOT create custom fields like "hasSubmitted", "hasMoved", "turnComplete", "choiceMade", 
+  etc. to track whether a player has completed their action. ALWAYS use the standard 
+  "actionRequired" field for this purpose. When a player completes all required actions 
+  (submits a choice, makes a move, etc.),even if the payer may still take optional actions, 
+  the game logic will set actionRequired=false. This ensures the router can reliably 
+  determine when all players have acted and automatic transitions can proceed.
+- ⚠️ TRANSITION SIGNAL FIELDS: Include fields that the game needs to determine when phase
+  transitions should occur. The runtime uses a router that evaluates state fields to decide
+  when to change phases — it does NOT read currentPhase setters or gameEnded setters from
+  game logic. If a game event (e.g., a player declaring a challenge, a round ending) should
+  trigger a phase change, there must be a state field whose value the router can check.
+  Example: In Liar's Dice, a "challengerId" field (string, nullable) lets the router detect
+  that a challenge was declared and transition from bidding to challenge_resolution when
+  challengerId is not null. Without this field, no transition can fire.
+- ⛔ NEVER ADD TIMING OR ELAPSED-TIME FIELDS: Do NOT add any field that tracks elapsed time,
+  phase duration, countdowns, or when a phase started. Examples of forbidden field names:
+  phaseElapsedMs, elapsedSeconds, phaseStartTime, timerMs, countdownMs, remainingSeconds,
+  waitStartedAt, timeoutAt. Phase timing is managed entirely by the runtime engine, which
+  reads the humanSummary of each transition to configure timers automatically. Preconditions
+  only evaluate stored game state — they never evaluate elapsed time.
+
+You are provided with a formal schema definition for the base game state.  The final schema
+must match the shape of this schema:
+<schema>
+{schema}
+</schema>
+
+Output format (exactly):
+
+Natural summary:
+"<one to three short sentences>"
+
+Fields:
+\`\`\`json
+<JSON array as described above>
+\`\`\`
+
+Example (exact formatting expected):
+Natural summary:
+"Game has 3 rounds. Each round all players submit one move; rounds resolve when all 
+moves are in. Scores updated per head-to-head matches."
+
+Fields:
+\`\`\`json
+[
+  {{"name":"currentPhase","type":"string","purpose":"Track current game phase",
+    "path": "game"}}, 
+  {{"name":"Choice","type":"enum","purpose":"player selection",
+    "path":"player","enumValues":["rock","paper","scissors"]}}
+]
+\`\`\`
+!___ END-CACHE ___!
+
+!___ CACHE:design-planner ___!
+Review the following detailed specification for a game:
+<game_specification>
+{gameSpecification}
+</game_specification>
+!___ END-CACHE ___!
+
+Now analyze the specification and produce your output following the format specified above (Natural summary and Fields array).
+`;

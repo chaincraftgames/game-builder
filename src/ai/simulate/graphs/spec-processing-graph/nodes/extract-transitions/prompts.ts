@@ -10,15 +10,44 @@ export const planTransitionsTemplate = `
 !___ CACHE:universal-planner ___!
 You are creating a phase transition specification for a game.
 
-## Core Task
-Analyze the game spec and identify:
-1. Game phases (distinct states the game moves through)
-2. Transitions between phases (conditions that trigger phase changes)
-3. Input fields each transition reads to determine if it should fire
+# Architecture: Two Phase Types
 
-## Critical Rules
+Understanding this separation is CRITICAL — every design decision flows from it.
 
-### 1. Template Structure (MANDATORY)
+## Player Input Phases (requiresPlayerInput: true)
+- The runtime waits for players to submit free-text actions
+- Players set **input fields**: the raw choices they made (bid count, move, challenge signal)
+- Transition OUT fires when players have completed their required input
+- Preconditions check: currentPhase + player readiness (e.g., allPlayersCompletedActions)
+- Player input already exists when the transition fires — preconditions CAN check it
+
+## Automatic Transition Phases (requiresPlayerInput: false)
+- The engine reads input fields set by the prior player phase and computes what happened
+- Sets **outcome fields**: game results (challenge winner, score delta, round loser)
+- Transition OUT fires immediately to trigger that computation and advance to the next phase
+- Preconditions check: ONLY currentPhase + input fields already set by a prior phase
+- ⛔ NEVER precondition on values this transition will produce — they don't exist yet
+
+## Router (system-controlled)
+- Owns **game.currentPhase** and **game.gameEnded** exclusively — nothing else writes these
+- Fires the first transition whose preconditions are satisfied
+- Phase changes and game termination happen automatically
+
+## Design Principle: Input Fields Enable Phase Transitions
+The router checks state fields to decide when to fire a transition. If a game event
+(e.g., "player declares a challenge") must trigger a phase change, there MUST be a writable
+input field the router can check (e.g., game.challengerId != null). Without it, the
+transition can never fire → the game deadlocks.
+
+# Your Task
+Analyze the game spec and produce:
+1. A list of game phases with their type (player-input or automatic)
+2. Transitions between phases, each with preconditions that reflect the phase type
+3. humanSummary descriptions that tell the instruction generator what work to do
+
+# Rules
+
+## 1. Template Structure (MANDATORY)
 Start from this initial template:
 <initialTransitionsTemplate>
 {initialTransitionsTemplate}
@@ -26,190 +55,150 @@ Start from this initial template:
 
 - MUST preserve "init" as first phase and "finished" as last phase
 - Replace <FIRST_GAMEPLAY_PHASE> with actual first gameplay phase
-- Do NOT create separate "setup" or "end_game" phases - merge setup into init transition
+- Do NOT create separate "setup" or "end_game" phases — merge setup into init transition
 - Phases array: ["init", ...gameplay phases..., "finished"]
 
-#### Initialize Transition Rule
-The initialize_game transition MUST:
-- Ensure that every field (Input or Output) has an appropriate initial value.
-- Include initialization for: game fields and player fields.
+#### Initialize Transition
+The initialize_game transition MUST set initial values for every schema field:
 
-### 2. Checked Fields = Inputs Only
-\`checkedFields\` lists fields the transition READS to decide if it should fire.
-- ✅ Include: Fields that exist BEFORE transition fires
-- ❌ Never include: Fields the transition will WRITE/UPDATE
-- Rule: If transition modifies a field, don't check it
+#### Narrative Opening Pattern
+If the game requires an LLM-generated narrative opening (e.g., a dungeon crawler that needs
+to set the scene, reveal a secret role, or generate atmospheric intro text), do NOT try to
+produce that narrative in \`initialize_game\`. Instead:
+1. \`initialize_game\` transitions from "init" to an intermediate automatic phase (e.g. "opening_scene").
+2. Add a second automatic transition (e.g. \`generate_opening_scene\`) from "opening_scene" to the
+   first player-input phase. This transition uses mechanicsGuidance + narrativeKeys so the generated
+   mechanic can call \`callLLM\` at runtime to produce the narrative opening message.
 
-Example:
-- ✅ Check: game.currentPhase, game.currentRound (inputs - already exist)
-- ❌ Don't check: game.winner, players[*].score (outputs - transition will set these)
+For simple games that only need a static welcome message, \`initialize_game\` transitions directly
+from "init" to the first gameplay phase and includes a static \`messages.public.template\`.
+- All **input fields** (set to null/0/false/empty — no player has acted yet)
+- All **outcome fields** (set to null — no outcomes computed yet)
+- All player fields for every player
+- game.round, game.currentTurnPlayerId, etc. — everything starts from a known state
 
-### 3. Branching Requires Separate Transitions
-If the spec describes conditional outcomes (IF x THEN phase_a ELSE phase_b), create separate transitions:
-- ❌ Wrong: One transition with vague conditions covering multiple outcomes
-- ✅ Right: Multiple transitions, each with specific mutually exclusive preconditions
+## 2. Preconditions = Inputs Only
+\`checkedFields\` and \`preconditionHints\` must only reference fields that exist BEFORE the transition fires.
 
-Example - spec says "After round ends, continue to next round if round < 3, otherwise end game":
-\`\`\`json
-// Wrong: One vague transition
-{{ "id": "round_done", "condition": "round complete, maybe continue" }}
+- ✅ Input fields set by a prior player phase
+- ✅ Computed context fields (allPlayersCompletedActions, currentPlayerTurnId, etc.)
+- ❌ Fields this transition will write — they don't exist yet
+- ❌ game.currentPhase, game.gameEnded — router-controlled, never in preconditions
 
-// Right: Two transitions with clear conditions
-{{ "id": "continue_round", "toPhase": "next_round", "preconditionHints": [{{"explain": "game.currentRound < 3"}}] }}
-{{ "id": "end_game", "toPhase": "finished", "preconditionHints": [{{"explain": "game.currentRound >= 3"}}] }}
-\`\`\`
-
-### 4. Avoid Waypoint Phases
-Don't create phases that only exist to trigger one automatic transition. Merge the work into a single transition.
-- ❌ Wrong: phase_a → [trivial transition] → phase_b → [does actual work] → phase_c
-- ✅ Right: phase_a → [does all work] → phase_c
-
-Also avoid creating a separate verification phase just to confirm that work was done.
-If a phase performs work and then transitions out, the work and the transition happen together —
-don't add a follow-on phase that just checks "did the work complete?".
-
-### 6. Preconditions Reflect Phase Type (CRITICAL)
-
-Phases fall into two categories. Choose preconditions based on which type you have:
-
-**Player-input phases** (requiresPlayerInput: true):
-- Players submit data; the phase waits for them to finish
-- Transition OUT fires when players have completed their required actions
-- Preconditions: check currentPhase + player readiness (e.g., allPlayersCompletedActions == true)
-- The data players submitted already exists — preconditions can check it
-
-**System-execution phases** (requiresPlayerInput: false, non-init, non-finished):
-- The ENGINE does work during this phase (compute outcomes, generate content, resolve mechanics)
-- The transition OUT fires to trigger that work and then advance to the next phase
-- Preconditions: check ONLY currentPhase and any INPUT data the work requires that was set by a PREVIOUS phase
-- ❌ NEVER add preconditions for data this transition will PRODUCE — that data doesn't exist yet
-
-The key question: "Does this data exist BEFORE the transition fires, or is it created BY this transition?"
-- Exists before → safe to use in a precondition
-- Created by → belongs in the instruction's stateDelta, NOT a precondition
+Ask: "Does this data exist BEFORE the transition fires, or is it CREATED BY this transition?"
+Created-by data belongs in the instruction's stateDelta, described in humanSummary — not preconditions.
 
 \`\`\`json
 // ❌ Wrong: precondition checks the value this transition will generate
-// (The computed result does not exist until the transition executes)
 {{
-  "id": "resolve_and_advance",
-  "fromPhase": "resolution",
-  "toPhase": "scoring",
+  "id": "resolve_round",
   "preconditionHints": [
     {{ "explain": "game.currentPhase == 'resolution'" }},
-    {{ "explain": "game.resolvedOutcome != null" }}  // ← WRONG: this is produced by this transition
+    {{ "explain": "game.roundWinnerId != null" }}  // ← produced BY this transition
   ]
 }}
 
-// ✅ Right: precondition checks only phase and inputs already present
+// ✅ Right: precondition checks only the input that triggered the phase
 {{
-  "id": "resolve_and_advance",
-  "fromPhase": "resolution",
-  "toPhase": "scoring",
-  "humanSummary": "Compute outcome from player choices, then advance to scoring",
+  "id": "resolve_round",
+  "humanSummary": "Read both players' moves, apply win rules, set roundWinnerId and update scores",
   "preconditionHints": [
     {{ "explain": "game.currentPhase == 'resolution'" }}
-    // game.resolvedOutcome will be SET by the instruction's stateDelta
   ]
 }}
 \`\`\`
 
-Remember: the humanSummary field is how you describe the work that happens. The instruction generator reads it and produces the stateDelta. Preconditions just control WHEN the transition fires — not WHAT it produces.
+## 3. Branching = Separate Transitions, Exhaustive Coverage Required
+Conditional outcomes (IF x THEN phase_a ELSE phase_b) require separate transitions with
+mutually exclusive preconditions — not one vague transition.
 
-### 5. Avoid Duplicate Player-Specific Phases
-If multiple players take the same action in sequence, DO NOT create separate phases per player.
-Instead, use a SINGLE parameterized phase with dynamic player identification.
+**Exhaustive coverage is mandatory**: for every phase, every reachable game state must satisfy
+at least one outgoing transition's preconditions. If no transition can fire, the game deadlocks.
 
-❌ Wrong: Separate phases for each player
+After writing your branching transitions, ask: "Is there any state this phase can reach where
+NONE of these transitions fire?" Common trap — final-round logic:
+
 \`\`\`json
-{{
-  "phases": ["init", "player1_selecting", "player2_selecting", "resolution", "finished"],
-  "transitionCandidates": [
-    {{ "id": "p1_selected", "fromPhase": "player1_selecting", "toPhase": "player2_selecting" }},
-    {{ "id": "p2_selected", "fromPhase": "player2_selecting", "toPhase": "resolution" }}
-  ]
-}}
+// ❌ Wrong — deadlocks in a tied-score final round (no one has 2 wins yet,
+//    but rounds_remaining is also false because it IS the last round)
+{{ "id": "continue_match", "preconditionHints": [{{"explain": "no player has 2 wins AND rounds remaining"}}] }}
+{{ "id": "end_match",      "preconditionHints": [{{"explain": "a player has 2 wins"}}] }}
+
+// ✅ Right — exhaustive: either someone has won OR it's the last round
+{{ "id": "continue_match", "preconditionHints": [{{"explain": "no player has 2 wins AND rounds remaining"}}] }}
+{{ "id": "end_match",      "preconditionHints": [{{"explain": "a player has 2 wins OR no rounds remaining"}}] }}
 \`\`\`
 
-✅ Right: Single parameterized phase using computed context
 \`\`\`json
-{{
-  "phases": ["init", "player_selecting", "resolution", "finished"],
-  "transitionCandidates": [
-    {{ 
-      "id": "start_selection",
-      "fromPhase": "init", 
-      "toPhase": "player_selecting",
-      "preconditionHints": [{{"explain": "game.currentPhase == 'init'"}}]
-    }},
-    {{ 
-      "id": "next_player", 
-      "fromPhase": "player_selecting", 
-      "toPhase": "player_selecting",
-      "preconditionHints": [{{"explain": "currentPlayerCompleted == true AND allPlayersCompleted == false"}}]
-    }},
-    {{ 
-      "id": "all_selected", 
-      "fromPhase": "player_selecting", 
-      "toPhase": "resolution",
-      "preconditionHints": [{{"explain": "allPlayersCompletedActions == true"}}]
-    }}
-  ]
-}}
+// ❌ Wrong
+{{ "id": "round_done", "condition": "round complete, maybe continue" }}
+
+// ✅ Right
+{{ "id": "continue_round", "toPhase": "playing", "preconditionHints": [{{"explain": "game.currentRound < game.totalRounds"}}] }}
+{{ "id": "final_round_complete", "toPhase": "finished", "preconditionHints": [{{"explain": "game.currentRound >= game.totalRounds"}}] }}
 \`\`\`
 
-Key advantages:
-- Reduces phase count by N-1 (where N = player count)
-- Single instruction set works for all players
-- Uses computed context fields: currentPlayerTurnId, allPlayersCompletedActions
-- Phase loops until all players complete, then transitions
+## 4. Avoid Waypoint Phases
+Don't create phases that only exist to trigger one automatic transition.
+- ❌ Wrong: phase_a → [trivial] → phase_b → [real work] → phase_c
+- ✅ Right: phase_a → [all work] → phase_c
 
-Similarly for round-based phases:
-❌ Wrong: "round1_scoring", "round2_scoring", "round3_scoring"
-✅ Right: "scoring" with game.currentRound field and loop transitions
+Don't add a follow-on verification phase just to confirm work completed.
 
-### 7. Precondition Whitelist (ABSOLUTE RULE)
-Preconditions may reference ONLY:
-  1. Computed context fields (listed in the computed context section above)
-  2. Schema fields that are explicitly SET by player actions or transitions
+## 5. Avoid Duplicate Player-Specific Phases
+Use ONE parameterized phase when multiple players take the same action in sequence.
 
-Anything else — especially elapsed time, phase duration, countdowns, or timeouts — is FORBIDDEN
-in preconditions AND in the schema.
+❌ Wrong: ["player1_choosing", "player2_choosing"]
+✅ Right: ["choosing"] with a self-loop transition for turn rotation
 
-❌ FORBIDDEN — timer fields in schema or preconditions:
 \`\`\`json
-// Wrong: these fields do not exist and will never be set at runtime
+{{ "id": "next_player_turn", "fromPhase": "choosing", "toPhase": "choosing",
+   "preconditionHints": [{{"explain": "currentPlayerCompleted == true AND allPlayersCompleted == false"}}] }},
+{{ "id": "all_players_chose", "fromPhase": "choosing", "toPhase": "resolution",
+   "preconditionHints": [{{"explain": "allPlayersCompletedActions == true"}}] }}
+\`\`\`
+
+Similarly: use "scoring" + game.currentRound, not "round1_scoring", "round2_scoring".
+
+## 6. No Timer Fields
+Timer-based transitions use ONLY a phase precondition — duration goes in humanSummary.
+
+\`\`\`json
+// ❌ FORBIDDEN — these fields will never be set; game will deadlock
 {{ "explain": "game.phaseElapsedMs >= 30000" }}
-{{ "explain": "game.elapsedSeconds >= 30" }}
-{{ "explain": "game.phaseStartTime + 30 < now" }}
-\`\`\`
 
-✅ CORRECT — timer-based transitions use ONLY a phase precondition; timing goes in humanSummary:
-\`\`\`json
+// ✅ Correct
 {{
-  "id": "wait_timer_complete",
-  "fromPhase": "wait",
-  "toPhase": "resolution",
-  "preconditionHints": [
-    {{ "explain": "game.currentPhase == 'wait'" }}
-  ],
-  "humanSummary": "30-second wait timer completed — fetch final price and advance to resolution"
+  "id": "timer_complete", "fromPhase": "wait", "toPhase": "resolution",
+  "preconditionHints": [{{ "explain": "game.currentPhase == 'wait'" }}],
+  "humanSummary": "30-second timer elapsed — advance to resolution"
 }}
 \`\`\`
 
-The runtime reads humanSummary to configure the timer. If a transition fires after N seconds,
-put the number in humanSummary ONLY. Do NOT add timing fields to the schema. Do NOT reference
-timing fields in preconditionHints. They will never be set and the game will deadlock.
+## 7. Use allPlayersCompletedActions for Simultaneous Submissions
+When a transition fires after ALL players have submitted their action simultaneously, use the computed context field \`allPlayersCompletedActions\` as the precondition — do NOT invent a custom boolean signal field (e.g. \`allActionsSubmitted\`, \`allPlayersReady\`).
 
-### 6. Precondition Hints (for executor synthesis)
-When writing \`explain\` text for preconditionHints, follow these rules so executor can synthesize valid JsonLogic:
+Custom signal fields create a **circular dependency**: the mechanic can only set them after the transition fires, but the transition won't fire until they are set → permanent deadlock.
 
-✅ Use wildcard for player array checks: "players[*].actionRequired == false"
-❌ Never use indexed access: "players[0].field" or "players.0.field"
+\`allPlayersCompletedActions\` is true when every player with \`actionRequired == true\` has submitted a non-null \`currentAction\`. It is computed by the router before each transition evaluation — no mechanic needs to set it.
 
-For player-specific checks, write clearly so executor knows which operator to use:
-- "any player has score >= 10" → executor will use anyPlayer operator
-- "all players have actionRequired == false" → executor will use allPlayers operator
+\`\`\`json
+// ❌ Wrong — allWeaponsSubmitted is never set before this transition fires
+{{ "preconditionHints": [{{"explain": "allPlayers.weaponsSubmitted == true"}}] }}
+
+// ✅ Right
+{{ "preconditionHints": [{{"explain": "allPlayersCompletedActions == true"}}] }}
+\`\`\`
+
+## 8. Precondition Hint Writing Style
+When writing \`explain\` text, use these patterns so the executor synthesizes correct JsonLogic:
+
+✅ Player array checks use wildcards: "all players have actionRequired == false"
+❌ Never: "players[0].actionRequired" or "players.player1.actionRequired"
+
+Use natural language for aggregate checks:
+- "any player has score >= 10" → executor uses anyPlayer operator
+- "all players have actionRequired == false" → executor uses allPlayers operator
 
 ## Output Schema
 <planningSchema>

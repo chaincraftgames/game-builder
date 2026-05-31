@@ -1,85 +1,112 @@
 import z from "zod";
 
 /**
+ * Allowed primitive and container types for GameStateField.
+ */
+export type FieldType = 'string' | 'number' | 'boolean' | 'enum' | 'array' | 'record' | 'object';
+
+/**
  * Game state field definition.
  * Describes a single field in the game state schema (game-level or player-level).
  */
 export interface GameStateField {
   name: string;
-  type: string;
+  type: FieldType;
   path: 'game' | 'player';
-  source: string;
   purpose: string;
+  /** When type or valueType is 'enum' */
+  enumValues?: string[];
+  /** Inner type when type is 'array' or 'record' */
+  valueType?: FieldType;
+  /** Sub-fields when type is 'object' (max 1 level of nesting) */
+  fields?: GameStateField[];
+  /** Default true if omitted */
+  required?: boolean;
+  /** Router-managed field — excluded from mechanic return types, filtered at runtime */
+  systemControlled?: boolean;
+
+  // Legacy fields (kept optional for backward-compat with stored schemas)
+  /** @deprecated No longer produced; ignored by all consumers */
+  source?: string;
+  /** @deprecated No longer produced; ignored by all consumers */
   constraints?: string;
 }
 
 /**
- * JSON Schema validation for LLM structured output
- * 
- * PURPOSE: This is a DELIBERATE CONSTRAINT, not a bug.
- * 
- * This validator enforces a specific subset of JSON Schema Draft 7 that:
- * 1. The extract-schema LLM is instructed to generate (via prompts)
- * 2. Our buildFromJsonSchema() converter can handle (in schemaBuilder.ts)
- * 
- * WHY CONSTRAIN JSON SCHEMA?
- * - Game state schemas need simple, deterministic structures
- * - Limiting constructs improves LLM reliability and output consistency
- * - Reduces conversion complexity and potential runtime errors
- * - Makes debugging easier (fewer edge cases)
- * 
- * SUPPORTED CONSTRUCTS:
- * - type: object, array, string, number, boolean, integer, null
- * - properties: Fixed object properties
- * - additionalProperties: Dynamic key/value maps (records)
- * - items: Array element schemas
- * - required: Required field arrays
- * - enum: Enumerated string/number/null values
- * - description: Field documentation
- * 
- * EXPLICITLY NOT SUPPORTED (by design):
- * - $ref and definitions (prefer inlining)
- * - allOf, anyOf, oneOf (prefer explicit properties)
- * - patternProperties (use additionalProperties)
- * - Complex validation keywords (minLength, pattern, format, etc.)
- * 
- * MAINTENANCE:
- * If you add support for new constructs to buildFromJsonSchema(),
- * update this validator AND add test coverage in extract-schema.test.ts
+ * Zod schema matching GameStateField — used to validate LLM structured output.
  */
-const jsonSchemaObjectSchema: z.ZodType<any> = z.lazy(() =>
-  z.object({
-    // Type can be single type or array of types (for nullable: ["string", "null"])
-    type: z.union([
-      z.enum(['object', 'array', 'string', 'number', 'boolean', 'integer', 'null']),
-      z.array(z.enum(['object', 'array', 'string', 'number', 'boolean', 'integer', 'null']))
-    ]).optional(),
-    properties: z.record(jsonSchemaObjectSchema).optional(),
-    additionalProperties: z.union([jsonSchemaObjectSchema, z.boolean()]).optional(),
-    items: jsonSchemaObjectSchema.optional(),
-    required: z.array(z.string()).optional(),
-    // Enum can contain strings, numbers, or null
-    enum: z.array(z.union([z.string(), z.number(), z.null()])).optional(),
-    description: z.string().optional(),
-  })
-);
+export const fieldTypeSchema = z.enum(['string', 'number', 'boolean', 'enum', 'array', 'record', 'object']);
 
-export const extractSchemaResponseSchema = z.object({
-  gameRules: z.string().describe("A description of the game rules"),
-  state: z
-    .object({
-      game: z
-        .record(z.any())
-        .describe(
-          `Game-level state containing all shared game progress fields`
-        ),
-      players: z
-        .record(z.any())
-        .describe(`Map of player IDs to player state objects`),
-    })
-    .describe("Example of the initial game state structure"),
-  stateSchema: jsonSchemaObjectSchema
-    .describe(
-      "JSON Schema definition for the game state (base schema extended with game-specific fields)"
-    ),
+/** Zod schema for sub-fields inside an object type (no further nesting allowed). */
+const objectSubFieldSchema = z.object({
+  name: z.string(),
+  type: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'record']),
+  path: z.enum(['game', 'player']),
+  purpose: z.string(),
+  enumValues: z.array(z.string()).optional(),
+  valueType: z.enum(['string', 'number', 'boolean', 'enum', 'array', 'record']).optional(),
+  required: z.boolean().optional(),
+}).superRefine((field, ctx) => {
+  if ((field.type === 'array' || field.type === 'record') && field.valueType == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['valueType'],
+      message: `"valueType" is required when "type" is "${field.type}" (sub-field "${field.name}").`,
+    });
+  }
 });
+
+export const gameStateFieldSchema = z.object({
+  name: z.string(),
+  type: fieldTypeSchema,
+  path: z.enum(['game', 'player']),
+  purpose: z.string(),
+  enumValues: z.array(z.string()).optional(),
+  valueType: fieldTypeSchema.optional(),
+  fields: z.array(objectSubFieldSchema).optional(),
+  required: z.boolean().optional(),
+  systemControlled: z.boolean().optional(),
+}).superRefine((field, ctx) => {
+  // valueType is required when type is 'array' or 'record' — without it, the
+  // interface generator produces 'unknown[]' / 'Record<string, unknown>' and
+  // every mechanic that reads the field will fail tsc with TS2304.
+  if ((field.type === 'array' || field.type === 'record') && field.valueType == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['valueType'],
+      message: `"valueType" is required when "type" is "${field.type}". ` +
+        `Specify the element/value type (e.g. "string", "number", "object").`,
+    });
+  }
+
+  // fields is required when type is 'object' — without it the interface generator
+  // produces 'Record<string, unknown>' instead of a typed interface.
+  if (field.type === 'object' && (field.fields == null || field.fields.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fields'],
+      message: `"fields" is required (and must be non-empty) when "type" is "object". ` +
+        `Describe the known sub-fields of this structured object.`,
+    });
+  }
+
+  // fields is required when valueType is 'object' — without it the interface
+  // generator cannot produce a typed sub-interface and falls back to 'unknown[]',
+  // causing compile errors in every mechanic that reads array elements.
+  if (field.valueType === 'object' && (field.fields == null || field.fields.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fields'],
+      message: `"fields" is required (and must be non-empty) when "valueType" is "object". ` +
+        `Describe the sub-fields of each array element (e.g. id, name, value).`,
+    });
+  }
+});
+
+/** Field names that are always system-controlled (router-managed). */
+export const SYSTEM_CONTROLLED_FIELDS: ReadonlySet<string> = new Set([
+  'currentPhase',
+  'gameEnded',
+]);
+
+
