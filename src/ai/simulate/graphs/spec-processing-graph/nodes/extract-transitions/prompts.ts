@@ -160,20 +160,20 @@ Use ONE parameterized phase when multiple players take the same action in sequen
 
 Similarly: use "scoring" + game.currentRound, not "round1_scoring", "round2_scoring".
 
-## 6. No Timer Fields
-Timer-based transitions use ONLY a phase precondition — duration goes in humanSummary.
+## 6. No Timer or Timeout Transitions
+Timer, timeout, deadline, and AFK-protection transitions are **NOT supported**. Do not create
+any transition based on elapsed time, submission deadlines, or auto-advance after N seconds.
+No wall-clock advancement mechanism exists in the runtime — such transitions will fire
+immediately or never, breaking the game.
 
 \`\`\`json
-// ❌ FORBIDDEN — these fields will never be set; game will deadlock
+// ❌ FORBIDDEN — phaseElapsedMs, submissionDeadline, currentTime are never set; game will break
 {{ "explain": "game.phaseElapsedMs >= 30000" }}
-
-// ✅ Correct
-{{
-  "id": "timer_complete", "fromPhase": "wait", "toPhase": "resolution",
-  "preconditionHints": [{{ "explain": "game.currentPhase == 'wait'" }}],
-  "humanSummary": "30-second timer elapsed — advance to resolution"
-}}
+{{ "explain": "game.currentTime >= game.submissionDeadline" }}
 \`\`\`
+
+"Simultaneous submissions" means choices are hidden until all players have submitted — it does
+NOT imply a timeout fallback. Do not add \`submission_timeout\` or similar transitions.
 
 ## 7. Use allPlayersCompletedActions for Simultaneous Submissions
 When a transition fires after ALL players have submitted their action simultaneously, use the computed context field \`allPlayersCompletedActions\` as the precondition — do NOT invent a custom boolean signal field (e.g. \`allActionsSubmitted\`, \`allPlayersReady\`).
