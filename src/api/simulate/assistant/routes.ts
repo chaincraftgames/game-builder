@@ -60,13 +60,31 @@ export async function registerAssistantRoutes(server: FastifyInstance) {
         reply.raw.write(`data: ${JSON.stringify({ type: 'heartbeat' })}\n\n`);
       }, 15_000);
 
-      bus.on(send);
+      // Close the stream after 10 minutes of inactivity (no assistant events).
+      // The client reconnects when needed; the graph resumes from its checkpoint.
+      const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+      let inactivityTimer = setTimeout(closeStream, INACTIVITY_TIMEOUT_MS);
 
-      request.raw.once('close', () => {
+      let streamClosed = false;
+      function closeStream() {
+        if (streamClosed) return;
+        streamClosed = true;
         clearInterval(heartbeat);
-        bus.off(send);
+        clearTimeout(inactivityTimer);
+        bus.off(wrappedSend);
         reply.raw.end();
-      });
+      }
+
+      // Wrap send to reset the inactivity timer on each event
+      const wrappedSend = (event: SimAssistantEvent) => {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(closeStream, INACTIVITY_TIMEOUT_MS);
+        send(event);
+      };
+
+      bus.on(wrappedSend);
+
+      request.raw.once('close', closeStream);
     },
   );
 

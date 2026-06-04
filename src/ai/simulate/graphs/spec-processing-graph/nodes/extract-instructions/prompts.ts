@@ -30,17 +30,19 @@ Understanding this separation is CRITICAL — every instruction decision flows f
 - Simple bounds (is count >= 1? is faceValue 1–6?)
 - **Cross-field comparisons against game state** — e.g. "new bid count must exceed current bid count" compares submitted input against an existing game state value. This is still a deterministic gate → belongs in validation.checks, NOT in a mechanic.
 
+The \`currentAction.type\` value MUST match the action's \`id\` exactly as defined in the action definitions — always the verbatim snake_case action id, never a camelCase or human-readable variant.
+
 **Example (RPS)**:
 - validation.checks: phase guard, is it your turn?, move is one of [rock/paper/scissors]
-- stateDelta: set player.currentAction.type = "selectMove", player.currentAction.choice = {{input.choice}}
+- stateDelta: set player.currentAction.type = "select_move", player.currentAction.choice = {{input.choice}}
 
 **Example (Auction)**:
 - validation.checks: phase guard, is it your turn?, bid amount > 0, bid amount > game.currentHighestBid (cross-field comparison against game state)
-- stateDelta: set player.currentAction.type = "bid", player.currentAction.amount = {{input.amount}}
+- stateDelta: set player.currentAction.type = "place_bid", player.currentAction.amount = {{input.amount}}
 
 **Example (Liar's Dice bid)**:
 - validation.checks: phase guard, is it your turn?, faceValue 1–6, count >= 1, AND (newCount > game.currentBid.count OR (newCount == game.currentBid.count AND newFaceValue > game.currentBid.faceValue)) — the escalation rule is a cross-field comparison and belongs here
-- stateDelta: set player.currentAction.type = "bid", player.currentAction.count = {{input.count}}, player.currentAction.faceValue = {{input.faceValue}}
+- stateDelta: set player.currentAction.type = "submit_bid", player.currentAction.count = {{input.count}}, player.currentAction.faceValue = {{input.faceValue}}
 
 ## Automatic Transition Phases (requiresPlayerInput: false)
 - The engine reads input fields set by the prior player phase and computes outcomes
@@ -100,6 +102,7 @@ Focus on:
 - **game.gameEnded**: Router-controlled — do NOT set in stateDelta; set automatically when router transitions to "finished"
 - **players.{{playerId}}.isGameWinner**: Set in automatic transitions leading to finished phase
 - **players.{{playerId}}.actionRequired**: Set by mechanics ONLY — never by player action stateDelta. The router uses \`currentAction != null\` to detect a submitted action.
+- **players.{{playerId}}.actionsAllowed**: A \`boolean\` — set \`true\` to allow actions, \`false\` to prevent them. Do NOT set it to an array of action IDs or strings. It is not an allowlist; action validation is handled entirely by the \`validation.checks\` in \`playerPhaseInstructions\`. In most transitions simply set it to \`true\` or \`false\` alongside \`actionRequired\`.
 - **Player action stateDelta**: MUST ONLY write \`players.{{playerId}}.currentAction\`. Any other write is stripped at runtime. Persisting player choices into other fields (e.g. a \`submittedData\` or \`selectionMade\` flag) is forbidden — the mechanic in the following automatic transition reads from \`currentAction\` instead.
 - **allPlayersCompletedActions**: A router-computed context field that is \`true\` when every player who has \`actionRequired == true\` has also submitted a non-null \`currentAction\`. For transitions that fire when ALL players have simultaneously submitted, the transitions artifact precondition MUST use \`{{"var": "allPlayersCompletedActions"}}\` — do NOT invent a custom boolean signal field for this purpose. Custom signal fields create a circular dependency: the mechanic can only set them after the transition fires, but the transition won't fire until they're set.
 - **Signal field reset rule**: If a transition fires based on a boolean signal field (e.g. \`bothPlayersSelected: true\`), the mechanic for that transition — or the mechanic for the immediately following transition — MUST reset that signal field back to \`false\` before the game loops back to the phase that sets it. Failure to reset causes the transition to re-fire immediately on the next iteration without waiting for player input, producing an infinite loop. Always include an explicit "reset signal fields to false" step in the computation guidance for any transition that consumes a boolean signal.
@@ -170,9 +173,11 @@ Understanding this separation is CRITICAL — it determines which output fields 
 - Generate **stateDelta**: array of state operations (set, append, increment, transfer)
   - Records the raw player choice in state fields
 
-For RPS move selection: validation checks that the current phase is correct, it is the player's turn (player.actionRequired == true), and the submitted move is one of the valid enum values. The stateDelta uses sub-field ops: \`{{ "path": "players.{{playerId}}.currentAction.type", "value": "selectMove" }}\` and \`{{ "path": "players.{{playerId}}.currentAction.choice", "value": "{{input.choice}}" }}\`.
+For RPS move selection (action id: "select_move"): validation checks that the current phase is correct, it is the player's turn (player.actionRequired == true), and the submitted move is one of the valid enum values. The stateDelta uses sub-field ops: \`{{ "path": "players.{{playerId}}.currentAction.type", "value": "select_move" }}\` and \`{{ "path": "players.{{playerId}}.currentAction.choice", "value": "{{input.choice}}" }}\`.
 
-For a poker bet action: validation checks that the current phase is correct, it is the player's turn, and the bet amount is a positive number within the allowed range. The stateDelta uses sub-field ops: \`{{ "path": "players.{{playerId}}.currentAction.type", "value": "bet" }}\` and \`{{ "path": "players.{{playerId}}.currentAction.amount", "value": "{{input.amount}}" }}\`.
+For a poker bet action (action id: "place_bet"): validation checks that the current phase is correct, it is the player's turn, and the bet amount is a positive number within the allowed range. The stateDelta uses sub-field ops: \`{{ "path": "players.{{playerId}}.currentAction.type", "value": "place_bet" }}\` and \`{{ "path": "players.{{playerId}}.currentAction.amount", "value": "{{input.amount}}" }}\`.
+
+**Rule**: The \`"value"\` for \`currentAction.type\` MUST be the action's \`id\` verbatim — the same snake_case string used as the action's key. Never use a camelCase or human-readable variant.
 
 ## Automatic Transition Phases (requiresPlayerInput: false) → mechanicsGuidance only
 - ⛔ NEVER include validation.checks for automatic transitions
