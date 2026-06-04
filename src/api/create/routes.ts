@@ -30,8 +30,26 @@ export async function registerCreateRoutes(server: FastifyInstance) {
 
     const bus = getOrCreateBus(gameId);
 
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeatInterval);
+      bus.off(send);
+      reply.raw.end();
+    };
+
     const send = (event: GameCreationStatusEvent) => {
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      // Close after terminal events — generation is done, no more events expected
+      if (
+        event.type === 'generation:completed' ||
+        event.type === 'generation:error' ||
+        event.type === 'spec:error'
+      ) {
+        // Small delay so the event bytes are flushed before the connection closes
+        setTimeout(close, 200);
+      }
     };
 
     // Send a connected ping immediately so the client can verify the stream is alive
@@ -45,10 +63,6 @@ export async function registerCreateRoutes(server: FastifyInstance) {
 
     bus.on(send);
 
-    request.raw.once('close', () => {
-      clearInterval(heartbeatInterval);
-      bus.off(send);
-      reply.raw.end();
-    });
+    request.raw.once('close', close);
   });
 }
