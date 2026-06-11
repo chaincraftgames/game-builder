@@ -94,6 +94,7 @@ async function getModel(): Promise<ModelWithOptions> {
  */
 async function generateWorker(
   state: MechanicsGraphStateType,
+  config?: { configurable?: { onMechanicComplete?: () => void; [key: string]: unknown } },
 ): Promise<Partial<MechanicsGraphStateType>> {
   const target = state.currentTarget;
   if (!target) {
@@ -116,6 +117,9 @@ async function generateWorker(
   console.debug(
     `[generate_and_validate_mechanic] ${target.id}: valid=${result.valid}, ${result.code.length} chars`,
   );
+
+  // Notify the parent node that this mechanic completed (for SSE progress)
+  config?.configurable?.onMechanicComplete?.();
 
   // Build state updates
   const mechanicsErrors: MechanicError[] = [];

@@ -23,7 +23,7 @@ import type { DataSourceConfig } from "#chaincraft/ai/design/game-design-state.j
 
 import { getConfig } from "#chaincraft/config.js";
 import { getSaver } from "#chaincraft/ai/memory/checkpoint-memory.js";
-import { getOrCreateBus, setGenerationInProgress, clearGenerationInProgress } from "#chaincraft/events/game-creation-status-bus.js";
+import { getBus, getOrCreateBus, setGenerationInProgress, clearGenerationInProgress } from "#chaincraft/events/game-creation-status-bus.js";
 import { queueAction } from "#chaincraft/ai/simulate/action-queues.js";
 import { deserializePlayerMapping } from "#chaincraft/ai/simulate/player-mapping.js";
 import { InMemoryStore } from "@langchain/langgraph";
@@ -467,6 +467,14 @@ export async function createSimulation(
       };
     }
 
+    // Set up the SSE status bus early — before any async operations — so the orchestrator's
+    // waitForSimulationCreated subscriber can connect at any time (including before the spec
+    // fetch or cache check) and still receive the terminal event via the replay mechanism.
+    // This also ensures generation:completed is emitted in the cached-artifact path below,
+    // which otherwise never creates the bus at all and leaves the orchestrator hanging.
+    const statusBus = getOrCreateBus(sessionId);
+    setGenerationInProgress(sessionId);
+
     // If overrideSpecification not provided, retrieve it from design workflow
     let specToUse = overrideSpecification as string | undefined;
     let versionToUse = gameSpecificationVersion;
@@ -564,8 +572,7 @@ export async function createSimulation(
 
       // Get or create spec processing graph for this spec
       const specGraph = await specGraphCache.getGraph(specKey);
-      const statusBus = gameId ? getOrCreateBus(gameId) : undefined;
-      if (gameId) setGenerationInProgress(gameId);
+      // statusBus and setGenerationInProgress were called above (before the cache check)
       const specConfig = createArtifactCreationGraphConfig(
         specKey,
         new InMemoryStore(),
@@ -594,7 +601,7 @@ export async function createSimulation(
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         statusBus?.emit({ type: 'generation:error', error: errorMessage });
-        if (gameId) clearGenerationInProgress(gameId, { type: 'generation:error', error: errorMessage });
+        clearGenerationInProgress(sessionId, { type: 'generation:error', error: errorMessage });
         throw err;
       }
 
@@ -622,7 +629,7 @@ export async function createSimulation(
         const errorMessage = `Spec processing failed validation with ${validationErrors.length} error(s):\n${validationErrors.join("\n")}`;
         console.error("[simulate]", errorMessage);
         statusBus?.emit({ type: 'generation:error', error: errorMessage });
-        if (gameId) clearGenerationInProgress(gameId, { type: 'generation:error', error: errorMessage });
+        clearGenerationInProgress(sessionId, { type: 'generation:error', error: errorMessage });
         throw new Error(errorMessage);
       }
 
@@ -668,10 +675,14 @@ export async function createSimulation(
       } satisfies SpecArtifacts;
 
       statusBus?.emit({ type: 'generation:completed' });
-      if (gameId) clearGenerationInProgress(gameId, { type: 'generation:completed' });
+      clearGenerationInProgress(sessionId, { type: 'generation:completed' });
       console.log("[simulate] Spec processing complete, artifacts cached");
     } else {
       console.log("[simulate] Using cached spec artifacts");
+      // Artifacts already exist — signal completion immediately so the orchestrator's
+      // waitForSimulationCreated does not hang waiting for generation that will never happen.
+      statusBus.emit({ type: 'generation:completed' });
+      clearGenerationInProgress(sessionId, { type: 'generation:completed' });
     }
 
     // Step 2: Store artifacts in runtime graph checkpoint using sessionId
@@ -708,6 +719,14 @@ export async function createSimulation(
       ),
     };
   } catch (error) {
+    // If the bus was already set up, propagate the error to any waiting orchestrator
+    // subscriber so waitForSimulationCreated throws immediately rather than timing out.
+    const errorBus = getBus(sessionId);
+    if (errorBus) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      errorBus.emit({ type: 'generation:error', error: errorMessage });
+      clearGenerationInProgress(sessionId, { type: 'generation:error', error: errorMessage });
+    }
     handleError("Failed to create simulation", error);
     return Promise.reject(error);
   }

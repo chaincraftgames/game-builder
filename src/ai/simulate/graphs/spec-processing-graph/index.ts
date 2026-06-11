@@ -166,21 +166,38 @@ export async function createSpecProcessingGraph(
       return {};
     }
 
+    const total = targets.length;
+    let completed = 0;
+    bus?.emit({ type: 'artifact:started', artifact: 'generatedMechanics', current: 0, total });
+
     console.debug(
-      `[generate_mechanics] Invoking mechanics subgraph for ${targets.length} target(s)`,
+      `[generate_mechanics] Invoking mechanics subgraph for ${total} target(s)`,
     );
+
+    // Pass a progress callback into the subgraph via config so each worker can
+    // emit an incremental SSE event as it completes.
+    const progressConfig = {
+      ...config,
+      configurable: {
+        ...config?.configurable,
+        onMechanicComplete: () => {
+          completed++;
+          bus?.emit({ type: 'artifact:started', artifact: 'generatedMechanics', current: completed, total });
+        },
+      },
+    };
 
     const result = await mechanicsGraph.invoke({
       targets,
       stateInterfaces,
       existingCode: state.generatedMechanics || {},
-    }, config);
+    }, progressConfig);
 
     const output = {
       generatedMechanics: result.generatedMechanics,
       mechanicsErrors: result.mechanicsErrors,
     };
-    bus?.emit({ type: 'artifact:completed', artifact: 'generatedMechanics' });
+    bus?.emit({ type: 'artifact:completed', artifact: 'generatedMechanics', total });
     return output;
   });
   workflow.addNode("repair_mechanics", repairMechanicsNode);

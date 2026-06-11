@@ -34,6 +34,7 @@ export const mechanicTargetSchema = z.object({
   instructions: z.string().describe("Plan-only instructions (rules + computation) for this mechanic"),
   expectedStateChanges: z.array(z.string()).optional().describe("Fields expected to change (for prompt context)"),
   messageGuidance: z.string().optional().describe("Guidance for public/private messages"),
+  imageGuidance: z.string().optional().describe("Guidance for image generation (what visual scenes to produce)"),
   repairContext: z.object({
     previousCode: z.string().describe("The code from the previous generation attempt that failed tsc validation"),
     tscErrors: z.array(z.string()).describe("Human-readable tsc error messages from the failed attempt"),

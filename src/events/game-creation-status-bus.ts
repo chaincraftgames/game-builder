@@ -7,8 +7,8 @@ export type GameCreationStatusEvent =
   | { type: 'spec:started' }
   | { type: 'spec:completed' }
   | { type: 'spec:error'; error: string }
-  | { type: 'artifact:started'; artifact: ArtifactName }
-  | { type: 'artifact:completed'; artifact: ArtifactName }
+  | { type: 'artifact:started'; artifact: ArtifactName; current?: number; total?: number }
+  | { type: 'artifact:completed'; artifact: ArtifactName; total?: number }
   | { type: 'artifact:error'; artifact: ArtifactName; error: string }
   | { type: 'repair:started'; target: RepairTarget }
   | { type: 'repair:completed'; target: RepairTarget }

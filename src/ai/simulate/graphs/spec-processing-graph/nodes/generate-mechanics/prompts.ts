@@ -12,7 +12,7 @@
  * implementing a single game mechanic. Used by mechanic-generator.ts.
  *
  * Template variables: stateInterfaces, functionName, targetId, targetType,
- *                     instructions, messageGuidance
+ *                     instructions, messageGuidance, imageGuidance
  *
  * Cache markers: contract + stateInterfaces are wrapped so they are
  * reused across all mechanic generations for the same game.
@@ -45,6 +45,7 @@ Types and functions are already imported — do NOT add import statements.
 **Other injected functions:**
 - \`callLLM(prompt)\` returns \`Promise<string>\`. Use ONLY for creative/narrative text, never for game logic.
 - \`rollDice(min, max)\` returns an integer from min to max (inclusive). Use for ALL randomness. NEVER use \`Math.random()\`.
+- \`generateImage(prompt)\` returns \`Promise<string>\` (image URL). Use for generating gameplay scene images. Pass a vivid, descriptive prompt (2-4 sentences) describing the visual scene. The returned URL can be embedded in messages as \`![description](url)\`.
 
 **Rules:**
 1. NEVER write to \`state\` directly. Always use \`setGame\`/\`setPlayer\`.
@@ -71,7 +72,8 @@ Types and functions are already imported — do NOT add import statements.
 export async function exampleMechanic(
   state: MechanicState,
   callLLM: CallLLM,
-  rollDice: RollDice
+  rollDice: RollDice,
+  generateImage: GenerateImage
 ): Promise<MechanicResult> {{
   const score = getGame('score');
   setGame('score', score + 1);
@@ -80,7 +82,8 @@ export async function exampleMechanic(
   dice.push(rollDice(1, 6));
   setPlayer('player1', 'diceValues', dice);
 
-  setPublicMessage('Player 1 rolled a die.');
+  const imageUrl = await generateImage('A triumphant warrior rolling golden dice in a mystical arena, cinematic fantasy art');
+  setPublicMessage(\`Player 1 rolled a die.\\n\\n![scene](\${{imageUrl}})\`);
   return buildResult();
 }}
 \`\`\`
@@ -102,6 +105,8 @@ Function: **{functionName}** (id: "{targetId}", type: {targetType})
 
 {messageGuidance}
 
+{imageGuidance}
+
 ## Output
 
 Write a complete exported async TypeScript function with this exact signature:
@@ -110,9 +115,11 @@ Write a complete exported async TypeScript function with this exact signature:
 export async function {functionName}(
   state: MechanicState,
   callLLM: CallLLM,
-  rollDice: RollDice
+  rollDice: RollDice,
+  generateImage: GenerateImage
 ): Promise<MechanicResult> {{
   // use setGame / setPlayer / setPublicMessage / setPrivateMessage / rejectAction
+  // use generateImage for visual scene generation when imageGuidance is provided
   // end every code path with: return buildResult();
 }}
 \`\`\`
