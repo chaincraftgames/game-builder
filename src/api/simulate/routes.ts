@@ -1,4 +1,5 @@
 import { FastifyInstance } from "fastify";
+import { z } from "zod";
 import {
   handleCreateSimulation,
   handleInitializeSimulation,
@@ -9,7 +10,6 @@ import {
 } from "./handler.js";
 import {
   CreateSimulationRequestSchema,
-  CreateSimulationResponseSchema,
   InitializeSimulationRequestSchema,
   InitializeSimulationResponseSchema,
   ProcessActionRequestSchema,
@@ -33,9 +33,9 @@ export async function registerSimulateRoutes(server: FastifyInstance) {
         "createSimulationRequest"
       ),
       response: {
-        200: zodToJsonSchema(
-          CreateSimulationResponseSchema,
-          "createSimulationResponse"
+        202: zodToJsonSchema(
+          z.object({ status: z.string(), sessionId: z.string() }),
+          "createSimulationAccepted"
         ),
       },
     },

@@ -79,6 +79,7 @@ export async function generateAndValidateMechanic(
     targetType: target.type,
     instructions: target.instructions,
     messageGuidance: target.messageGuidance || "",
+    imageGuidance: target.imageGuidance || "",
   });
 
   // 1b. Append repair context if present (retry with tsc error feedback)

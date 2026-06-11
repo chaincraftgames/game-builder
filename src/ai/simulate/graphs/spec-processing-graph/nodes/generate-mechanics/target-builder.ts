@@ -57,6 +57,16 @@ function formatMessageGuidance(
   return parts.length > 0 ? `## Message Guidance\n${parts.join("\n")}` : undefined;
 }
 
+/**
+ * Format image content spec into guidance for the generation prompt.
+ */
+function formatImageGuidance(
+  imageContentSpec: string | null | undefined,
+): string | undefined {
+  if (!imageContentSpec) return undefined;
+  return `## Image Generation Guidance\n\nThis transition should generate images. Use \`generateImage(prompt)\` to create visual scenes.\n\nImage spec: ${imageContentSpec}\n\nCall \`generateImage\` with a vivid 2-4 sentence description of the visual scene. Embed the returned URL in messages as \`![description](url)\`.`;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -85,6 +95,7 @@ export function buildMechanicTargets(
         functionName: transitionId,
         instructions: formatInstructions(instruction.mechanicsGuidance),
         messageGuidance: formatMessageGuidance(instruction.messages),
+        imageGuidance: formatImageGuidance(instruction.imageContentSpec),
       });
     } catch {
       console.warn(
@@ -168,6 +179,7 @@ export function buildTargetsFromHints(
         hint.publicMessagePurpose,
         hint.privateMessagesPurpose,
       ),
+      imageGuidance: formatImageGuidance(hint.imageContentSpec),
     });
   }
 

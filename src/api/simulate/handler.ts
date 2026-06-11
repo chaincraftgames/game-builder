@@ -31,42 +31,41 @@ import {
 export async function handleCreateSimulation(
   request: FastifyRequest<{ Body: CreateSimulationRequest }>,
   reply: FastifyReply,
-): Promise<CreateSimulationResponse> {
+): Promise<void> {
   const result = CreateSimulationRequestSchema.safeParse(request.body);
 
   if (!result.success) {
     reply.code(400).send({ error: "Invalid request", details: result.error });
-    return Promise.reject();
+    return;
   }
 
-  try {
-    const {
-      sessionId,
-      gameSpecificationVersion,
-      gameSpecification,
-      gameId,
-      atomicArtifactRegen,
-    } = result.data;
+  const {
+    sessionId,
+    gameSpecificationVersion,
+    gameSpecification,
+    gameId,
+    atomicArtifactRegen,
+  } = result.data;
 
-    const response = await createSimulation(
-      sessionId,
-      gameId,
-      gameSpecificationVersion,
-      {
-        overrideSpecification: gameSpecification,
-        atomicArtifactRegen,
-      },
+  // Fire-and-forget: run artifact processing in the background.
+  // Progress and terminal events (generation:completed / generation:error) are
+  // broadcast on the SSE bus at GET /api/create/:sessionId/status.
+  // The orchestrator subscribes to that stream and waits for the terminal event
+  // before proceeding with initializeSimulation.
+  createSimulation(sessionId, gameId, gameSpecificationVersion, {
+    overrideSpecification: gameSpecification,
+    atomicArtifactRegen,
+  }).catch((error) => {
+    // Errors are already emitted to the SSE bus inside createSimulation;
+    // this catch just prevents an unhandled-rejection warning.
+    console.error(
+      `[handleCreateSimulation] Background processing error for session ${sessionId}:`,
+      error,
     );
+  });
 
-    return {
-      gameRules: response.gameRules,
-      producedTokens: response.producedTokens,
-    };
-  } catch (error) {
-    console.error("Error in createSimulation:", error);
-    reply.code(500).send({ error: "Internal server error" });
-    return Promise.reject();
-  }
+  // Return 202 immediately — the caller must subscribe to the SSE stream for completion.
+  reply.code(202).send({ status: "processing", sessionId });
 }
 
 export async function handleInitializeSimulation(

@@ -163,7 +163,7 @@ function generateCurrentActionType(actions: ActionDefinition[]): string {
 /**
  * Deterministically convert GameStateField[] to TypeScript interface source code.
  *
- * Produces: GameState, PlayerState, MechanicState, CallLLM, and MechanicResult
+ * Produces: GameState, PlayerState, MechanicState, CallLLM, RollDice, GenerateImage, and MechanicResult
  * interfaces/types matching the design document §5 contract.
  */
 export function generateStateInterfaces(fields: GameStateField[], actionDefinitions?: ActionDefinition[]): string {
@@ -273,6 +273,13 @@ export function generateStateInterfaces(fields: GameStateField[], actionDefiniti
     ' * Prefer this over Math.random() for all game-affecting randomness.',
     ' */',
     'export type RollDice = (min: number, max: number) => number;',
+    '',
+    '/**',
+    ' * Generate an image from a descriptive prompt. Returns the image URL.',
+    ' * Use for gameplay scene images, combat visuals, commemorative scenes, etc.',
+    ' * Pass a vivid 2-4 sentence description of the visual scene to render.',
+    ' */',
+    'export type GenerateImage = (prompt: string) => Promise<string>;',
     '',
     '/**',
     ' * Opaque result builder. Use setGame/setPlayer to record changes.',

@@ -187,8 +187,26 @@ export function executeChanges(model: ModelWithOptions) {
         return result;
       };
 
+      // Build generateImage closure — calls image generation service
+      const generateImage = async (prompt: string): Promise<string> => {
+        try {
+          const { generateImageDirect, GAMEPLAY_IMAGE_CONFIG } = await import(
+            "#chaincraft/ai/image-gen/image-gen-service.js"
+          );
+          const imageUrl = await generateImageDirect(
+            { image_prompt: prompt },
+            GAMEPLAY_IMAGE_CONFIG,
+          );
+          console.log("[execute_changes] Sandbox generated image:", imageUrl);
+          return imageUrl;
+        } catch (error) {
+          console.warn("[execute_changes] Sandbox image generation failed:", error);
+          return '';
+        }
+      };
+
       // Execute in sandbox
-      const partialUpdate = await executeMechanic(generatedFunctionBody, flatState, callLLM, rollDice);
+      const partialUpdate = await executeMechanic(generatedFunctionBody, flatState, callLLM, rollDice, generateImage);
       if (rngLog.length > 0) {
         console.log(`[execute_changes] RNG audit log (${rngLog.length} rolls):`, JSON.stringify(rngLog));
       }

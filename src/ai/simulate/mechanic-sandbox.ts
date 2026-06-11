@@ -75,6 +75,7 @@ export function prepareMechanicBody(code: string): string {
  * @param state - Read-only aliased game state (game, player1, player2, etc.)
  * @param callLLM - Async callback for narrative/creative text generation
  * @param rollDice - Auditable RNG: returns integer from min to max (inclusive)
+ * @param generateImage - Async callback for image generation: returns image URL
  * @returns Partial state update to deep-merge into the full state
  */
 export async function executeMechanic(
@@ -82,6 +83,7 @@ export async function executeMechanic(
   state: Record<string, any>,
   callLLM: (prompt: string) => Promise<string>,
   rollDice: (min: number, max: number) => number,
+  generateImage?: (prompt: string) => Promise<string>,
 ): Promise<Record<string, any>> {
   const functionBody = prepareMechanicBody(code);
 
@@ -128,12 +130,19 @@ export async function executeMechanic(
   };
   const buildResult = () => result;
 
+  // generateImage fallback: no-op that returns empty string if not provided
+  const generateImageFn = generateImage ?? (async () => {
+    console.warn('[mechanic-sandbox] generateImage called but no implementation provided — returning empty string');
+    return '';
+  });
+
   // Wrap the function body in a strict-mode async function
   // Strict mode ensures frozen state throws on mutation attempts
   const fn = new Function(
     "state",
     "callLLM",
     "rollDice",
+    "generateImage",
     "setGame",
     "getGame",
     "setPlayer",
@@ -147,6 +156,7 @@ export async function executeMechanic(
     state: Record<string, any>,
     callLLM: (prompt: string) => Promise<string>,
     rollDice: (min: number, max: number) => number,
+    generateImage: (prompt: string) => Promise<string>,
     setGame: (field: string, value: any) => void,
     getGame: (field: string) => any,
     setPlayer: (playerAlias: string, field: string, value: any) => void,
@@ -158,7 +168,7 @@ export async function executeMechanic(
   ) => Promise<Record<string, any>>;
 
   const mechanicResult = await fn(
-    frozenState, callLLM, rollDice,
+    frozenState, callLLM, rollDice, generateImageFn,
     setGame, getGame, setPlayer, getPlayer,
     setPublicMessage, setPrivateMessage, rejectAction, buildResult,
   );
