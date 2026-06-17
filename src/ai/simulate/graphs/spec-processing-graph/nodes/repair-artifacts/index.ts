@@ -21,6 +21,7 @@ import { resolvePositionalPlayerTemplates } from '#chaincraft/ai/simulate/graphs
 import type { InstructionsArtifact } from '#chaincraft/ai/simulate/schema.js';
 import { generateStateInterfaces } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/generate-mechanics/generate-state-interfaces.js';
 import type { GameStateField } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-schema/schema.js';
+import type { ActionDefinition } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/extract-action-definitions/schema.js';
 import type { CoherenceIssue } from '#chaincraft/ai/simulate/graphs/spec-processing-graph/nodes/coherence-check/schema.js';
 
 // ─── Helpers (spec-processing-specific) ───
@@ -287,7 +288,10 @@ export function createRepairMechanicsNode() {
     }
 
     const fields: GameStateField[] = JSON.parse(state.stateSchema);
-    const stateInterfaces = generateStateInterfaces(fields);
+    const actionDefs: ActionDefinition[] | undefined = state.actionDefinitions
+      ? JSON.parse(state.actionDefinitions).actions
+      : undefined;
+    const stateInterfaces = generateStateInterfaces(fields, actionDefs);
 
     const graph = await createArtifactEditorGraph();
     const threadId = config?.configurable?.thread_id || 'repair-mechanics';
@@ -382,7 +386,10 @@ export function createRepairCoherenceNode() {
     let stateInterfaces = '';
     if (state.stateSchema) {
       const fields: GameStateField[] = JSON.parse(state.stateSchema);
-      stateInterfaces = generateStateInterfaces(fields);
+      const actionDefs: ActionDefinition[] | undefined = state.actionDefinitions
+        ? JSON.parse(state.actionDefinitions).actions
+        : undefined;
+      stateInterfaces = generateStateInterfaces(fields, actionDefs);
     }
 
     const graph = await createArtifactEditorGraph();

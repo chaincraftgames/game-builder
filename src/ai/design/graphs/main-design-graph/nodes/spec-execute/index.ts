@@ -9,6 +9,7 @@ import { SystemMessagePromptTemplate } from "@langchain/core/prompts";
 import { ModelWithOptions } from "#chaincraft/ai/model-config.js";
 import type { GameDesignState, GameDesignSpecification } from "#chaincraft/ai/design/game-design-state.js";
 import { SYSTEM_PROMPT, getPreservationGuidance } from "./prompts.js";
+import { CONSTRAINTS_TEXT } from "#chaincraft/ai/design/constraints.js";
 import { getBus } from "#chaincraft/events/game-creation-status-bus.js";
 import { setSpecInProgress, clearSpecInProgress } from "#chaincraft/events/game-creation-status-bus.js";
 
@@ -121,6 +122,7 @@ export function createSpecExecute(model: ModelWithOptions) {
       currentSpec,
       changePlan: changePlans,
       preservationGuidance,
+      constraints_registry: CONSTRAINTS_TEXT,
     });
     
     // 5. Call LLM with formatted system prompt to generate pure markdown
