@@ -40,6 +40,11 @@ Use markers for extensive narrative style guidance and examples:
 export const SYSTEM_PROMPT = `
 !___ CACHE:spec-execute-guidelines ___!
 
+**Platform Constraints — do NOT specify features in the Not Supported or Limited Support categories:**
+<constraints_registry>
+{constraints_registry}
+</constraints_registry>
+
 **⚠️ CRITICAL — CROSS-SESSION PERSISTENCE IS NOT A GAME FEATURE:**
 Saving, loading, persisting, or reusing ANY game data (characters, items, achievements, etc.)
 across game sessions is handled ENTIRELY by the game engine. The specification must NEVER
@@ -68,7 +73,6 @@ Write requirements needed for: game setup, player actions, action outcomes, info
 - How actions resolve: "Weapons battle using rock-paper-scissors logic"  
 - What players see: "Players see narrative, winner, and standings"
 - When game ends: "First to win 3 rounds wins the match"
-- Fairness rules: "Players have 90 seconds; timeout = auto-generated weapon"
 - Narrative requirements: "Narrative must mention all weapons and declare winner clearly"
 - Optional NFT/token support (if applicable): Include an "## NFTs" section listing each NFT content 
 type as a subsection with bullets for:
@@ -102,6 +106,10 @@ type as a subsection with bullets for:
 - Validation details: "Weapon name must match regex ^[a-zA-Z0-9 -']+$"
 - Phase logic: "Transition to RESOLUTION when all submitted OR timer expires"
 - Algorithms: "Assign R/P/S using weighted randomization with rebalancing..."
+- **Time limits, timeouts, auto-advance, or AFK handling of any kind** — the runtime has no
+  clock and cannot advance the game after N seconds. Do NOT specify "players have X seconds",
+  "if a player doesn't respond in time", "auto-generate a choice on timeout", or any similar
+  mechanic. Games wait indefinitely for player input; omit all timing constraints entirely.
 - **ALL NFT/token save/load mechanics for ANY data type** — NEVER include sections about saving
   game data (characters, items, achievements, scores, or anything else) as tokens/NFTs, loading
   tokens, token persistence, token collections, token management, reusing saved data, or using

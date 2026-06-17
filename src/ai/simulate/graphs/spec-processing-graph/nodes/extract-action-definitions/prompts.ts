@@ -42,12 +42,13 @@ Some actions require no data from the player — the act of taking them is suffi
 These get inputFields: []
 
 ## Action IDs
-Use concise camelCase IDs that describe the action:
-- 'bid' not 'placeBid' or 'submitBid'
-- 'challenge' not 'declareChallenge'
-- 'playCard' not 'playACard'
-- 'draw' not 'drawCard'
-- 'attack' not 'performAttack'
+Use concise **snake_case** IDs that describe the action. The id is used verbatim as
+\`currentAction.type\` at runtime — casing must be consistent across all artifacts:
+- 'bid' not 'placeBid' or 'submit_bid'
+- 'challenge' not 'declare_challenge'
+- 'play_card' not 'playCard'
+- 'draw' not 'draw_card'
+- 'submit_choice' not 'submitChoice' or 'SubmitChoice'
 
 # Output Schema
 

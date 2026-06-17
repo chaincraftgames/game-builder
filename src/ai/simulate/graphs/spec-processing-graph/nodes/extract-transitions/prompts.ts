@@ -176,11 +176,17 @@ immediately or never, breaking the game.
 NOT imply a timeout fallback. Do not add \`submission_timeout\` or similar transitions.
 
 ## 7. Use allPlayersCompletedActions for Simultaneous Submissions
-When a transition fires after ALL players have submitted their action simultaneously, use the computed context field \`allPlayersCompletedActions\` as the precondition — do NOT invent a custom boolean signal field (e.g. \`allActionsSubmitted\`, \`allPlayersReady\`).
+When a transition fires after ALL players have submitted, selected, chosen, or acted simultaneously,
+use the computed context field \`allPlayersCompletedActions\` as the precondition — do NOT invent a
+custom boolean signal field (e.g. \`allActionsSubmitted\`, \`allPlayersReady\`, \`allPlayersSubmitted\`,
+\`allChoicesMade\`, \`everyoneActed\`).
 
 Custom signal fields create a **circular dependency**: the mechanic can only set them after the transition fires, but the transition won't fire until they are set → permanent deadlock.
 
-\`allPlayersCompletedActions\` is true when every player with \`actionRequired == true\` has submitted a non-null \`currentAction\`. It is computed by the router before each transition evaluation — no mechanic needs to set it.
+\`allPlayersCompletedActions\` is true when every player with \`actionRequired == true\` has submitted
+a non-null \`currentAction\`. This covers all equivalent game-design phrasings: "both players chose",
+"all players selected", "everyone has acted", "all choices are in", "all submissions received".
+It is computed by the router before each transition evaluation — no mechanic needs to set it.
 
 \`\`\`json
 // ❌ Wrong — allWeaponsSubmitted is never set before this transition fires
@@ -189,6 +195,35 @@ Custom signal fields create a **circular dependency**: the mechanic can only set
 // ✅ Right
 {{ "preconditionHints": [{{"explain": "allPlayersCompletedActions == true"}}] }}
 \`\`\`
+
+⛔ **CRITICAL: Do NOT use \`allPlayersCompletedActions\` alone on a gate transition.**
+
+A "gate transition" goes from a player-input phase to an intermediate automatic phase (e.g. \`choosing → resolving\`) with \`allPlayersCompletedActions\` as its ONLY meaningful precondition. This is a **Rule 4 waypoint violation** AND a **data-destruction bug**:
+
+The gate mechanic runs and clears every player's \`currentAction\` field — permanently destroying the submitted data — **before** the actual processing mechanic in the next phase can read it. The processing mechanic then reads \`null\` and crashes. The crash checkpoint persists, and every subsequent player action re-triggers the same crash.
+
+**For simultaneous-submission games, processing transitions MUST fire directly from the player-input phase**, combining \`allPlayersCompletedActions == true\` with their game-specific branch conditions. The router's own wait logic already holds until all players have submitted — a gate transition adds nothing and destroys data.
+
+\`\`\`json
+// ❌ Wrong — gate transition (choosing → resolving) destroys currentAction; resolution then crashes
+{{ "id": "both_submitted", "fromPhase": "choosing", "toPhase": "resolving",
+   "preconditionHints": [{{"explain": "allPlayersCompletedActions == true"}}] }}
+// ... separate resolve_* transitions from "resolving" phase crash reading null currentAction
+
+// ✅ Right — processing transitions fire directly from the player-input phase
+{{ "id": "resolve_and_continue", "fromPhase": "choosing", "toPhase": "choosing",
+   "preconditionHints": [
+     {{"explain": "allPlayersCompletedActions == true"}},
+     {{"explain": "no player has reached the win threshold AND more rounds remain"}}
+   ] }}
+{{ "id": "resolve_and_finish", "fromPhase": "choosing", "toPhase": "finished",
+   "preconditionHints": [
+     {{"explain": "allPlayersCompletedActions == true"}},
+     {{"explain": "any player has reached the win threshold OR no more rounds remain"}}
+   ] }}
+\`\`\`
+
+Note: The turn-rotation self-loop pattern in Rule 5 (\`all_players_chose: choosing → resolution\`) is safe because each player's submission is processed by the per-turn self-loop mechanic before \`all_players_chose\` fires — \`currentAction\` is already cleared. The anti-pattern here applies only to **simultaneous submission** where all players act without per-submission mechanics.
 
 ## 8. Precondition Hint Writing Style
 When writing \`explain\` text, use these patterns so the executor synthesizes correct JsonLogic:
