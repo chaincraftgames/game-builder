@@ -86,7 +86,7 @@ describe('assembleConfig — High Card', () => {
     expect(config.gamepieceTypes.card).toEqual({
       category: 'card',
       properties: {
-        value: { mutable: false, min: 1, max: 6 },
+        value: { mutable: false, visibility: 'revealed', min: 1, max: 6 },
       },
     });
   });
@@ -447,6 +447,84 @@ describe('assembleFlow — loop endCondition', () => {
     expect(loop.endCondition!(session)).toBe(false);
     session.state.players.bob.properties.eliminated = true;
     expect(loop.endCondition!(session)).toBe(true);
+  });
+});
+
+describe('assembleFlow — turn ordering', () => {
+  /** High Card with the playTrick turn's actor/turnOrder replaced by `patch`. */
+  function assembleTurn(patch: Record<string, unknown>) {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: { children: Record<string, unknown>[] }[] };
+    const { actor: _a, turnOrder: _t, ...turn } = root.children[0].children[0];
+    root.children[0].children[0] = { ...turn, ...patch };
+    const loop = assembleFlow(spec, 'high-card', {}).children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    const node = loop.children[0];
+    if (node.kind !== 'turn') throw new Error('expected turn');
+    return node.ordering;
+  }
+
+  const seat = { kind: 'seat', direction: 'clockwise' };
+
+  it('all-players with no turnOrder is round-robin from seat 1', () => {
+    expect(assembleTurn({ actor: 'all-players' })).toEqual({ kind: 'round-robin' });
+  });
+
+  it('startingPlayer: first is round-robin from seat 1', () => {
+    expect(assembleTurn({ actor: 'all-players', turnOrder: { ...seat, startingPlayer: 'first' } }))
+      .toEqual({ kind: 'round-robin' });
+  });
+
+  it('startingPlayer { stateRef } maps to round-robin start', () => {
+    expect(assembleTurn({
+      actor: 'all-players',
+      turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner' } },
+    })).toEqual({ kind: 'round-robin', start: { kind: 'state-ref', path: 'game.property.roundWinner' } });
+  });
+
+  it('actor { player: { stateRef } } maps to single', () => {
+    expect(assembleTurn({ actor: { player: { stateRef: 'game.property.roundWinner' } } }))
+      .toEqual({ kind: 'single', actor: { kind: 'state-ref', path: 'game.property.roundWinner' } });
+  });
+
+  it('rejects actor { player } combined with turnOrder', () => {
+    expect(() => assembleTurn({
+      actor: { player: { stateRef: 'game.property.roundWinner' } },
+      turnOrder: seat,
+    })).toThrow('turnOrder is not allowed');
+  });
+
+  it.each([
+    ['actor { roles }', { actor: { roles: ['dealer'] } }],
+    ['actor { where }', { actor: { where: 'not player.property.eliminated' } }],
+    ['actor { player: first }', { actor: { player: 'first' } }],
+    ['actor { player: random }', { actor: { player: 'random' } }],
+    ['ranked turnOrder', { actor: 'all-players', turnOrder: { kind: 'ranked', by: { playerProperty: 'score' }, order: 'ascending' } }],
+    ['explicit turnOrder', { actor: 'all-players', turnOrder: { kind: 'explicit', players: ['alice', 'bob'] } }],
+    ['counter-clockwise', { actor: 'all-players', turnOrder: { kind: 'seat', direction: 'counter-clockwise' } }],
+    ['startingPlayer random', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: 'random' } }],
+    ['startingPlayer { role }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { role: 'dealer' } } }],
+    ['startingPlayer { where }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { where: 'player.property.score > 0' } } }],
+    ['startingPlayer { highest }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { highest: { playerProperty: 'score' } } } }],
+    ['startingPlayer { lowest }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { lowest: { playerProperty: 'score' } } } }],
+    ['selector offset', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner', offset: 1 } } }],
+  ])('rejects unsupported %s', (_name, patch) => {
+    expect(() => assembleTurn(patch)).toThrow('is not yet supported');
+  });
+
+  it("Liar's Dice: loser starts the bidding round and takes the review turn", () => {
+    const raw = load(readFileSync(join(__dirname, '../../../../gamedef/examples/liars-dice.yaml'), 'utf-8'));
+    const result = validate(raw);
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const gameLoop = assembleFlow(result.spec, 'liars-dice', {}).children[0];
+    if (gameLoop.kind !== 'loop') throw new Error('expected loop');
+    const [biddingLoop, review] = gameLoop.children;
+    if (biddingLoop.kind !== 'loop' || review.kind !== 'turn') throw new Error('unexpected shape');
+    const bidding = biddingLoop.children[0];
+    if (bidding.kind !== 'turn') throw new Error('expected turn');
+    const loser = { kind: 'state-ref', path: 'game.property.roundLoser' };
+    expect(bidding.ordering).toEqual({ kind: 'round-robin', start: loser });
+    expect(review.ordering).toEqual({ kind: 'single', actor: loser });
   });
 });
 

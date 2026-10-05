@@ -5,11 +5,11 @@
 // Inline effects in hooks are normalized to { ref } entries and added to the
 // effectDefs accumulator (same pattern as Phase 3 actions assembler).
 //
-// Vocabulary translation:
-//   gamedef TurnOrder.kind  →  runtime TurnOrdering.kind
-//   'seat'  + actor:'all-players'  → 'round-robin'
-//   'ranked'                       → 'round-robin' with sort
-//   'explicit'                     → not yet supported (Phase 6)
+// Vocabulary translation (anything else throws "not yet supported"):
+//   actor 'all-players' + no turnOrder            → 'round-robin' from seat 1
+//   actor 'all-players' + seat clockwise          → 'round-robin' (+ start)
+//   actor { player: selector } (no turnOrder)     → 'single'
+//   player selectors: 'first' (startingPlayer only), { stateRef } without offset
 //
 //   gamedef TurnGrammarNode.kind   →  runtime Grammar.kind
 //   'action'   → ActionGrammar   (passthrough)
@@ -30,20 +30,22 @@ import type {
   LoopFlowNode,
   TurnFlowNode,
   TurnOrdering,
+  PlayerSelector,
   Grammar,
   FlowHooks,
   EffectRef,
   WinConditionDef,
   GameSession,
 } from "@chaincraft/runtime";
-import { normalizeEffectList } from "./effects.js";
+import { normalizeEffectList } from "#compiler/assembler/effects.js";
 import { sessionToEvalContext, compilePlayerFilter } from "#compiler/expressions/eval-bridge.js";
-import { compileExpression, compilePredicate } from "../expressions/index.js";
+import { compilePredicate } from "#compiler/expressions/index.js";
 import type {
   ActorSpec,
   TurnOrder,
   TurnGrammarNode,
   FlowNode as GamedefFlowNode,
+  PlayerSelector as SpecPlayerSelector,
 } from "@chaincraft/gamedef";
 
 // ---------------------------------------------------------------------------
@@ -101,42 +103,41 @@ function assembleFlowHooks(
 // TurnOrdering mapping
 // ---------------------------------------------------------------------------
 
+function unsupported(what: string): never {
+  throw new Error(`flow assembler: ${what} is not yet supported.`);
+}
+
 function assembleTurnOrdering(
   actor: ActorSpec,
   turnOrder: TurnOrder | undefined,
 ): TurnOrdering {
-  const roleIds =
-    typeof actor === "object" && "roles" in actor ? actor.roles : undefined;
-
-  if (!turnOrder || turnOrder.kind === "seat") {
-    return {
-      kind: "round-robin",
-      ...(roleIds && { roleIds }),
-    };
+  if (typeof actor === "object" && "player" in actor) {
+    if (turnOrder) {
+      throw new Error(
+        "flow assembler: actor { player } selects one player; turnOrder is not allowed.",
+      );
+    }
+    if (actor.player === "first") unsupported(`actor { player: "first" }`);
+    return { kind: "single", actor: assemblePlayerSelector(actor.player) };
   }
+  if (actor !== "all-players") unsupported(`actor ${JSON.stringify(actor)}`);
 
-  if (turnOrder.kind === "ranked") {
-    const by = turnOrder.by as {
-      playerProperty?: string;
-      playerInventory?: string;
-    };
-    const sortBy: { playerProperty: string } | { playerInventory: string } =
-      by.playerProperty
-        ? { playerProperty: by.playerProperty }
-        : {
-            playerInventory: (by as { playerInventory: string })
-              .playerInventory,
-          };
-    return {
-      kind: "round-robin",
-      sort: { by: sortBy, order: turnOrder.order },
-      ...(roleIds && { roleIds }),
-    };
+  if (!turnOrder) return { kind: "round-robin" };
+  if (turnOrder.kind !== "seat") unsupported(`turnOrder kind '${turnOrder.kind}'`);
+  if (turnOrder.direction !== "clockwise") {
+    unsupported(`turnOrder direction '${turnOrder.direction}'`);
   }
+  const start = turnOrder.startingPlayer;
+  if (start === undefined || start === "first") return { kind: "round-robin" };
+  return { kind: "round-robin", start: assemblePlayerSelector(start) };
+}
 
-  throw new Error(
-    `flow assembler: TurnOrder kind 'explicit' is not yet supported. Use 'seat' or 'ranked'.`,
-  );
+function assemblePlayerSelector(sel: SpecPlayerSelector): PlayerSelector {
+  if (typeof sel === "object" && "stateRef" in sel) {
+    if (sel.offset !== undefined) unsupported("player selector offset");
+    return { kind: "state-ref", path: sel.stateRef };
+  }
+  unsupported(`player selector ${JSON.stringify(sel)}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,12 @@
 // Now that @chaincraft/runtime is a dependency, we re-export directly.
 // ---------------------------------------------------------------------------
 
+import type {
+  GameConfig,
+  EffectRegistration,
+  ActionDef,
+} from "@chaincraft/runtime";
+
 export type {
   RefType,
   InventoryStructure,
@@ -26,10 +32,10 @@ export type {
   GameSession,
   EffectRegistration,
   ActionDef,
-} from '@chaincraft/runtime';
+} from "@chaincraft/runtime";
 
 /** Reserved inventory ID: every catalog piece starts here before setup effects run. */
-export const UNASSIGNED_INVENTORY_ID = 'game:unassigned';
+export const UNASSIGNED_INVENTORY_ID = "game:unassigned";
 
 /** The mutable intermediate artifact passed between assembler phases. */
 export interface ModuleBuilder {

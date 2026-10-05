@@ -354,7 +354,7 @@ describe('error reporting', () => {
 
   it('rejects player outside quantifier', () => {
     const fn = compileExpression('player.property.score');
-    expect(() => fn(makeCtx())).toThrow('only valid inside all() or any()');
+    expect(() => fn(makeCtx())).toThrow('"player" requires boundPlayerId in context');
   });
 });
 
