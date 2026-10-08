@@ -526,6 +526,33 @@ describe('assembleFlow — turn ordering', () => {
     expect(bidding.ordering).toEqual({ kind: 'round-robin', start: loser });
     expect(review.ordering).toEqual({ kind: 'single', actor: loser });
   });
+
+  it("Liar's Dice: anonymous flow nodes get unique generated ids", () => {
+    const raw = load(readFileSync(join(__dirname, '../../../../gamedef/examples/liars-dice.yaml'), 'utf-8'));
+    const result = validate(raw);
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const gameLoop = assembleFlow(result.spec, 'liars-dice', {}).children[0];
+    if (gameLoop.kind !== 'loop') throw new Error('expected loop');
+    const [biddingLoop, review] = gameLoop.children;
+    if (biddingLoop.kind !== 'loop') throw new Error('expected loop');
+    expect([gameLoop.id, biddingLoop.id, biddingLoop.children[0].id, review.id]).toEqual([
+      'loop-1',
+      'loop-2',
+      'turn-1',
+      'turn-2',
+    ]);
+  });
+
+  it('generated ids skip ids the spec already uses', () => {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: Array<Record<string, unknown> & { children: Record<string, unknown>[] }> };
+    root.children[0].id = 'turn-1';
+    delete root.children[0].children[0].id;
+    const loop = assembleFlow(spec, 'high-card', {}).children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    expect(loop.id).toBe('turn-1');
+    expect(loop.children[0].id).toBe('turn-2');
+  });
 });
 
 describe('assembleFlow — condition win conditions', () => {

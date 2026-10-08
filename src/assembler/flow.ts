@@ -195,11 +195,42 @@ function assembleGrammar(node: TurnGrammarNode): Grammar {
 // FlowNode recursive assembly
 // ---------------------------------------------------------------------------
 
+type NodeIdFor = (node: GamedefFlowNode) => string;
+
+/** 
+ * Returns a function that generates unique ids for flow nodes based on their kind.
+ * Explicit ids pass through; anonymous nodes get `${kind}-${n}`, skipping ids the 
+ * spec already uses. */
+function createNodeIdFor(rootId: string, children: GamedefFlowNode[]): NodeIdFor {
+  const taken = new Set<string>([rootId]);
+  const collect = (nodes: GamedefFlowNode[]) => {
+    for (const n of nodes) {
+      if (n.id) taken.add(n.id);
+      if ("children" in n && Array.isArray(n.children)) collect(n.children);
+    }
+  };
+  collect(children);
+
+  const counters = new Map<string, number>();
+  return (node) => {
+    if (node.id) return node.id;
+    let id: string;
+    do {
+      const n = (counters.get(node.kind) ?? 0) + 1;
+      counters.set(node.kind, n);
+      id = `${node.kind}-${n}`;
+    } while (taken.has(id));
+    taken.add(id);
+    return id;
+  };
+}
+
 function assembleFlowNode(
   node: GamedefFlowNode,
   effectDefs: Record<string, Record<string, unknown>>,
+  idFor: NodeIdFor,
 ): FlowNode {
-  const nodeId = node.id ?? node.kind;
+  const nodeId = idFor(node);
 
   if (node.kind === "loop") {
     if (node.count != null && node.endCondition != null) {
@@ -231,7 +262,7 @@ function assembleFlowNode(
       id: nodeId,
       label: node.label ?? nodeId,
       children: node.children.map((child) =>
-        assembleFlowNode(child, effectDefs),
+        assembleFlowNode(child, effectDefs, idFor),
       ),
       ...(node.count != null && { count: node.count }),
       ...(node.finalRound != null && { finalRound: node.finalRound }),
@@ -368,10 +399,11 @@ export function assembleFlow(
     winConditions?: WinCondition[];
   };
 
+  const idFor = createNodeIdFor(specId, root.children);
   const gameNode: GameFlowNode = {
     kind: "game",
     id: specId,
-    children: root.children.map((child) => assembleFlowNode(child, effectDefs)),
+    children: root.children.map((child) => assembleFlowNode(child, effectDefs, idFor)),
   };
 
   const hooks = assembleFlowHooks(root.hooks, specId, effectDefs);
