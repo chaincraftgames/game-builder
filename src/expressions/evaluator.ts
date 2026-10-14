@@ -13,6 +13,7 @@
 //   player.inventory.X    → ctx.players[boundPlayerId].inventories[X]
 //   source.property.X     → ctx.gamepieces[ctx.sourcePieceId].properties[X]
 //   target.property.X     → ctx.gamepieces[ctx.targetPieceId].properties[X]
+//   input.X / param.X     → ctx.params[X]
 //
 // The `player` root is only valid inside all()/any()/countPlayers() quantifiers
 // and per-player filters, which bind boundPlayerId for each iteration.
@@ -157,12 +158,14 @@ function resolveRoot(
       if (!player) {
         throw new ExpressionError(`Player '${pid}' not found in players`, 0);
       }
+      if (rest[0] === "id") return { base: { id: pid }, skip: 0 };
       return resolvePlayerPaths(player, "player", rest);
     }
+    case "input":
     case "param": {
       if (!ctx.params) {
         throw new ExpressionError(
-          'Cannot resolve "param" — no params in context',
+          `Cannot resolve "${root}" — no action inputs in context`,
           0,
         );
       }
@@ -216,6 +219,7 @@ function resolveRoot(
       if (!piece)
         throw new ExpressionError(`Piece '${ctx.targetPieceId}' not found`, 0);
       if (rest[0] === "property") return { base: piece.properties, skip: 1 };
+      if (rest[0] === "id") return { base: { id: ctx.targetPieceId }, skip: 0 };
       return { base: piece, skip: 0 };
     }
     case "trigger": {
@@ -228,7 +232,7 @@ function resolveRoot(
     }
     default:
       throw new ExpressionError(
-        `Unknown path root '${root}'; expected 'game', 'actor', 'player', 'param', 'source', 'target', 'piece', or 'trigger'`,
+        `Unknown path root '${root}'; expected 'game', 'actor', 'player', 'input', 'source', 'target', 'piece', or 'trigger'`,
         0,
       );
   }

@@ -5,7 +5,7 @@
 // against synthetic EvalContext snapshots.
 // ---------------------------------------------------------------------------
 
-import { compileExpression, compilePredicate, parseExpression, ExpressionError } from '../index.js';
+import { compileExpression, compilePredicate, parseExpression, ExpressionError, referencedInputs } from '../index.js';
 import type { EvalContext } from '../index.js';
 
 // --- Test helpers -----------------------------------------------------------
@@ -97,6 +97,30 @@ describe('path resolution', () => {
   it('throws on missing actorId', () => {
     const noActor = makeCtx({ actorId: undefined });
     expect(() => compileExpression('actor.property.score')(noActor)).toThrow('no actorId');
+  });
+
+  it("resolves input.X and its param.X alias from action inputs", () => {
+    const withInputs = makeCtx({ params: { quantity: 4 } });
+    expect(compileExpression("input.quantity")(withInputs)).toBe(4);
+    expect(compileExpression("param.quantity")(withInputs)).toBe(4);
+  });
+
+  it("throws on input.X when no action inputs are in context", () => {
+    expect(() => compileExpression("input.quantity")(ctx)).toThrow("no action inputs");
+  });
+});
+
+describe("referencedInputs", () => {
+  it("collects input and param references once each, including inside calls", () => {
+    expect(
+      referencedInputs(
+        "input.a > game.property.x or (param.b == 2 and any(players, player.property.s > input.a))",
+      ).sort(),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("returns nothing when no inputs are read", () => {
+    expect(referencedInputs("actor.property.score >= 3")).toEqual([]);
   });
 });
 
@@ -386,6 +410,18 @@ describe('source and target piece paths', () => {
 
   it('throws when targetPieceId is absent', () => {
     expect(() => compileExpression('target.property.value')(makeCtx())).toThrow('targetPieceId');
+  });
+});
+
+describe("candidate id paths", () => {
+  it("resolves piece.id to the filtered piece", () => {
+    const ctx = makeCtx({ targetPieceId: "card-5", params: { attacker: "card-1" } });
+    expect(compileExpression("piece.id")(ctx)).toBe("card-5");
+    expect(compilePredicate("piece.id != input.attacker")(ctx)).toBe(true);
+  });
+
+  it("resolves player.id to the bound player", () => {
+    expect(compileExpression("player.id")(makeCtx({ boundPlayerId: "bob" }))).toBe("bob");
   });
 });
 

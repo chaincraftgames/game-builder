@@ -46,27 +46,50 @@ export function sessionToEvalContext(
   };
 }
 
-/** Compile a piece-filter expression into the runtime's (session, pieceId, actorId?) => boolean shape. */
+/** Compile a piece-filter expression into the runtime's (session, pieceId, actorId?, inputs?) => boolean shape. */
 export function compilePieceFilter(
   expr: string,
-): (session: GameSession, pieceId: string, actorId?: string) => boolean {
+): (
+  session: GameSession,
+  pieceId: string,
+  actorId?: string,
+  inputs?: Readonly<Record<string, unknown>>,
+) => boolean {
   const predicate = compilePredicate(expr);
-  return (session, pieceId, actorId) =>
+  return (session, pieceId, actorId, inputs) =>
     predicate(
-      sessionToEvalContext(session, actorId, undefined, undefined, pieceId),
+      sessionToEvalContext(session, actorId, inputs, undefined, pieceId),
     );
 }
 
-/** Compile a player-filter expression into the runtime's (session, playerId, actorId?) => boolean shape. */
+/** Compile a player-filter expression into the runtime's (session, playerId, actorId?, inputs?) => boolean shape. */
 export function compilePlayerFilter(
   expr: string,
-): (session: GameSession, playerId: string, actorId?: string) => boolean {
+): (
+  session: GameSession,
+  playerId: string,
+  actorId?: string,
+  inputs?: Readonly<Record<string, unknown>>,
+) => boolean {
   const predicate = compilePredicate(expr);
-  return (session, playerId, actorId) =>
+  return (session, playerId, actorId, inputs) =>
     predicate({
-      ...sessionToEvalContext(session, actorId),
+      ...sessionToEvalContext(session, actorId, inputs),
       boundPlayerId: playerId,
     });
+}
+
+/** Compile an input validation expression into the runtime's (session, actorId, inputs) => boolean shape. */
+export function compileInputValidation(
+  expr: string,
+): (
+  session: GameSession,
+  actorId: string,
+  inputs: Readonly<Record<string, unknown>>,
+) => boolean {
+  const predicate = compilePredicate(expr);
+  return (session, actorId, inputs) =>
+    predicate(sessionToEvalContext(session, actorId, inputs));
 }
 
 /** Compile a precondition expression into the runtime's (session, actorId) => boolean shape. */

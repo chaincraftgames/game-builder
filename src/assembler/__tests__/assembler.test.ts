@@ -318,6 +318,154 @@ describe('assembleActions — High Card', () => {
   });
 });
 
+describe("assembleActions — input dependencies", () => {
+  const ownerInput = { id: "owner", type: { kind: "player-select", excludeSelf: true } };
+  const targetInput = {
+    id: "target",
+    type: { kind: "gamepiece-select", inventory: "field", fromPlayer: { param: "owner" } },
+  };
+  const specWithInputs = (inputs: unknown[]) =>
+    ({
+      actions: { actions: [{ id: "attack", label: "Attack", inputs, effects: [] }] },
+    }) as unknown as Parameters<typeof assembleActions>[0];
+
+  it("emits dependsOn for a fromPlayer param on an earlier input", () => {
+    const actions = assembleActions(specWithInputs([ownerInput, targetInput]), {});
+    expect(actions.attack.inputs[0].dependsOn).toBeUndefined();
+    expect(actions.attack.inputs[1].dependsOn).toEqual(["owner"]);
+  });
+
+  it("rejects a reference to a later input", () => {
+    expect(() => assembleActions(specWithInputs([targetInput, ownerInput]), {})).toThrow(
+      /input "target" references "owner", which is not an earlier input/,
+    );
+  });
+
+  it("rejects a reference to an unknown input", () => {
+    expect(() => assembleActions(specWithInputs([targetInput]), {})).toThrow(
+      /input "target" references "owner", which is not an earlier input/,
+    );
+  });
+
+  const die = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    type: { kind: "number", min: 1, max: 6 },
+    ...extra,
+  });
+
+  it("collects input references from filters into dependsOn", () => {
+    const budget = { id: "budget", type: { kind: "number", min: 1, max: 10 } };
+    const card = {
+      id: "card",
+      type: { kind: "gamepiece-select", inventory: "hand", filter: "piece.property.cost <= input.budget" },
+    };
+    const actions = assembleActions(specWithInputs([budget, card]), {});
+    expect(actions.attack.inputs[1].dependsOn).toEqual(["budget"]);
+  });
+
+  it("compiles validation, keeping a self-reference out of dependsOn", () => {
+    const actions = assembleActions(
+      specWithInputs([die("roll", { validation: "input.roll > 2", validationMessage: "Too low" })]),
+      {},
+    );
+    const [roll] = actions.attack.inputs;
+    expect(roll.validate).toEqual(expect.any(Function));
+    expect(roll.validationMessage).toBe("Too low");
+    expect(roll.dependsOn).toBeUndefined();
+  });
+
+  it("rejects a filter that reads its own input", () => {
+    const card = {
+      id: "card",
+      type: { kind: "gamepiece-select", inventory: "hand", filter: "input.card != \"\"" },
+    };
+    expect(() => assembleActions(specWithInputs([card]), {})).toThrow(
+      /input "card" references "card", which is not an earlier input/,
+    );
+  });
+
+  it("rejects a number input whose min exceeds its max", () => {
+    const bad = { id: "n", type: { kind: "number", min: 6, max: 1 } };
+    expect(() => assembleActions(specWithInputs([bad]), {})).toThrow(
+      /input "n" has min 6 greater than max 1/,
+    );
+  });
+
+  it("rejects validation on selection inputs, pointing at filter", () => {
+    const attacker = { id: "attacker", type: { kind: "gamepiece-select", inventory: "field" } };
+    const defender = {
+      id: "defender",
+      type: { kind: "gamepiece-select", inventory: "field" },
+      validation: "input.defender != input.attacker",
+    };
+    expect(() => assembleActions(specWithInputs([attacker, defender]), {})).toThrow(
+      /input "defender" is a gamepiece-select; use 'filter' instead of 'validation'/,
+    );
+    expect(() => assembleActions(specWithInputs([{ ...ownerInput, validation: "true" }]), {})).toThrow(
+      /input "owner" is a player-select; use 'filter' instead of 'validation'/,
+    );
+  });
+
+  it("rejects more than MAX_PLAYER_INPUTS player-supplied inputs, not counting auto inputs", () => {
+    const auto = { id: "attacker", type: { kind: "effect-originator" } };
+    const four = [die("a"), die("b"), die("c"), die("d")];
+    expect(() => assembleActions(specWithInputs([auto, ...four]), {})).not.toThrow();
+    expect(() => assembleActions(specWithInputs([...four, die("e")]), {})).toThrow(
+      /has 5 player-supplied inputs; at most 4 are allowed/,
+    );
+  });
+
+  it("rejects a later input reading an input that has no finite option list", () => {
+    const amount = { id: "amount", type: { kind: "number", min: 1, max: 100 } };
+    const name = { id: "name", type: { kind: "string" } };
+    expect(() =>
+      assembleActions(specWithInputs([amount, die("x", { validation: "input.x < input.amount" })]), {}),
+    ).toThrow(/input "amount" is read by a later input but has no finite option list/);
+    expect(() =>
+      assembleActions(specWithInputs([name, die("x", { validation: "input.name != \"\"" })]), {}),
+    ).toThrow(/input "name" is read by a later input but has no finite option list/);
+  });
+
+  it("rejects dependent inputs whose combinations exceed MAX_LOOKAHEAD_COMBINATIONS", () => {
+    const thirty = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      type: { kind: "number", min: 1, max: 30 },
+      ...extra,
+    });
+    expect(() =>
+      assembleActions(specWithInputs([thirty("a"), thirty("b", { validation: "input.b > input.a" })]), {}),
+    ).toThrow(/dependent inputs allow 900 answer combinations; at most 500 are allowed/);
+  });
+});
+
+describe("assembleActions — Liar's Dice bid validation", () => {
+  const raw = load(
+    readFileSync(join(__dirname, "../../../../gamedef/examples/liars-dice.yaml"), "utf-8"),
+  );
+  const result = validate(raw);
+  if (!result.valid) throw new Error(JSON.stringify(result.errors));
+  const mod = assembleModule(result.spec, "liars-dice");
+  const [quantity, faceValue] = mod.actions.makeBid.inputs;
+  const session = mod.createSession("g", ["p1", "p2"]);
+  session.state.gameProperties.currentBidQuantity = 5;
+  session.state.gameProperties.currentBidFace = 6;
+
+  it("records that faceValue depends on quantity", () => {
+    expect(quantity.dependsOn).toBeUndefined();
+    expect(faceValue.dependsOn).toEqual(["quantity"]);
+    expect(faceValue.validationMessage).toBe(
+      "Bid a higher quantity, or the same quantity with a higher face value.",
+    );
+  });
+
+  it("accepts only bids above the current 5 x sixes", () => {
+    const legal = (q: number, f: number) => faceValue.validate!(session, "p1", { quantity: q, faceValue: f });
+    expect(legal(6, 1)).toBe(true);
+    expect(legal(5, 6)).toBe(false);
+    expect(legal(4, 6)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Phase 4 — Flow + assembleModule + e2e
 // ---------------------------------------------------------------------------

@@ -200,3 +200,39 @@ describe('Compiler e2e — High Card full game', () => {
     console.log('└───────────────────────────────────────────────────\n');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Liar's Dice — the bid rule narrows prompts and rejects illegal bids
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — Liar's Dice bid validation", () => {
+  const range = (low: number, high: number) =>
+    Array.from({ length: high - low + 1 }, (_, i) => low + i);
+
+  it("offers only bids above the current bid and rejects an illegal face value", async () => {
+    const controller = new GameController(assembleModule(loadSpec("liars-dice.yaml"), "liars-dice"), {});
+    await controller.init("ld", ["alice", "bob"]);
+
+    // Opening bid: 5 x threes.
+    await controller.processAction({ playerId: "alice", value: 5 });
+    await controller.processAction({ playerId: "alice", value: 3 });
+
+    await controller.processAction({ playerId: "bob", value: { kind: "act", actionId: "makeBid" } });
+    expect(controller.promptFor("bob")!.options).toEqual(range(5, 30));
+
+    await controller.processAction({ playerId: "bob", value: 5 });
+    expect(controller.promptFor("bob")!.options).toEqual([4, 5, 6]);
+
+    const rejected = controller.processAction({ playerId: "bob", value: 2 });
+    await expect(rejected).rejects.toMatchObject({
+      name: "IllegalActionError",
+      inputId: "faceValue",
+      validationMessage: "Bid a higher quantity, or the same quantity with a higher face value.",
+    });
+
+    await controller.processAction({ playerId: "bob", value: 4 });
+    const state = controller.getState();
+    expect(state.gameProperties.currentBidQuantity).toBe(5);
+    expect(state.gameProperties.currentBidFace).toBe(4);
+  });
+});

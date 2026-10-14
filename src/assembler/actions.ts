@@ -8,16 +8,33 @@
 // ---------------------------------------------------------------------------
 
 import type { ModularGameSpec, ActionInput } from '@chaincraft/gamedef';
-import type { ActionDef, ActionInputDef, ActionInputType } from '@chaincraft/runtime';
+import { numberOptionCount } from '@chaincraft/runtime';
+import type {
+  ActionDef,
+  ActionInputDef,
+  ActionInputType,
+  NumberInputType,
+} from '@chaincraft/runtime';
 import { normalizeEffectList } from '#compiler/assembler/effects.js';
 import {
+  compileInputValidation,
   compilePieceFilter,
   compilePlayerFilter,
   compilePrecondition,
 } from '#compiler/expressions/eval-bridge.js';
+import { referencedInputs } from '#compiler/expressions/index.js';
+
+/** Player-supplied inputs per action; with the action choice this fills the 5-response submit cap. */
+export const MAX_PLAYER_INPUTS = 4;
+
+/** Upper bound on answer combinations the runtime may enumerate when looking ahead. */
+export const MAX_LOOKAHEAD_COMBINATIONS = 500;
+
+const AUTO_INPUT_KINDS = new Set(['effect-originator', 'trigger-input']);
+const SELECTION_KINDS = new Set(['gamepiece-select', 'player-select']);
 
 /** Map a gamedef ActionInput to the runtime's ActionInputDef, compiling filter expressions. */
-function mapActionInput(input: ActionInput): ActionInputDef {
+function mapActionInput(input: ActionInput, dependsOn: string[]): ActionInputDef {
   const rawType = input.type as Record<string, unknown>;
   let type: ActionInputType;
 
@@ -39,8 +56,115 @@ function mapActionInput(input: ActionInput): ActionInputDef {
     id: input.id,
     ...(input.label != null && { label: input.label }),
     type,
-    ...(input.validation != null && { validation: input.validation }),
+    ...(input.validation != null && { validate: compileInputValidation(input.validation) }),
+    ...(input.validationMessage != null && { validationMessage: input.validationMessage }),
+    ...(dependsOn.length > 0 && { dependsOn }),
   };
+}
+
+function fail(actionId: string, message: string): never {
+  throw new Error(`actions assembler: action "${actionId}" ${message}`);
+}
+
+/** Earlier input ids this input's options depend on. Throws on any other reference. */
+function inputDependencies(
+  actionId: string,
+  input: ActionInput,
+  earlier: ReadonlySet<string>,
+): string[] {
+  const refs = new Set<string>();
+  const rawType = input.type as { fromPlayer?: unknown; filter?: unknown };
+  const fromPlayer = rawType.fromPlayer;
+  if (typeof fromPlayer === "object" && fromPlayer !== null && "param" in fromPlayer) {
+    refs.add(String(fromPlayer.param));
+  }
+  if (typeof rawType.filter === "string") {
+    for (const ref of referencedInputs(rawType.filter)) refs.add(ref);
+  }
+  if (input.validation != null) {
+    // Validation sees its own candidate answer as input.<id>.
+    for (const ref of referencedInputs(input.validation)) {
+      if (ref !== input.id) refs.add(ref);
+    }
+  }
+  for (const ref of refs) {
+    if (!earlier.has(ref)) {
+      fail(
+        actionId,
+        `input "${input.id}" references "${ref}", which is not an earlier input of the same action`,
+      );
+    }
+  }
+  return [...refs];
+}
+
+/**
+ * Options an input lists at compile time: a count for enum/boolean/bounded numbers,
+ * "dynamic" for selections (finite, state-dependent), undefined when there is no list.
+ */
+function staticOptionCount(type: ActionInputType): number | "dynamic" | undefined {
+  switch (type.kind) {
+    case "enum":
+      return type.values.length;
+    case "boolean":
+      return 2;
+    case "number":
+      return numberOptionCount(type);
+    case "player-select":
+    case "gamepiece-select":
+      return "dynamic";
+    default:
+      return undefined;
+  }
+}
+
+/** Reject input shapes the runtime cannot prompt for or look ahead through. */
+function checkActionInputs(actionId: string, inputs: readonly ActionInputDef[]): void {
+  for (const input of inputs) {
+    if (input.validate && SELECTION_KINDS.has(input.type.kind)) {
+      fail(
+        actionId,
+        `input "${input.id}" is a ${input.type.kind}; use 'filter' instead of 'validation' ` +
+          "(compare identities with piece.id / player.id)",
+      );
+    }
+    if (input.type.kind === "number") {
+      const { min, max } = input.type as NumberInputType;
+      if (min !== undefined && max !== undefined && min > max) {
+        fail(actionId, `input "${input.id}" has min ${min} greater than max ${max}`);
+      }
+    }
+  }
+
+  const playerInputs = inputs.filter((i) => !AUTO_INPUT_KINDS.has(i.type.kind));
+  if (playerInputs.length > MAX_PLAYER_INPUTS) {
+    fail(
+      actionId,
+      `has ${playerInputs.length} player-supplied inputs; at most ${MAX_PLAYER_INPUTS} are allowed`,
+    );
+  }
+
+  const dependedOn = new Set(inputs.flatMap((i) => i.dependsOn ?? []));
+  let combinations = 1;
+  for (const input of inputs) {
+    const count = staticOptionCount(input.type);
+    if (dependedOn.has(input.id) && count === undefined) {
+      fail(
+        actionId,
+        `input "${input.id}" is read by a later input but has no finite option list ` +
+          "(use enum, boolean, a selection, or a whole-number range with min and max)",
+      );
+    }
+    const inChain = dependedOn.has(input.id) || (input.dependsOn?.length ?? 0) > 0;
+    if (inChain && typeof count === "number") combinations *= count;
+  }
+  if (combinations > MAX_LOOKAHEAD_COMBINATIONS) {
+    fail(
+      actionId,
+      `dependent inputs allow ${combinations} answer combinations; at most ` +
+        `${MAX_LOOKAHEAD_COMBINATIONS} are allowed`,
+    );
+  }
 }
 
 /**
@@ -65,9 +189,13 @@ export function assembleActions(
   for (const action of spec.actions.actions) {
     const effects = normalizeEffectList(action.effects, `${action.id}._effect`, effectDefs);
 
-    const inputs: ActionInputDef[] = (action.inputs ?? []).map(
-      (input) => mapActionInput(input),
-    );
+    const earlier = new Set<string>();
+    const inputs: ActionInputDef[] = (action.inputs ?? []).map((input) => {
+      const def = mapActionInput(input, inputDependencies(action.id, input, earlier));
+      earlier.add(input.id);
+      return def;
+    });
+    checkActionInputs(action.id, inputs);
 
     const precondition =
       typeof action.preconditions === 'string'
