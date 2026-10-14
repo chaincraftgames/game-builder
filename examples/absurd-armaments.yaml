@@ -418,9 +418,10 @@ actions:
           label: Weapon Description
           type:
             kind: string
-          validation: >-
-            Must be a non-empty description of your weapon. Be creative — "stale toast",
-            "existential dread", and "sentient spatula" are all valid weapons.
+          validation: input.weaponDescription != ""
+          validationMessage: >-
+            Describe your weapon. Be creative — "stale toast", "existential dread",
+            and "sentient spatula" are all valid weapons.
       effects:
         - ref: setWeaponDescription
         - ref: classifyWeapon

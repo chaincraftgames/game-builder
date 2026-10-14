@@ -113,11 +113,14 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * The available paths depend on the evaluation context:
  *
  * **Action preconditions** (`ActionSchema.preconditions`):
- * - `input.<id>`                  — value of an action input declared in inputs[]
  * - `actor.property.<id>`         — property on the acting player
  * - `actor.inventory.<id>.count`  — item count in the actor's named inventory
  * - `game.property.<id>`          — game-level property
  * - `game.inventory.<id>.count`   — item count in a game-level inventory
+ *
+ * **Input validation** (`ActionInput.validation`, value inputs only):
+ * - `input.<id>`                  — this input's candidate answer, or an earlier input's answer
+ * - `actor.*`, `game.*`           — as for preconditions
  *
  * **Piece-slot context** (`ActionSlotSchema.preconditions`):
  * - `piece.property.<id>`         — property on the gamepiece instance holding this slot
@@ -131,12 +134,16 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * - `actor.property.<id>`         — property on the acting player
  *
  * **Player matching** (`PlayerTarget.matching.condition`, `player-select.filter`):
+ * - `player.id`                   — the candidate player's id (`player-select.filter` only)
  * - `player.property.<id>`        — the candidate player's property
  * - `player.inventory.<id>.count` — item count in the candidate player's inventory
+ * - `input.<id>`                  — an earlier input's answer (`player-select.filter` only)
  *
  * **Gamepiece filter** (`gamepiece-select.filter`):
+ * - `piece.id`                    — the candidate piece's id
  * - `piece.property.<id>`         — the candidate piece's property
  * - `piece.typeId`                — the candidate piece's type ID
+ * - `input.<id>`                  — an earlier input's answer
  *
  * ## Built-in functions
  *
@@ -194,7 +201,8 @@ export const ConditionExpressionSchema = z.string().describe(
     "Paths: game.property.<id>, game.inventory.<id>.count, " +
     "actor.property.<id>, actor.inventory.<id>.count, " +
     "player.property.<id> (player-filter context), player.inventory.<id>.count, " +
-    "piece.property.<id> (gamepiece-filter context), piece.typeId. " +
+    "piece.property.<id> (gamepiece-filter context), piece.typeId, " +
+    "input.<id> (input validation and selection filters only). " +
     "Functions: count(inventory), all(players, expr), any(players, expr).",
 );
 

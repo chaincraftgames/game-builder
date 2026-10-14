@@ -20,10 +20,10 @@
  *   action time. Inline effects in the same action can use { param: id } in
  *   PropertyValue to reference those values. Engine resolves by name — no bind map.
  * - 'preconditions' is an infix expression evaluated against runtime state before
- *   the action is offered or accepted. State paths: 'input.<id>', 'actor.property.<id>',
+ *   the action is offered. State paths: 'actor.property.<id>',
  *   'actor.inventory.<id>.count', 'game.property.<id>', 'game.inventory.<id>.count'.
- *   Cross-input constraints that are simpler string rules go in 'ActionInput.validation';
- *   state-dependent gate conditions go here.
+ *   Inputs are not yet collected, so 'input.<id>' is unavailable here; rules about
+ *   input values go in 'ActionInput.validation' (or a selection input's 'filter').
  * - 'interrupt' names the subflows during which this action may be taken outside turn
  *   order. The flow module declares the interrupt window node; the action signals which
  *   subflows it is eligible for.
@@ -51,10 +51,13 @@
  *       - id: quantity
  *         type: { kind: number, min: 1, max: 30 }
  *         label: Quantity
- *         validation: Must be strictly higher than current bid, unless face value also increases
  *       - id: faceValue
  *         type: { kind: number, min: 1, max: 6 }
  *         label: Face Value
+ *         validation: >-
+ *           input.quantity > game.property.bidQuantity or
+ *           (input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)
+ *         validationMessage: Bid a higher quantity, or the same quantity with a higher face
  *     effects:
  *       - kind: update
  *         pieces: { inventory: currentBid, select: top }
@@ -108,10 +111,13 @@ import { ConditionExpressionSchema, IdentifierSchema } from "./common.js";
  *   - id: quantity
  *     type: { kind: number, min: 1, max: 30 }
  *     label: Quantity
- *     validation: Must be strictly higher than current bid, unless face-value also increases
  *   - id: faceValue
  *     type: { kind: number, min: 1, max: 6 }
  *     label: Face Value
+ *     validation: >-
+ *       input.quantity > game.property.bidQuantity or
+ *       (input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)
+ *     validationMessage: Bid a higher quantity, or the same quantity with a higher face
  *   - id: targetPlayer
  *     type: { kind: enum, values: [player1, player2, player3, player4] }
  *     label: Target Player
@@ -187,8 +193,10 @@ export const ActionInputSchema = z
             ),
           filter: ConditionExpressionSchema.optional().describe(
             "Infix expression to filter eligible pieces. " +
-              "Evaluated per-piece. Available paths: 'piece.property.<id>', 'piece.typeId'. " +
-              "Example: 'piece.property.charges > 0' or 'piece.typeId == \"creature\". " +
+              "Evaluated per-piece. Available paths: 'piece.id', 'piece.property.<id>', 'piece.typeId', " +
+              "'input.<id>' (an EARLIER input of this action). " +
+              "Example: 'piece.property.charges > 0', 'piece.property.cost <= input.budget', " +
+              "or 'piece.id != input.attacker'. " +
               "Runtime computes valid options and sends them to UX.",
           ),
         }).describe(
@@ -203,7 +211,8 @@ export const ActionInputSchema = z
           ),
           filter: ConditionExpressionSchema.optional().describe(
             "Infix expression to filter eligible players. " +
-              "Evaluated per-player. Available paths: 'player.property.<id>', 'player.inventory.<id>.count'. " +
+              "Evaluated per-player. Available paths: 'player.id', 'player.property.<id>', " +
+              "'player.inventory.<id>.count', 'input.<id>' (an EARLIER input of this action). " +
               "Example: 'not player.property.eliminated and count(player.inventory.hand) > 0'. " +
               "Runtime computes valid options and sends them to UX.",
           ),
@@ -247,13 +256,22 @@ export const ActionInputSchema = z
       .string()
       .optional()
       .describe("Human-readable label shown in the action UI prompt."),
-    validation: z
+    validation: ConditionExpressionSchema.optional().describe(
+      "Infix expression that must be true for an answer to this input to be legal. " +
+        "For value inputs only (number, enum, boolean, string); selection inputs use 'filter'. " +
+        "'input.<thisId>' is the candidate answer; 'input.<id>' of an EARLIER input is its answer. " +
+        "Also available: 'actor.*', 'game.*' paths. For inputs with a finite option list " +
+        "(enum, boolean, small whole-number ranges) it narrows the options offered; " +
+        "otherwise it is checked on submit. Put a rule on the LAST input it reads. " +
+        "Example on faceValue: 'input.quantity > game.property.bidQuantity or " +
+        "(input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)'.",
+    ),
+    validationMessage: z
       .string()
       .optional()
       .describe(
-        "Prose constraint beyond the type's structural bounds. " +
-          "Describe cross-input or cross-state rules (e.g., 'Must be strictly higher than " +
-          "current bid quantity'). AI generates the validation code from this description.",
+        "Short player-facing explanation shown when an answer fails 'validation'. " +
+          "Static text only; must not reveal hidden state.",
       ),
   })
   .describe(
@@ -326,9 +344,12 @@ export const ActionInputSchema = z
  * inputs:
  *   - id: quantity
  *     type: { kind: number, min: 1, max: 30 }
- *     validation: Must exceed current bid quantity unless face value also increases
  *   - id: faceValue
  *     type: { kind: number, min: 1, max: 6 }
+ *     validation: >-
+ *       input.quantity > game.property.bidQuantity or
+ *       (input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)
+ *     validationMessage: Bid a higher quantity, or the same quantity with a higher face
  * effects:
  *   - kind: update
  *     pieces: { inventory: currentBid, select: top }
@@ -471,13 +492,13 @@ export const ActionSchema = z
           "Omit when availability is fully determined by slot definitions or flow declarations.",
       ),
     preconditions: ConditionExpressionSchema.optional().describe(
-      "Infix expression evaluated before the action is offered or accepted. " +
+      "Infix expression evaluated before the action is offered. " +
         "If false, the action is unavailable regardless of flow context. " +
         "Available paths: 'actor.property.<id>', 'actor.inventory.<id>.count', " +
-        "'game.property.<id>', 'game.inventory.<id>.count', 'input.<id>'. " +
+        "'game.property.<id>', 'game.inventory.<id>.count'. " +
         "Example: 'actor.property.coins >= 3 and game.property.roundStarted == true'. " +
-        "Cross-input validation (e.g., bid must exceed current bid) belongs in " +
-        "ActionInput.validation instead. Use preconditions for state-dependent gate conditions.",
+        "Inputs are not collected yet, so rules about input values (e.g., bid must exceed " +
+        "current bid) belong in ActionInput.validation instead.",
     ),
     interrupt: z
       .array(z.string())
