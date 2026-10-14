@@ -259,8 +259,8 @@ describe("CatalogModuleSchema — actionBindings", () => {
         actionBindings: {
           "playEffect": {
             label: "Play Fireball",
-            effects: [
-              { kind: "set-state", path: "game.property.enemyHp", value: { delta: -8 } },
+            steps: [
+              { effect: "set-state", path: "game.property.enemyHp", value: { delta: -8 } },
             ],
           },
         },
@@ -314,7 +314,7 @@ describe("CatalogModuleSchema — passiveBindings", () => {
           "wornPassive": {
             trigger: { kind: "state-write", scope: "actor", path: "player.property.hp", direction: "decrease" },
             effects: [
-              { kind: "set-state", path: "player.property.hp", value: { delta: 1 } },
+              { effect: "set-state", path: "player.property.hp", value: { delta: 1 } },
             ],
           },
         },
@@ -331,13 +331,13 @@ describe("CatalogModuleSchema — passiveBindings", () => {
         passiveBindings: {
           "wornPassive": {
             trigger: { kind: "state-write", scope: "target", path: "player.property.hp", direction: "decrease" },
-            effects: [{ kind: "cancel-effect" }],
+            effects: [{ effect: "cancel-effect" }],
           },
         },
       }],
     });
     const binding = result.entries[0].passiveBindings!["wornPassive"] as any;
-    expect(binding.effects[0].kind).toBe("cancel-effect");
+    expect(binding.effects[0].effect).toBe("cancel-effect");
   });
 
   it("omitting passiveBindings is valid (piece has no passive)", () => {

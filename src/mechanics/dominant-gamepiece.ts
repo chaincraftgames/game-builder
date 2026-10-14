@@ -34,9 +34,9 @@
  * ## Integration
  *
  * ### Exposes
- *   Effects (by ref):
- *     { ref: "chaincraft:dominant-gamepiece:resolve" }            (single dominant gamepiece mechanic)
- *     { ref: "chaincraft:dominant-gamepiece:<id>:resolve" }       (when an id is set)
+ *   Effects (by effectRef):
+ *     { effectRef: "chaincraft:dominant-gamepiece:resolve" }      (single dominant gamepiece mechanic)
+ *     { effectRef: "chaincraft:dominant-gamepiece:<id>:resolve" } (when an id is set)
  *     Evaluates `evaluationInventory`, applies the rule chain, and writes the winning
  *     piece's owner to `winnerToState` (empty string on a draw). Call from flow hooks
  *     (e.g. a round's onComplete) or actions.

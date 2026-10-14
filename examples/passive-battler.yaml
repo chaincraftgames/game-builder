@@ -113,7 +113,7 @@ players:
             path: player.property.life
             direction: decrease
           effects:
-            - kind: adjust
+            - effect: adjust
               adjustment:
                 delta: 2 # deliberately a literal; see KINDLE for the reference form
 
@@ -129,7 +129,7 @@ players:
             scope: actor
             fromInventory: [hand]
           effects:
-            - kind: set-state
+            - effect: set-state
               path: player.property.life
               value:
                 delta:
@@ -201,7 +201,7 @@ players:
             scope: actor # fires on the holder's OWN play
             fromInventory: [hand]
           effects:
-            - kind: set-state
+            - effect: set-state
               path: player.property.life
               # target omitted, so the write lands on the acting player, which
               # in this trigger is the bleeding holder.
@@ -241,7 +241,7 @@ players:
             path: player.property.life
             direction: decrease
           effects:
-            - kind: set-state
+            - effect: set-state
               path: player.property.spellPower
               value:
                 delta: 1
@@ -299,7 +299,7 @@ players:
             path: player.property.life
             direction: decrease
           effects:
-            - kind: adjust
+            - effect: adjust
               adjustment:
                 delta:
                   var: player.property.spellPower
@@ -311,7 +311,7 @@ players:
             scope: actor
             fromInventory: [hand]
           effects:
-            - kind: set-state
+            - effect: set-state
               path: player.property.life
               value:
                 delta:
@@ -438,7 +438,7 @@ inventories:
 effects:
   effects:
     - id: fillLibrary
-      kind: move
+      effect: move
       from:
         inventory: "game:unassigned"
         select: all
@@ -447,11 +447,11 @@ effects:
         inventory: library
 
     - id: shuffleLibrary
-      kind: shuffle
+      effect: shuffle
       inventory: library
 
     - id: dealHands
-      kind: distribute
+      effect: distribute
       from:
         inventory: library
         select: top
@@ -460,7 +460,7 @@ effects:
       count: 2
 
     - id: dealDecks
-      kind: distribute
+      effect: distribute
       from:
         inventory: library
         select: top
@@ -469,7 +469,7 @@ effects:
       count: 2
 
     - id: announceStart
-      kind: message
+      effect: message
       to: all
       template: >-
         Both sides start at 20 life. Play a card to damage your opponent. Most
@@ -482,20 +482,19 @@ actions:
       description: >-
         Play one card from your hand. It damages your opponent, adds its bleed
         to them, and then you draw a replacement.
-      inputs:
-        - id: card
+      steps:
+        - input: card
           label: Choose a card to play
           type:
             kind: gamepiece-select
             inventory: hand
             ofType: card
             fromPlayer: self
-      effects:
         # ORDER MATTERS AND IS DELIBERATE. The card leaves hand FIRST, because
         # that move is what the bleed passive watches; bleed should dock before
         # the card's own damage resolves, so a player is punished for acting
         # before their action lands.
-        - kind: move
+        - effect: move
           from:
             inventory: hand
             select:
@@ -523,7 +522,7 @@ actions:
         # subscription. So: the arithmetic below is live, the interception of
         # it is issue 8.
         # -------------------------------------------------------------------
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           target:
             kind: all-other # exactly one opponent in a two player game
@@ -537,7 +536,7 @@ actions:
         # A thief card carries bleed 1; every other card carries bleed 0, so
         # this write is a no-op except when a thief card is played. That is
         # why there is one action rather than a thief-only second action.
-        - kind: set-state
+        - effect: set-state
           path: player.property.bleed
           target:
             kind: all-other
@@ -550,7 +549,7 @@ actions:
         # Draw a replacement from this side's own deck. On the final round the
         # deck is already empty and this is a verified safe no-op (move returns
         # early on an empty selection, chaincraft-runtime/src/effects/move.ts).
-        - kind: move
+        - effect: move
           from:
             inventory: deck
             select: top
@@ -563,11 +562,11 @@ flow:
     label: Passive Battler
     hooks:
       onEnter:
-        - ref: fillLibrary
-        - ref: shuffleLibrary
-        - ref: dealHands
-        - ref: dealDecks
-        - ref: announceStart
+        - effectRef: fillLibrary
+        - effectRef: shuffleLibrary
+        - effectRef: dealHands
+        - effectRef: dealDecks
+        - effectRef: announceStart
 
     # -----------------------------------------------------------------------
     # THE WIN CONDITION BELOW IS LIVE, NOT A PROPOSAL. Declared win conditions
@@ -634,7 +633,7 @@ flow:
         property: player.property.life
         order: highest
         onVictory:
-          - kind: message
+          - effect: message
             to: all
             template: "{{game.winners[0]}} wins with the most life remaining."
 

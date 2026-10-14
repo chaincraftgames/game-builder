@@ -82,7 +82,7 @@ winConditions:
 **Eliminate a player declaratively** (no `custom` effect):
 ```yaml
 - id: checkElimination
-  kind: set-state
+  effect: set-state
   path: player.property.eliminated
   value: true
   target:

@@ -3,7 +3,7 @@
  *
  * No dependencies on other spec modules — inventory type IDs, gamepiece type IDs,
  * and property IDs are all string forward references validated cross-section.
- * Referenced by: actions (action.effects), flow (phase-transition effects),
+ * Referenced by: actions (action steps), flow (phase-transition effects),
  *                mechanics (pattern execution effects).
  *
  * Effects are named, concrete state-transition operations. Named effects live in the
@@ -12,11 +12,12 @@
  *
  * Inline effects may be used at any call site for one-off transitions not worth naming.
  * Inline effects inside actions may use { param: id } in PropertyValue to reference a
- * value from the enclosing action's inputs[] — the engine resolves these by convention
+ * value from an input step of the enclosing action — the engine resolves these by convention
  * without any explicit binding declaration.
  *
  * Key design decisions:
- * - Every effect is discriminated by 'kind' — a discriminated union, not a catch-all map.
+ * - Every effect is discriminated by 'effect' (its kind) — a discriminated union, not a
+ *   catch-all map. Named effects are invoked with 'effectRef: <id>'.
  * - Named effects are concrete and reusable. Use them for anything triggered from more
  *   than one place (an action AND a flow transition, or an action AND a mechanic).
  * - Inline effects are anonymous and local. Use them for one-off transitions specific
@@ -33,22 +34,22 @@
  * ```yaml
  * effects:
  *   - id: shuffleDeck
- *     kind: shuffle
+ *     effect: shuffle
  *     inventory: drawDeck
  *
  *   - id: drawCard
- *     kind: move
+ *     effect: move
  *     from: { inventory: drawDeck, select: top }
  *     to: { inventory: playerHand }
  *
  *   - id: advanceScore2
- *     kind: update
+ *     effect: update
  *     pieces: { inventory: scoreTrack, select: all, ofType: scorePeg }
  *     property: position
  *     value: { delta: 2 }
  *
  *   - id: resolveCombat
- *     kind: custom
+ *     effect: custom
  *     description: >
  *       Compare power totals of face-up cards. Higher total scores 1 point.
  *       On a tie no points scored; both players draw a card.
@@ -56,27 +57,26 @@
  * @example Action with inline effects using { param } (Liar's Dice make-bid)
  * ```yaml
  * id: makeBid
- * inputs:
- *   - id: quantity
+ * steps:
+ *   - input: quantity
  *     type: { kind: number, min: 1, max: 30 }
- *   - id: faceValue
+ *   - input: faceValue
  *     type: { kind: number, min: 1, max: 6 }
- * effects:
- *   # { param: quantity } resolves from this action's inputs[] by id — no bind map
- *   - kind: update
+ *   # { param: quantity } resolves from this action's input steps by id — no bind map
+ *   - effect: update
  *     pieces: { inventory: currentBid, select: top }
  *     property: quantity
  *     value: { param: quantity }
- *   - kind: update
+ *   - effect: update
  *     pieces: { inventory: currentBid, select: top }
  *     property: faceValue
  *     value: { param: faceValue }
  * ```
  * @example Mixed named refs and inline in a single action
  * ```yaml
- * effects:
- *   - ref: shuffleDeck
- *   - kind: move
+ * steps:
+ *   - effectRef: shuffleDeck
+ *   - effect: move
  *     from: { inventory: drawDeck, select: top }
  *     to: { inventory: playerHand }
  * ```
@@ -84,7 +84,7 @@
 
 import { z } from "zod";
 import { InventoryPlacementSchema } from "#gamedef/modules/inventories.js";
-import { ConditionExpressionSchema, IdentifierSchema } from "#gamedef/modules/common.js";
+import { ConditionExpressionSchema, IdentifierSchema, keyedUnion } from "#gamedef/modules/common.js";
 
 // ---------------------------------------------------------------------------
 // Gamepiece selector (shared across move, flip, update, roll, orient)
@@ -409,7 +409,7 @@ export const PropertyValueSchema = z
     z
       .object({ param: z.string() })
       .describe(
-        "Resolve this value from the enclosing action's inputs[] by matching id. " +
+        "Resolve this value from the enclosing action's input steps by matching id. " +
           "Engine convention — no explicit binding needed. " +
           "Only valid in inline effects inside an action that declares a matching input id.",
       ),
@@ -460,40 +460,40 @@ export const PropertyValueSchema = z
  *
  * @example Draw a card (cross-inventory)
  * ```yaml
- * kind: move
+ * effect: move
  * from: { inventory: drawDeck, select: top }
  * to: { inventory: playerHand }
  * ```
  * @example Player discards a chosen card to the top of the discard pile
  * ```yaml
- * kind: move
+ * effect: move
  * from: { inventory: playerHand, select: { id: { param: card } } }
  * to: { inventory: discardPile, at: { kind: stack-top } }
  * # within the action that calls this effect:
- * # inputs:
- * #   - id: card
+ * # steps:
+ * #   - input: card
  * #     type: { kind: gamepiece-select, inventory: playerHand }
  * ```
  * @example Move a piece to a specific grid cell (within-inventory reposition)
  * ```yaml
- * kind: move
+ * effect: move
  * from: { inventory: battleGrid, select: { id: { param: piece } } }
  * to: { inventory: battleGrid, at: { kind: grid-cell, row: 2, col: 3 } }
  * # within the action that calls this effect:
- * # inputs:
- * #   - id: piece
+ * # steps:
+ * #   - input: piece
  * #     type: { kind: gamepiece-select, inventory: battleGrid }
  * ```
  * @example Advance a token to slot 5 on a line inventory
  * ```yaml
- * kind: move
+ * effect: move
  * from: { inventory: scoreTrack, select: all, ofType: scorePeg }
  * to: { inventory: scoreTrack, at: { kind: line-index, index: 5 } }
  * ```
  */
 export const MoveEffectSchema = z
   .object({
-    kind: z.literal("move"),
+    effect: z.literal("move"),
     from: GamepieceSelectorSchema.describe("Which pieces to move and where to take them from."),
     to: InventoryTargetSchema.describe(
       "Destination inventory and position. When from.inventory === to.inventory, " +
@@ -512,20 +512,20 @@ export const MoveEffectSchema = z
  *
  * @example Reveal all cards in the combat zone
  * ```yaml
- * kind: flip
+ * effect: flip
  * pieces: { inventory: combatZone, select: all }
  * to: face-up
  * ```
  * @example Toggle the top card of the reserve
  * ```yaml
- * kind: flip
+ * effect: flip
  * pieces: { inventory: reserve, select: top }
  * to: toggle
  * ```
  */
 export const FlipEffectSchema = z
   .object({
-    kind: z.literal("flip"),
+    effect: z.literal("flip"),
     pieces: GamepieceSelectorSchema.describe("Which pieces to flip."),
     to: z
       .enum(["face-up", "face-down", "toggle"])
@@ -545,25 +545,25 @@ export const FlipEffectSchema = z
  *
  * @example Set a piece as exhausted
  * ```yaml
- * kind: update
+ * effect: update
  * pieces: { inventory: playArea, select: { id: { param: piece } } }
  * property: isExhausted
  * value: true
  * # within the action that calls this effect:
- * # inputs:
- * #   - id: piece
+ * # steps:
+ * #   - input: piece
  * #     type: { kind: gamepiece-select, inventory: playArea }
  * ```
  * @example Advance score peg by 2
  * ```yaml
- * kind: update
+ * effect: update
  * pieces: { inventory: scoreTrack, select: all, ofType: scorePeg }
  * property: position
  * value: { delta: 2 }
  * ```
  * @example Deal damage equal to attacker's attack stat
  * ```yaml
- * kind: update
+ * effect: update
  * source: { param: attacker }
  * pieces: { inventory: battlefield, select: { id: { param: target } } }
  * property: hp
@@ -572,7 +572,7 @@ export const FlipEffectSchema = z
  */
 export const UpdateEffectSchema = z
   .object({
-    kind: z.literal("update"),
+    effect: z.literal("update"),
     source: PieceRefSchema.optional().describe(
       "Optional reference to a source gamepiece whose properties can be read " +
         "via 'source.property.<id>' var paths in the value expression. " +
@@ -599,13 +599,13 @@ export const UpdateEffectSchema = z
  *
  * @example Shuffle the draw deck
  * ```yaml
- * kind: shuffle
+ * effect: shuffle
  * inventory: drawDeck
  * ```
  */
 export const ShuffleEffectSchema = z
   .object({
-    kind: z.literal("shuffle"),
+    effect: z.literal("shuffle"),
     inventory: z
       .string()
       .describe(
@@ -621,7 +621,7 @@ export const ShuffleEffectSchema = z
  *
  * @example Deal 6 cards to each player round-robin
  * ```yaml
- * kind: distribute
+ * effect: distribute
  * from: { inventory: drawDeck, select: top }
  * to: { inventory: playerHand }
  * count: 6
@@ -629,7 +629,7 @@ export const ShuffleEffectSchema = z
  * ```
  * @example Deal 1 kill card to each mafia player
  * ```yaml
- * kind: distribute
+ * effect: distribute
  * from: { inventory: roleCards, select: top }
  * to: { inventory: playerHand, roles: [mafia] }
  * count: 1
@@ -637,7 +637,7 @@ export const ShuffleEffectSchema = z
  */
 export const DistributeEffectSchema = z
   .object({
-    kind: z.literal("distribute"),
+    effect: z.literal("distribute"),
     from: GamepieceSelectorSchema.describe(
       "Source inventory and selection method. 'count' on the selector is ignored — " +
         "use the top-level 'count' field.",
@@ -667,18 +667,18 @@ export const DistributeEffectSchema = z
  *
  * @example Roll all dice in the dice tray
  * ```yaml
- * kind: roll
+ * effect: roll
  * pieces: { inventory: diceTray, select: all }
  * ```
  * @example Roll a single chosen die
  * ```yaml
- * kind: roll
+ * effect: roll
  * pieces: { inventory: diceTray, select: { id: { param: die } } }
  * ```
  */
 export const RollEffectSchema = z
   .object({
-    kind: z.literal("roll"),
+    effect: z.literal("roll"),
     pieces: GamepieceSelectorSchema.describe(
       "Which die pieces to roll. Should select pieces with faceCount defined on their type.",
     ),
@@ -698,7 +698,7 @@ export const RollEffectSchema = z
  * @example 25% chance of a dramatic reversal (weighted boolean)
  * ```yaml
  * id: rollReversal
- * kind: set-random
+ * effect: set-random
  * path: game.property.includeReversal
  * options:
  *   - value: true
@@ -709,7 +709,7 @@ export const RollEffectSchema = z
  * @example Pick a random suit (equal probability)
  * ```yaml
  * id: chooseDominantSuit
- * kind: set-random
+ * effect: set-random
  * path: game.property.dominantSuit
  * options:
  *   - value: hearts
@@ -720,7 +720,7 @@ export const RollEffectSchema = z
  * @example Roll a d6 result into state (numeric range)
  * ```yaml
  * id: rollInitiative
- * kind: set-random
+ * effect: set-random
  * path: game.property.initiative
  * range:
  *   min: 1
@@ -729,7 +729,7 @@ export const RollEffectSchema = z
  */
 export const SetRandomEffectSchema = z
   .object({
-    kind: z.literal("set-random"),
+    effect: z.literal("set-random"),
     source: z
       .discriminatedUnion("kind", [
         z
@@ -791,20 +791,20 @@ export const SetRandomEffectSchema = z
  *
  * @example Rotate a tile clockwise
  * ```yaml
- * kind: orient
+ * effect: orient
  * pieces: { inventory: board, select: { id: { param: tile } } }
  * to: rotate-cw
  * ```
  * @example Set a piece to a specific orientation
  * ```yaml
- * kind: orient
+ * effect: orient
  * pieces: { inventory: playArea, select: all, ofType: compassToken }
  * to: 0
  * ```
  */
 export const OrientEffectSchema = z
   .object({
-    kind: z.literal("orient"),
+    effect: z.literal("orient"),
     pieces: GamepieceSelectorSchema.describe("Which pieces to reorient."),
     to: z
       .union([
@@ -841,7 +841,7 @@ export const OrientEffectSchema = z
  * @example Complex combat resolution
  * ```yaml
  * id: resolveCombat
- * kind: custom
+ * effect: custom
  * description: >
  *   Compare the sum of power values of all face-up combat cards in each player's
  *   combat zone. The player with the higher total wins and scores 1 point. On a
@@ -850,7 +850,7 @@ export const OrientEffectSchema = z
  */
 export const CustomEffectSchema = z
   .object({
-    kind: z.literal("custom"),
+    effect: z.literal("custom"),
     description: z
       .string()
       .describe(
@@ -906,30 +906,30 @@ export const MessageRecipientSchema = z
  *
  * @example Reveal all dice to all players for challenge resolution (Liar's Dice)
  * ```yaml
- * kind: reveal
+ * effect: reveal
  * pieces: { inventory: playerCup, select: all }
  * to: all
  * ```
  * @example Active player peeks at the top card of the draw deck
  * ```yaml
- * kind: reveal
+ * effect: reveal
  * pieces: { inventory: drawDeck, select: top }
  * to: actor
  * ```
  * @example Reveal one opponent's card to the acting player
  * ```yaml
- * kind: reveal
+ * effect: reveal
  * pieces: { inventory: opponentHand, select: { id: { param: card } } }
  * to: actor
  * # within the action that calls this effect:
- * # inputs:
- * #   - id: card
+ * # steps:
+ * #   - input: card
  * #     type: { kind: gamepiece-select, inventory: opponentHand }
  * ```
  */
 export const RevealEffectSchema = z
   .object({
-    kind: z.literal("reveal"),
+    effect: z.literal("reveal"),
     pieces: GamepieceSelectorSchema.describe("Which pieces to temporarily reveal."),
     to: MessageRecipientSchema.describe(
       "Who can see the revealed pieces. " +
@@ -951,18 +951,18 @@ export const RevealEffectSchema = z
  *
  * @example Re-hide all dice after challenge resolution (Liar's Dice)
  * ```yaml
- * kind: hide
+ * effect: hide
  * pieces: { inventory: playerCup, select: all }
  * ```
  * @example Re-hide the peeked top card after a peek action
  * ```yaml
- * kind: hide
+ * effect: hide
  * pieces: { inventory: drawDeck, select: top }
  * ```
  */
 export const HideEffectSchema = z
   .object({
-    kind: z.literal("hide"),
+    effect: z.literal("hide"),
     pieces: GamepieceSelectorSchema.describe(
       "Which pieces to revert to their inventory's default visibility.",
     ),
@@ -976,21 +976,21 @@ export const HideEffectSchema = z
  * @example Confirmation after player creates a weapon
  * ```yaml
  * id: confirmWeapon
- * kind: message
+ * effect: message
  * to: actor
  * template: "Your weapon '{{input.weaponDescription}}' has been registered."
  * ```
  * @example Phase announcement to all
  * ```yaml
  * id: announceBattle
- * kind: message
+ * effect: message
  * to: all
  * template: "Round {{state.game.property.currentRound}} begins — select your weapon!"
  * ```
  */
 export const MessageEffectSchema = z
   .object({
-    kind: z.literal("message"),
+    effect: z.literal("message"),
     to: MessageRecipientSchema.describe(
       "Who receives this message. " +
         "'all' or 'opponents' = broadcast (visible to those players). " +
@@ -1011,7 +1011,7 @@ export const MessageEffectSchema = z
       "No state mutation — output only. " +
       "Visibility is determined by 'to': 'all'/'opponents'/'role:<id>' = broadcast; " +
       "'actor' or player ID = private. " +
-      "For AI-generated text use kind: llm-effect.",
+      "For AI-generated text use effect: llm-effect.",
   );
 
 // ---------------------------------------------------------------------------
@@ -1160,7 +1160,7 @@ export const LlmInputSchema = z
  * @example Opening announcement broadcast to all (Absurd Armaments initialize_game)
  * ```yaml
  * id: generateOpening
- * kind: llm-effect
+ * effect: llm-effect
  * prompt:
  *   rules:
  *     - "Use enthusiastic game-show announcer style with obnoxious energy"
@@ -1177,7 +1177,7 @@ export const LlmInputSchema = z
  * @example Round resolution — compute winner AND narrate (Absurd Armaments match_continues)
  * ```yaml
  * id: resolveRound
- * kind: llm-effect
+ * effect: llm-effect
  * inputs:
  *   - name: roundWinner
  *     state: game.property.roundWinner
@@ -1201,7 +1201,7 @@ export const LlmInputSchema = z
  * @example Per-player private reveal (Absurd Armaments reveal_complete)
  * ```yaml
  * id: generateReveals
- * kind: llm-effect
+ * effect: llm-effect
  * prompt:
  *   computation: >
  *     Create a unique reveal for each player showcasing their opponent's weapons.
@@ -1218,7 +1218,7 @@ export const LlmInputSchema = z
  */
 export const LlmEffectSchema = z
   .object({
-    kind: z.literal("llm-effect"),
+    effect: z.literal("llm-effect"),
     inputs: z
       .array(LlmInputSchema)
       .optional()
@@ -1290,7 +1290,7 @@ export const LlmEffectSchema = z
  * @example Generate weapon art from its description (Absurd Armaments)
  * ```yaml
  * id: illustrateWeapon
- * kind: generate-gamepiece-image
+ * effect: generate-gamepiece-image
  * pieces: { inventory: forge, select: top }
  * imageType: token
  * mode: described
@@ -1300,7 +1300,7 @@ export const LlmEffectSchema = z
  * @example Direct render from template variables (no description step)
  * ```yaml
  * id: renderCard
- * kind: generate-gamepiece-image
+ * effect: generate-gamepiece-image
  * pieces: { inventory: arsenal, select: top }
  * imageType: token
  * mode: direct
@@ -1310,7 +1310,7 @@ export const LlmEffectSchema = z
  */
 export const GenerateImageEffectSchema = z
   .object({
-    kind: z.literal("generate-gamepiece-image"),
+    effect: z.literal("generate-gamepiece-image"),
     pieces: GamepieceSelectorSchema.describe(
       "Which piece(s) to illustrate. The generator is invoked once per selected piece.",
     ),
@@ -1477,39 +1477,39 @@ export const PlayerTargetSchema = z
  *
  * @example Reset the bid quantity to 0 after a challenge
  * ```yaml
- * kind: set-state
+ * effect: set-state
  * path: game.property.currentBidQuantity
  * value: 0
  * ```
  * @example Set bid quantity from an action input
  * ```yaml
- * kind: set-state
+ * effect: set-state
  * path: game.property.currentBidQuantity
  * value: { param: quantity }
  * ```
  * @example Eliminate the acting player (built-in property; engine skips their turns)
  * ```yaml
- * kind: set-state
+ * effect: set-state
  * path: player.property.eliminated
  * value: true
  * ```
  * @example Deal 2 damage to a chosen opponent
  * ```yaml
- * kind: set-state
+ * effect: set-state
  * path: player.property.health
  * value: { delta: -2 }
  * target: { kind: param, inputId: targetPlayer }
  * ```
  * @example All other players lose 1 gold
  * ```yaml
- * kind: set-state
+ * effect: set-state
  * path: player.property.gold
  * value: { delta: -1 }
  * target: { kind: all-other }
  * ```
  * @example Tax all players who have >= 1 building
  * ```yaml
- * kind: set-state
+ * effect: set-state
  * path: player.property.gold
  * value: { delta: -1 }
  * target:
@@ -1519,7 +1519,7 @@ export const PlayerTargetSchema = z
  */
 export const SetStateEffectSchema = z
   .object({
-    kind: z.literal("set-state"),
+    effect: z.literal("set-state"),
     source: PieceRefSchema.optional().describe(
       "Optional reference to a source gamepiece whose properties can be read " +
         "via 'source.property.<id>' var paths in the value expression.",
@@ -1561,13 +1561,13 @@ export const SetStateEffectSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: cancel-effect
+ * steps:
+ *   - effect: cancel-effect
  * ```
  */
 export const CancelEffectSchema = z
   .object({
-    kind: z.literal("cancel-effect"),
+    effect: z.literal("cancel-effect"),
   })
   .describe(
     "Cancels the named effect that triggered the current reactive action window. " +
@@ -1602,8 +1602,8 @@ export const CancelEffectSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { delta: 2 }       # +2 on a -5 delta → net -3 damage
  * ```
  * @example Reduce damage by armor rating (var delta)
@@ -1613,8 +1613,8 @@ export const CancelEffectSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { delta: { var: "player.property.armorRating" } }
  * ```
  * @example Halve incoming damage (shield — literal mult)
@@ -1624,8 +1624,8 @@ export const CancelEffectSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { mult: 0.5 }
  * ```
  * @example Scale healing by a blessing multiplier (var mult)
@@ -1635,8 +1635,8 @@ export const CancelEffectSchema = z
  * reactive:
  *   trigger: heal
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { mult: { var: "player.property.blessingPower" } }
  * ```
  * @example Amplify damage by curse stacks (var delta with negate)
@@ -1646,14 +1646,14 @@ export const CancelEffectSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { delta: { var: "player.property.curseStacks", negate: true } }
  * ```
  */
 export const AdjustEffectSchema = z
   .object({
-    kind: z.literal("adjust"),
+    effect: z.literal("adjust"),
     adjustment: z
       .union([DeltaSchema, MultSchema])
       .describe(
@@ -1683,7 +1683,7 @@ const effectId = IdentifierSchema.describe(
 
 const namedEffectBase = { id: effectId };
 
-export const NamedEffectSchema = z.discriminatedUnion("kind", [
+export const NamedEffectSchema = z.discriminatedUnion("effect", [
   MoveEffectSchema.extend(namedEffectBase),
   FlipEffectSchema.extend(namedEffectBase),
   RevealEffectSchema.extend(namedEffectBase),
@@ -1715,7 +1715,7 @@ export const NamedEffectSchema = z.discriminatedUnion("kind", [
  * The anonymous inline effect body — any effect kind, without id or params.
  * Used at call sites for one-off effects that don't need to be named.
  */
-export const EffectSchema = z.discriminatedUnion("kind", [
+export const EffectSchema = z.discriminatedUnion("effect", [
   MoveEffectSchema,
   FlipEffectSchema,
   RevealEffectSchema,
@@ -1860,7 +1860,7 @@ export const PassiveTriggerSchema = z
  *       direction: decrease
  *     enabledIn: [battlefield]
  *     effects:
- *       - kind: adjust
+ *       - effect: adjust
  *         adjustment: { delta: 2 }
  * ```
  * @example Deal 1 damage back to attacker (thorns — after)
@@ -1874,7 +1874,7 @@ export const PassiveTriggerSchema = z
  *       direction: decrease
  *     enabledIn: [battlefield]
  *     effects:
- *       - kind: custom
+ *       - effect: custom
  *         description: Deal 1 damage to the player who initiated the triggering effect.
  * ```
  * @example All outgoing damage increased by rage stacks (offensive)
@@ -1888,7 +1888,7 @@ export const PassiveTriggerSchema = z
  *       direction: decrease
  *     enabledIn: [battlefield]
  *     effects:
- *       - kind: adjust
+ *       - effect: adjust
  *         adjustment: { delta: { var: "player.property.rageStacks", negate: true } }
  * ```
  * @example Lifesteal — heal for 1 whenever owner reduces opponent HP (offensive, after)
@@ -1902,7 +1902,7 @@ export const PassiveTriggerSchema = z
  *       direction: decrease
  *     enabledIn: [equipment-slot]
  *     effects:
- *       - kind: set-state
+ *       - effect: set-state
  *         path: player.property.hp
  *         value: { delta: 1 }
  * ```
@@ -1916,7 +1916,7 @@ export const PassiveTriggerSchema = z
  *       path: player.property.hp
  *       direction: decrease
  *     effects:
- *       - kind: set-state
+ *       - effect: set-state
  *         path: player.property.hp
  *         value: { delta: { var: "trigger.delta", negate: true } }  # delta is negative for damage
  * ```
@@ -1930,7 +1930,7 @@ export const PassiveTriggerSchema = z
  *       path: gamepiece.property.defense
  *       direction: decrease
  *     effects:
- *       - kind: set-state
+ *       - effect: set-state
  *         path: player.property.hp   # no target → defaults to the actor, i.e. the attacking player
  *         value: { delta: { var: "source.property.power", negate: true } }
  * ```
@@ -1944,7 +1944,7 @@ export const PassiveTriggerSchema = z
  *       fromInventory: [hand]
  *     enabledIn: [hand]
  *     effects:
- *       - kind: cancel-effect
+ *       - effect: cancel-effect
  * ```
  * @example Trap card — enabled face-down, cancels first incoming damage
  * ```yaml
@@ -1958,7 +1958,7 @@ export const PassiveTriggerSchema = z
  *     enabledIn: [trap-zone]
  *     faceFilter: face-down-only
  *     effects:
- *       - kind: cancel-effect
+ *       - effect: cancel-effect
  * ```
  * @example Shield passive — disabled when exhausted
  * ```yaml
@@ -1972,7 +1972,7 @@ export const PassiveTriggerSchema = z
  *     enabledIn: [battlefield]
  *     exhaustedFilter: ready-only
  *     effects:
- *       - kind: adjust
+ *       - effect: adjust
  *         adjustment: { mult: 0.5 }
  * ```
  * @example Passive only active while exhausted (e.g. a "tapped" aura)
@@ -1987,7 +1987,7 @@ export const PassiveTriggerSchema = z
  *     enabledIn: [battlefield]
  *     exhaustedFilter: exhausted-only
  *     effects:
- *       - kind: adjust
+ *       - effect: adjust
  *         adjustment: { delta: 3 }
  * ```
  */
@@ -2035,7 +2035,7 @@ export const PassiveEffectSchema = z
  * and wait for player input before applying the effect.
  *
  * When the trigger fires, the engine offers the player the choice to activate.
- * If chosen: `effect` fires first (intercepting the trigger), then `onUse` executes.
+ * If chosen: `apply` fires first (intercepting the trigger), then `onUse` executes.
  * The player may also decline — the trigger resolves normally.
  *
  * Enablement works identically to passives (enabledIn, exhaustedFilter, faceFilter).
@@ -2050,10 +2050,10 @@ export const PassiveEffectSchema = z
  *       path: player.property.hp
  *       direction: decrease
  *     label: "Block incoming damage"
- *     effect:
- *       kind: cancel-effect
+ *     apply:
+ *       effect: cancel-effect
  *     onUse:
- *       - kind: move
+ *       - effect: move
  *         from: { inventory: hand, select: this }
  *         to: { inventory: discard }
  *     enabledIn: [hand]
@@ -2067,10 +2067,10 @@ export const PassiveEffectSchema = z
  *       scope: target
  *       fromInventory: [hand]
  *     label: "Refuse the steal"
- *     effect:
- *       kind: cancel-effect
+ *     apply:
+ *       effect: cancel-effect
  *     onUse:
- *       - kind: orient
+ *       - effect: orient
  *         pieces: { select: this }
  *         to: rotate-cw
  *     enabledIn: [hand]
@@ -2085,11 +2085,11 @@ export const PassiveEffectSchema = z
  *       path: player.property.hp
  *       direction: decrease
  *     label: "Reduce damage by 2"
- *     effect:
- *       kind: adjust
+ *     apply:
+ *       effect: adjust
  *       adjustment: { delta: 2 }
  *     onUse:
- *       - kind: move
+ *       - effect: move
  *         from: { inventory: hand, select: this }
  *         to: { inventory: discard }
  *     enabledIn: [hand]
@@ -2114,8 +2114,8 @@ export const ReactiveEffectSchema = z
         "Call-to-action shown in the UX when this piece is highlighted as an eligible reactive. " +
           "Examples: 'Block incoming damage', 'Refuse the steal', 'Redirect the attack'.",
       ),
-    effect: EffectSchema.describe(
-      "The effect applied when the player chooses to activate this reactive. " +
+    apply: EffectSchema.describe(
+      "The effect applied to the trigger when the player chooses to activate this reactive. " +
         "Typically cancel-effect (to negate the trigger) or adjust (to modify it). " +
         "Fires before onUse.",
     ),
@@ -2157,7 +2157,7 @@ export const ReactiveEffectSchema = z
   })
   .describe(
     "A player-choice reactive declaration. When the structural trigger fires, eligible pieces " +
-      "are highlighted and the player may choose to activate. If activated, `effect` fires " +
+      "are highlighted and the player may choose to activate. If activated, `apply` fires " +
       "immediately (intercepting the trigger), then `onUse` executes. The player may decline.",
   );
 
@@ -2203,16 +2203,12 @@ export const EffectsModuleSchema = z
  *
  * @example
  * ```yaml
- * ref: shuffleDeck
- * ```
- * @example
- * ```yaml
- * ref: drawCard
+ * effectRef: shuffleDeck
  * ```
  */
 export const EffectCallRefSchema = z
   .object({
-    ref: z
+    effectRef: z
       .string()
       .describe(
         "ID of the named effect to invoke. Forward reference to the effects module.",
@@ -2224,23 +2220,22 @@ export const EffectCallRefSchema = z
  * A single entry in an effect call list — either an inline effect body
  * or a reference to a named effect.
  *
- * @example Mixed inline and ref
+ * @example Mixed inline and named
  * ```yaml
- * effects:
- *   - ref: shuffleDeck                          # named, no params
- *   - ref: advanceScore                         # named, bound param
- *     bind: { delta: { from: literal, value: 1 } }
- *   - kind: move                                 # inline
+ * onEnter:
+ *   - effectRef: shuffleDeck                    # named
+ *   - effect: move                              # inline
  *     from: { inventory: drawDeck, select: top }
  *     to: { inventory: playerHand }
  * ```
  */
-export const EffectCallSchema = z
-  .union([EffectCallRefSchema, EffectSchema])
-  .describe(
-    "One entry in an effect call list. Either a named-effect reference (with 'ref') " +
-      "or an inline anonymous effect (with 'kind').",
-  );
+export const EffectCallSchema = keyedUnion({
+  effectRef: EffectCallRefSchema,
+  effect: EffectSchema,
+}).describe(
+  "One entry in an effect call list. Either a named-effect reference ({ effectRef: <id> }) " +
+    "or an inline anonymous effect ({ effect: <kind>, ... }).",
+);
 
 /**
  * Ordered list of effect calls — used everywhere effects are triggered.
@@ -2250,8 +2245,8 @@ export const EffectCallsSchema = z
   .min(1)
   .describe(
     "Ordered list of effect calls to execute sequentially. " +
-      "Each entry is either a named-effect reference ({ ref, bind? }) " +
-      "or an inline effect body ({ kind, ... }).",
+      "Each entry is either a named-effect reference ({ effectRef: <id> }) " +
+      "or an inline effect body ({ effect: <kind>, ... }).",
   );
 
 // ---------------------------------------------------------------------------

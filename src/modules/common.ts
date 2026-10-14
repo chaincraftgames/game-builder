@@ -391,3 +391,38 @@ export const PlayerSelectorSchema = z
   .describe("Selects exactly one player. Falls back to seat 1 when nothing matches. Eliminated players are never selected.");
 
 export type PlayerSelector = z.infer<typeof PlayerSelectorSchema>;
+
+// ---------------------------------------------------------------------------
+// Keyed union
+// ---------------------------------------------------------------------------
+
+/**
+ * A union whose branch is chosen by which key the object has (e.g. `input`, `effect`,
+ * `effectRef`). Exactly one key must be present. Unlike z.union, validation errors come
+ * only from the chosen branch, so they name the actual bad field.
+ */
+export function keyedUnion<B extends Record<string, z.ZodTypeAny>>(branches: B) {
+  const keys = Object.keys(branches);
+  return z.unknown().transform((value, ctx): z.output<B[keyof B]> => {
+    const present =
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? keys.filter((k) => k in value)
+        : [];
+    if (present.length !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          present.length === 0
+            ? `Expected an object with one of: ${keys.join(", ")}`
+            : `Expected only one of ${keys.join(", ")}; found ${present.join(", ")}`,
+      });
+      return z.NEVER;
+    }
+    const result = branches[present[0]].safeParse(value);
+    if (!result.success) {
+      for (const issue of result.error.issues) ctx.addIssue(issue);
+      return z.NEVER;
+    }
+    return result.data;
+  });
+}

@@ -14,8 +14,8 @@
  *   - cancel-effect (reactive negate)
  *   - NamedEffectSchema (id required)
  *   - EffectSchema (anonymous inline, no id)
- *   - EffectCallRefSchema ({ ref })
- *   - EffectCallSchema union (ref or inline)
+ *   - EffectCallRefSchema ({ effectRef })
+ *   - EffectCallSchema keyed union (effectRef or inline effect)
  *   - EffectCallsSchema (min 1)
  *   - PieceSelectorSchema (all select variants including { id })
  *   - DistributeTargetSchema (roles filter)
@@ -58,7 +58,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // move: draw dice from cup to player tray
       {
         id: "drawDie",
-        kind: "move",
+        effect: "move",
         from: { inventory: "diceCup", select: "top" },
         to: { inventory: "playerTray" },
       },
@@ -66,7 +66,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // move: discard a die (deterministic selection; player choice handled via action input)
       {
         id: "discardDie",
-        kind: "move",
+        effect: "move",
         from: { inventory: "playerTray", select: "random", count: 1 },
         to: { inventory: "discardPile", at: { kind: "stack-top" } },
       },
@@ -74,7 +74,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // move: steal a die from another player (random selection)
       {
         id: "stealDie",
-        kind: "move",
+        effect: "move",
         from: { inventory: "opponentTray", select: "random", count: 1 },
         to: { inventory: "playerTray" },
       },
@@ -82,7 +82,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // move: move all dice to specific indexed position
       {
         id: "stackDice",
-        kind: "move",
+        effect: "move",
         from: { inventory: "playerTray", select: "all" },
         to: { inventory: "displayRack", at: { kind: "line-index", index: 0 } },
       },
@@ -90,7 +90,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // move: place die at a row+col position (grid inventory)
       {
         id: "placeOnGrid",
-        kind: "move",
+        effect: "move",
         from: { inventory: "playerTray", select: "top" },
         to: { inventory: "gridBoard", at: { kind: "grid-cell", row: 1, col: 2 } },
       },
@@ -98,7 +98,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // flip: reveal all dice in player tray
       {
         id: "revealDice",
-        kind: "flip",
+        effect: "flip",
         pieces: { inventory: "playerTray", select: "all" },
         to: "face-up",
       },
@@ -106,7 +106,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // flip: hide a single die
       {
         id: "hideDie",
-        kind: "flip",
+        effect: "flip",
         pieces: { inventory: "playerTray", select: "top" },
         to: "face-down",
       },
@@ -114,7 +114,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // update: increment score by 1 (delta)
       {
         id: "scorePoint",
-        kind: "update",
+        effect: "update",
         pieces: { inventory: "scoreTracker", select: "top" },
         property: "points",
         value: { delta: 1 },
@@ -123,7 +123,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // update: set score to literal 0
       {
         id: "resetScore",
-        kind: "update",
+        effect: "update",
         pieces: { inventory: "scoreTracker", select: "top" },
         property: "points",
         value: 0,
@@ -132,7 +132,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // update: toggle a boolean flag
       {
         id: "toggleActive",
-        kind: "update",
+        effect: "update",
         pieces: { inventory: "playerMarkers", select: "top" },
         property: "isActive",
         value: { toggle: true },
@@ -141,7 +141,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // update: set string property
       {
         id: "markChallenger",
-        kind: "update",
+        effect: "update",
         pieces: { inventory: "playerMarkers", select: "top" },
         property: "status",
         value: "challenger",
@@ -150,7 +150,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // update: set boolean property to literal true
       {
         id: "markEliminated",
-        kind: "update",
+        effect: "update",
         pieces: { inventory: "playerMarkers", select: "top" },
         property: "eliminated",
         value: true,
@@ -159,14 +159,14 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // shuffle: randomise the dice cup
       {
         id: "shuffleCup",
-        kind: "shuffle",
+        effect: "shuffle",
         inventory: "diceCup",
       },
 
       // distribute: deal 5 dice to each player
       {
         id: "dealDice",
-        kind: "distribute",
+        effect: "distribute",
         from: { inventory: "diceCup", select: "top" },
         to: { scope: "all-players", inventory: "playerTray" },
         count: 5,
@@ -175,7 +175,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // distribute: deal to active player only
       {
         id: "dealExtraDie",
-        kind: "distribute",
+        effect: "distribute",
         from: { inventory: "diceCup", select: "top" },
         to: { scope: "active-player", inventory: "playerTray" },
         count: 1,
@@ -184,21 +184,21 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // roll: roll all dice in a player's tray
       {
         id: "rollAllDice",
-        kind: "roll",
+        effect: "roll",
         pieces: { inventory: "playerTray", select: "all" },
       },
 
       // roll: roll a specific count
       {
         id: "rollTwoDice",
-        kind: "roll",
+        effect: "roll",
         pieces: { inventory: "playerTray", select: "random", count: 2 },
       },
 
       // orient: rotate a tile clockwise
       {
         id: "rotateTile",
-        kind: "orient",
+        effect: "orient",
         pieces: { inventory: "boardTiles", select: "top" },
         to: "rotate-cw",
       },
@@ -206,7 +206,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // custom: complex resolution logic
       {
         id: "resolveChallenge",
-        kind: "custom",
+        effect: "custom",
         description:
           "Count all dice showing the bid face value across all players. " +
           "If the total meets or exceeds the bid quantity, the challenger loses one die. " +
@@ -217,13 +217,13 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       // cancel-effect: reactive negate
       {
         id: "blockSteal",
-        kind: "cancel-effect",
+        effect: "cancel-effect",
       },
 
       // move: ofType filter
       {
         id: "removeWildcards",
-        kind: "move",
+        effect: "move",
         from: { inventory: "playerTray", select: "all", ofType: "wildcardDie" },
         to: { inventory: "discardPile" },
       },
@@ -248,13 +248,13 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       effects: [
         {
           id: "buryCard",
-          kind: "move",
+          effect: "move",
           from: { inventory: "playerHand", select: "top" },
           to: { inventory: "drawDeck", at: { kind: "stack-bottom" } },
         },
       ],
     });
-    expect(result.effects[0].kind).toBe("move");
+    expect(result.effects[0].effect).toBe("move");
   });
 
   it("parses flip effect with toggle", () => {
@@ -262,13 +262,13 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       effects: [
         {
           id: "toggleCard",
-          kind: "flip",
+          effect: "flip",
           pieces: { inventory: "playArea", select: "top" },
           to: "toggle",
         },
       ],
     });
-    expect(result.effects[0].kind).toBe("flip");
+    expect(result.effects[0].effect).toBe("flip");
   });
 
   it("parses orient effect with specific index", () => {
@@ -276,20 +276,20 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       effects: [
         {
           id: "setOrientation",
-          kind: "orient",
+          effect: "orient",
           pieces: { inventory: "boardTiles", select: "top" },
           to: 2,
         },
       ],
     });
-    expect(result.effects[0].kind).toBe("orient");
+    expect(result.effects[0].effect).toBe("orient");
   });
 
   it("parses update effect with { param } value", () => {
     // { param } is valid in EffectSchema (anonymous), not in NamedEffectSchema
     // because named effects are self-contained — params are for inline call-site effects
     const result = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "currentBid", select: "top" },
       property: "quantity",
       value: { param: "quantity" },
@@ -299,9 +299,9 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
 
   it("parses cancel-effect as named effect", () => {
     const result = ok({
-      effects: [{ id: "negateAttack", kind: "cancel-effect" }],
+      effects: [{ id: "negateAttack", effect: "cancel-effect" }],
     });
-    expect(result.effects[0].kind).toBe("cancel-effect");
+    expect(result.effects[0].effect).toBe("cancel-effect");
   });
 
   it("parses distribute to all-teams scope", () => {
@@ -309,14 +309,14 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       effects: [
         {
           id: "dealTeamCards",
-          kind: "distribute",
+          effect: "distribute",
           from: { inventory: "drawDeck", select: "top" },
           to: { scope: "all-teams", inventory: "teamHand" },
           count: 3,
         },
       ],
     });
-    expect(result.effects[0].kind).toBe("distribute");
+    expect(result.effects[0].effect).toBe("distribute");
   });
 
   it("parses distribute with roles filter (setup: deal kill-card to mafia only)", () => {
@@ -324,14 +324,14 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
       effects: [
         {
           id: "dealKillCard",
-          kind: "distribute",
+          effect: "distribute",
           from: { inventory: "game:unassigned", select: "top", ofType: "killCard" },
           to: { scope: "all-players", inventory: "playerHand", roles: ["mafia"] },
           count: 1,
         },
       ],
     });
-    expect(result.effects[0].kind).toBe("distribute");
+    expect(result.effects[0].effect).toBe("distribute");
     expect((result.effects[0] as any).to.roles).toEqual(["mafia"]);
   });
 });
@@ -346,13 +346,13 @@ describe("EffectsModuleSchema — select by id", () => {
       effects: [
         {
           id: "placeWhiteKing",
-          kind: "move",
+          effect: "move",
           from: { inventory: "game:unassigned", select: { id: "whiteKing" } },
           to: { inventory: "board", at: { kind: "grid-cell", row: 1, col: "e" } },
         },
       ],
     });
-    expect(result.effects[0].kind).toBe("move");
+    expect(result.effects[0].effect).toBe("move");
     expect((result.effects[0] as any).from.select).toEqual({ id: "whiteKing" });
   });
 
@@ -361,7 +361,7 @@ describe("EffectsModuleSchema — select by id", () => {
       effects: [
         {
           id: "revealKing",
-          kind: "flip",
+          effect: "flip",
           pieces: { inventory: "game:unassigned", select: { id: "whiteKing" } },
           to: "face-up",
         },
@@ -384,7 +384,7 @@ describe("EffectsModuleSchema — rejections", () => {
     fail({
       effects: [
         {
-          kind: "shuffle",
+          effect: "shuffle",
           inventory: "drawDeck",
           // missing id
         },
@@ -394,7 +394,7 @@ describe("EffectsModuleSchema — rejections", () => {
 
   it("rejects an unknown effect kind", () => {
     fail({
-      effects: [{ id: "x", kind: "teleport", inventory: "deck" }],
+      effects: [{ id: "x", effect: "teleport", inventory: "deck" }],
     });
   });
 
@@ -403,7 +403,7 @@ describe("EffectsModuleSchema — rejections", () => {
       effects: [
         {
           id: "badMove",
-          kind: "move",
+          effect: "move",
           to: { inventory: "playerHand" },
         },
       ],
@@ -415,7 +415,7 @@ describe("EffectsModuleSchema — rejections", () => {
       effects: [
         {
           id: "badUpdate",
-          kind: "update",
+          effect: "update",
           pieces: { inventory: "scoreTracker", select: "top" },
           value: 1,
         },
@@ -428,7 +428,7 @@ describe("EffectsModuleSchema — rejections", () => {
       effects: [
         {
           id: "badDistribute",
-          kind: "distribute",
+          effect: "distribute",
           from: { inventory: "deck", select: "top", count: 3 },
           to: { scope: "everyone", inventory: "hand" },
         },
@@ -441,7 +441,7 @@ describe("EffectsModuleSchema — rejections", () => {
       effects: [
         {
           id: "badSelect",
-          kind: "roll",
+          effect: "roll",
           pieces: { inventory: "diceTray", select: "nearest" },
         },
       ],
@@ -453,7 +453,7 @@ describe("EffectsModuleSchema — rejections", () => {
       effects: [
         {
           id: "badOrient",
-          kind: "orient",
+          effect: "orient",
           pieces: { inventory: "tiles", select: "top" },
           orientation: 1.5,
         },
@@ -467,14 +467,14 @@ describe("EffectsModuleSchema — rejections", () => {
 // ---------------------------------------------------------------------------
 
 describe("EffectCallSchema", () => {
-  it("accepts a ref call", () => {
-    const r = EffectCallSchema.safeParse({ ref: "shuffleDeck" });
+  it("accepts an effectRef call", () => {
+    const r = EffectCallSchema.safeParse({ effectRef: "shuffleDeck" });
     expect(r.success).toBe(true);
   });
 
   it("accepts an inline effect body", () => {
     const r = EffectCallSchema.safeParse({
-      kind: "shuffle",
+      effect: "shuffle",
       inventory: "drawDeck",
     });
     expect(r.success).toBe(true);
@@ -482,7 +482,7 @@ describe("EffectCallSchema", () => {
 
   it("accepts an inline update with { param } value", () => {
     const r = EffectCallSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "currentBid", select: "top" },
       property: "quantity",
       value: { param: "quantity" },
@@ -490,8 +490,18 @@ describe("EffectCallSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects an object with neither ref nor kind", () => {
+  it("rejects an object with neither effectRef nor effect", () => {
     const r = EffectCallSchema.safeParse({ id: "something" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects the old ref/kind keys", () => {
+    expect(EffectCallSchema.safeParse({ ref: "shuffleDeck" }).success).toBe(false);
+    expect(EffectCallSchema.safeParse({ kind: "shuffle", inventory: "deck" }).success).toBe(false);
+  });
+
+  it("rejects an entry with both effectRef and effect", () => {
+    const r = EffectCallSchema.safeParse({ effectRef: "x", effect: "shuffle", inventory: "deck" });
     expect(r.success).toBe(false);
   });
 });
@@ -499,9 +509,9 @@ describe("EffectCallSchema", () => {
 describe("EffectCallsSchema", () => {
   it("accepts a mixed list of refs and inline effects", () => {
     const r = EffectCallsSchema.safeParse([
-      { ref: "shuffleDeck" },
-      { kind: "roll", pieces: { inventory: "diceTray", select: "all" } },
-      { ref: "dealDice" },
+      { effectRef: "shuffleDeck" },
+      { effect: "roll", pieces: { inventory: "diceTray", select: "all" } },
+      { effectRef: "dealDice" },
     ]);
     expect(r.success).toBe(true);
   });
@@ -517,12 +527,12 @@ describe("EffectCallsSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("EffectCallRefSchema", () => {
-  it("accepts a valid ref", () => {
-    const r = EffectCallRefSchema.safeParse({ ref: "drawCard" });
+  it("accepts a valid effectRef", () => {
+    const r = EffectCallRefSchema.safeParse({ effectRef: "drawCard" });
     expect(r.success).toBe(true);
   });
 
-  it("rejects missing ref field", () => {
+  it("rejects missing effectRef field", () => {
     const r = EffectCallRefSchema.safeParse({ name: "drawCard" });
     expect(r.success).toBe(false);
   });
@@ -572,7 +582,7 @@ describe("LlmInputSchema", () => {
 
 describe("LlmEffectSchema", () => {
   const base = {
-    kind: "llm-effect",
+    effect: "llm-effect",
     prompt: { computation: "Narrate the clash." },
     outputs: [{ field: "roundNarrative", message: { to: "all" } }],
   };
@@ -609,7 +619,7 @@ describe("LlmEffectSchema", () => {
 describe("PropertyValueSchema — var references", () => {
   it("accepts a game property var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "hp",
       value: { var: "game.property.baseDamage" },
@@ -619,7 +629,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts a player property var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "bonusValue",
       value: { var: "player.property.relicCount" },
@@ -629,7 +639,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts a game inventory count var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "cardsLeft",
       value: { var: "game.inventory.drawPile.count" },
@@ -639,7 +649,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts a player inventory count var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "handSize",
       value: { var: "player.inventory.hand.count" },
@@ -649,7 +659,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts delta with a literal number", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "score",
       value: { delta: 5 },
@@ -659,7 +669,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts delta with a var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "totalDamage",
       value: { delta: { var: "game.property.spellPower" } },
@@ -669,7 +679,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("rejects delta with invalid var reference structure", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "score",
       value: { delta: { var: 123 } },
@@ -679,7 +689,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("rejects var with non-string path", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "value",
       value: { var: 123 },
@@ -689,7 +699,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts delta with var reference and negate: true", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "defense",
       value: { delta: { var: "player.property.damageDealt", negate: true } },
@@ -699,7 +709,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts delta with var reference and negate: false", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "score",
       value: { delta: { var: "game.property.bonus", negate: false } },
@@ -709,7 +719,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("rejects negate flag on non-var delta", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "score",
       value: { delta: { value: 5, negate: true } },
@@ -719,7 +729,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts mult with a literal number", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "damage",
       value: { mult: 0.5 },
@@ -729,7 +739,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts mult with a var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "production",
       value: { mult: { var: "player.property.workerCount" } },
@@ -739,7 +749,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("accepts mult with var and negate", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "velocity",
       value: { mult: { var: "game.property.friction", negate: true } },
@@ -749,7 +759,7 @@ describe("PropertyValueSchema — var references", () => {
 
   it("rejects mult with non-number literal", () => {
     const r = EffectSchema.safeParse({
-      kind: "update",
+      effect: "update",
       pieces: { inventory: "test", select: "top" },
       property: "score",
       value: { mult: "two" },
@@ -765,21 +775,21 @@ describe("PropertyValueSchema — var references", () => {
 describe("EffectsModuleSchema — adjust effect", () => {
   it("parses adjust with delta adjustment as named effect", () => {
     const result = ok({
-      effects: [{ id: "reduceDamage", kind: "adjust", adjustment: { delta: 2 } }],
+      effects: [{ id: "reduceDamage", effect: "adjust", adjustment: { delta: 2 } }],
     });
-    expect(result.effects[0].kind).toBe("adjust");
+    expect(result.effects[0].effect).toBe("adjust");
   });
 
   it("parses adjust with mult adjustment as named effect", () => {
     const result = ok({
-      effects: [{ id: "halveDamage", kind: "adjust", adjustment: { mult: 0.5 } }],
+      effects: [{ id: "halveDamage", effect: "adjust", adjustment: { mult: 0.5 } }],
     });
-    expect(result.effects[0].kind).toBe("adjust");
+    expect(result.effects[0].effect).toBe("adjust");
   });
 
   it("parses adjust as inline effect (EffectSchema)", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { delta: -1 },
     });
     expect(r.success).toBe(true);
@@ -787,14 +797,14 @@ describe("EffectsModuleSchema — adjust effect", () => {
 
   it("rejects adjust missing adjustment", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
     });
     expect(r.success).toBe(false);
   });
 
   it("rejects adjust with non-numeric delta", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { delta: "two" },
     });
     expect(r.success).toBe(false);
@@ -802,7 +812,7 @@ describe("EffectsModuleSchema — adjust effect", () => {
 
   it("rejects adjust with non-numeric mult", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { mult: "half" },
     });
     expect(r.success).toBe(false);
@@ -810,7 +820,7 @@ describe("EffectsModuleSchema — adjust effect", () => {
 
   it("accepts adjust delta with var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { delta: { var: "player.property.armorRating" } },
     });
     expect(r.success).toBe(true);
@@ -818,7 +828,7 @@ describe("EffectsModuleSchema — adjust effect", () => {
 
   it("accepts adjust delta with var and negate", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { delta: { var: "player.property.curseStacks", negate: true } },
     });
     expect(r.success).toBe(true);
@@ -826,7 +836,7 @@ describe("EffectsModuleSchema — adjust effect", () => {
 
   it("accepts adjust mult with var reference", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { mult: { var: "player.property.damageMultiplier" } },
     });
     expect(r.success).toBe(true);
@@ -834,7 +844,7 @@ describe("EffectsModuleSchema — adjust effect", () => {
 
   it("accepts adjust mult with var and negate", () => {
     const r = EffectSchema.safeParse({
-      kind: "adjust",
+      effect: "adjust",
       adjustment: { mult: { var: "game.property.debuffFactor", negate: true } },
     });
     expect(r.success).toBe(true);

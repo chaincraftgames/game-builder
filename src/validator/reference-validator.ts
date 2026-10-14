@@ -47,16 +47,14 @@ export function validateReferences(spec: ModularGameSpec): ValidationError[] {
   // Pass 1 — Reference resolution
   // ---------------------------------------------------------------------------
 
-  // actions: effect call refs must exist in effects
+  // actions: effectRef steps must exist in effects
   spec.actions?.actions?.forEach((action, ai) => {
-    action.effects?.forEach((call, ci) => {
-      if (typeof call === "object" && call !== null && "ref" in call && call.ref) {
-        if (!effectIds.has(call.ref as string)) {
-          errors.push({
-            path: `actions.actions[${ai}].effects[${ci}].ref`,
-            message: `Effect ref "${call.ref}" not found in effects module`,
-          });
-        }
+    action.steps.forEach((step, si) => {
+      if ("effectRef" in step && !effectIds.has(step.effectRef)) {
+        errors.push({
+          path: `actions.actions[${ai}].steps[${si}].effectRef`,
+          message: `Effect ref "${step.effectRef}" not found in effects module`,
+        });
       }
     });
   });

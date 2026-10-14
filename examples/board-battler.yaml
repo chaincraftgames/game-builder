@@ -143,28 +143,28 @@ inventories:
 effects:
   effects:
     - id: fillLibrary
-      kind: move
+      effect: move
       from: { inventory: "game:unassigned", select: all }
       to: { inventory: library }
 
     - id: shuffleLibrary
-      kind: shuffle
+      effect: shuffle
       inventory: library
 
     - id: dealHands
-      kind: distribute
+      effect: distribute
       from: { inventory: library, select: top }
       to: { inventory: hand }
       count: 2
 
     - id: dealDecks
-      kind: distribute
+      effect: distribute
       from: { inventory: library, select: top }
       to: { inventory: deck }
       count: 2
 
     - id: announceStart
-      kind: message
+      effect: message
       to: all
       template: >-
         Both sides start at 30 life. Play creatures, attack with them, and
@@ -221,7 +221,7 @@ effects:
     # rather than WHICH pieces it touches.
     # -----------------------------------------------------------------------
     - id: thawAll
-      kind: update
+      effect: update
       pieces: { inventory: field, select: all }
       property: frozen
       value: false
@@ -259,7 +259,7 @@ effects:
         direction: decrease
       enabledIn: [field]
       effects:
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           value: { delta: 2 }
 
@@ -287,7 +287,7 @@ effects:
         direction: decrease
       enabledIn: [field]
       effects:
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           value: { delta: -2 }
 
@@ -296,16 +296,15 @@ actions:
     - id: playCreature
       label: Play a creature
       description: Put a creature from your hand onto your field.
-      inputs:
-        - id: card
+      steps:
+        - input: card
           label: Choose a creature
           type:
             kind: gamepiece-select
             inventory: hand
             ofType: creature
             fromPlayer: self
-      effects:
-        - kind: move
+        - effect: move
           from: { inventory: hand, select: { id: { param: card } } }
           to: { inventory: field }
 
@@ -345,28 +344,27 @@ actions:
     - id: attackCreature
       label: Attack a creature
       description: Your creature and theirs each take the other's power.
-      inputs:
-        - id: attacker
+      steps:
+        - input: attacker
           label: Choose your attacker
           type:
             kind: gamepiece-select
             inventory: field
             ofType: creature
             fromPlayer: self
-        - id: defenderOwner
+        - input: defenderOwner
           label: Choose whose creature to attack
           type:
             kind: player-select
             excludeSelf: true
-        - id: defender
+        - input: defender
           label: Choose the creature to attack
           type:
             kind: gamepiece-select
             inventory: field
             ofType: creature
             fromPlayer: { param: defenderOwner }
-      effects:
-        - kind: update
+        - effect: update
           source: { param: attacker }
           pieces:
             player: { param: defenderOwner }
@@ -374,7 +372,7 @@ actions:
             select: { id: { param: defender } }
           property: defense
           value: { delta: { var: "source.property.power", negate: true } }
-        - kind: update
+        - effect: update
           source: { param: defender }
           pieces: { inventory: field, select: { id: { param: attacker } } }
           property: defense
@@ -383,16 +381,15 @@ actions:
     - id: attackPlayer
       label: Attack the opposing player
       description: Your creature strikes the other player directly.
-      inputs:
-        - id: attacker
+      steps:
+        - input: attacker
           label: Choose your attacker
           type:
             kind: gamepiece-select
             inventory: field
             ofType: creature
             fromPlayer: self
-      effects:
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           target: { kind: all-other }
           source: { param: attacker }
@@ -406,31 +403,30 @@ actions:
     - id: castFreeze
       label: Cast a freeze
       description: Freeze one of the opposing player's creatures.
-      inputs:
-        - id: card
+      steps:
+        - input: card
           label: Choose a freeze card
           type:
             kind: gamepiece-select
             inventory: hand
             ofType: spell
             fromPlayer: self
-        - id: victimOwner
+        - input: victimOwner
           label: Choose whose creature to freeze
           type:
             kind: player-select
             excludeSelf: true
-        - id: victim
+        - input: victim
           label: Choose the creature to freeze
           type:
             kind: gamepiece-select
             inventory: field
             ofType: creature
             fromPlayer: { param: victimOwner }
-      effects:
-        - kind: move
+        - effect: move
           from: { inventory: hand, select: { id: { param: card } } }
           to: { inventory: discard }
-        - kind: update
+        - effect: update
           pieces:
             player: { param: victimOwner }
             inventory: field
@@ -444,17 +440,17 @@ flow:
     label: Board Battler
     hooks:
       onEnter:
-        - ref: fillLibrary
-        - ref: shuffleLibrary
-        - ref: dealHands
-        - ref: dealDecks
-        - ref: announceStart
+        - effectRef: fillLibrary
+        - effectRef: shuffleLibrary
+        - effectRef: dealHands
+        - effectRef: dealDecks
+        - effectRef: announceStart
     winConditions:
       - rule: ranking
         property: player.property.life
         order: highest
         onVictory:
-          - kind: message
+          - effect: message
             to: all
             template: "{{game.winners[0]}} wins with the most life remaining."
     children:
@@ -480,7 +476,7 @@ flow:
                 - { kind: action, ref: castFreeze }
             hooks:
               onComplete:
-                - ref: thawAll
+                - effectRef: thawAll
 
 catalog:
   entries:

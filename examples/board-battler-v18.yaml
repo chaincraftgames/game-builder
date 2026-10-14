@@ -491,28 +491,28 @@ inventories:
 effects:
   effects:
     - id: fillLibrary
-      kind: move
+      effect: move
       from: { inventory: "game:unassigned", select: all }
       to: { inventory: library }
 
     - id: shuffleLibrary
-      kind: shuffle
+      effect: shuffle
       inventory: library
 
     - id: dealHands
-      kind: distribute
+      effect: distribute
       from: { inventory: library, select: top }
       to: { inventory: hand }
       count: 4
 
     - id: dealDecks
-      kind: distribute
+      effect: distribute
       from: { inventory: library, select: top }
       to: { inventory: deck }
       count: 16
 
     - id: announceStart
-      kind: message
+      effect: message
       to: all
       template: >-
         Both sides start at 30 life with 4 cards in hand and 16 in the deck.
@@ -530,13 +530,13 @@ effects:
     # chaincraft-runtime's own set-state executor before relying on it.
     # -------------------------------------------------------------------
     - id: turnEnergyCapUp
-      kind: set-state
+      effect: set-state
       path: player.property.energyCap
       target: { kind: all }
       value: { delta: 1 }
 
     - id: turnEnergyRefill
-      kind: set-state
+      effect: set-state
       path: player.property.energy
       target: { kind: all }
       value: { var: "player.property.energyCap" }
@@ -555,25 +555,25 @@ effects:
     # owner still acts this round (thawed at this round's end), 2 when the
     # owner's next turn is next round (thawed at the next round's end).
     - id: freezeTick
-      kind: update
+      effect: update
       pieces: { inventory: field, select: all, filter: "piece.property.frozenRounds > 0" }
       property: frozenRounds
       value: { delta: -1 }
 
     - id: thawAll
-      kind: update
+      effect: update
       pieces: { inventory: field, select: all, filter: "piece.property.frozenRounds == 0" }
       property: frozen
       value: false
 
     - id: readyAll
-      kind: update
+      effect: update
       pieces: { inventory: field, select: all }
       property: attackedThisTurn
       value: false
 
     - id: wakeAll
-      kind: update
+      effect: update
       pieces: { inventory: field, select: all }
       property: playedThisTurn
       value: false
@@ -589,7 +589,7 @@ effects:
         path: player.property.life
         direction: decrease
       effects:
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           value: { delta: 2 }
 
@@ -604,7 +604,7 @@ effects:
         path: gamepiece.property.defense
         direction: decrease
       effects:
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           value: { delta: -2 }
 
@@ -613,8 +613,8 @@ actions:
     - id: takeSeat
       label: Take a seat
       description: Runs once per player at the start, in turn order, and records that player's place in it. Never offered as a choice.
-      effects:
-        - kind: set-state
+      steps:
+        - effect: set-state
           path: player.property.seatOrder
           value: { expr: "1 + countPlayers(player.property.seatOrder > 0)" }
 
@@ -622,8 +622,8 @@ actions:
       label: Draw a card
       description: At the start of each round, draw the top card of your deck into your hand. An empty deck draws nothing.
       preconditions: "count(actor.inventory.hand) < 8 or count(actor.inventory.deck) == 0"
-      effects:
-        - kind: move
+      steps:
+        - effect: move
           from: { inventory: deck, select: top }
           to: { inventory: hand }
 
@@ -631,11 +631,11 @@ actions:
       label: Hand full
       description: Your hand is full, so the card you draw goes to the discard pile.
       preconditions: "count(actor.inventory.hand) >= 8 and count(actor.inventory.deck) > 0"
-      effects:
-        - kind: move
+      steps:
+        - effect: move
           from: { inventory: deck, select: top }
           to: { inventory: discard }
-        - kind: message
+        - effect: message
           to: actor
           template: "Your hand is full (8 cards), so the card you drew went to the discard pile."
 
@@ -644,8 +644,8 @@ actions:
       description: Put a creature from your hand onto your field. Costs energy.
       # Card 425: necessary-not-sufficient proxy, see the v3 header note.
       preconditions: "count(actor.inventory.hand) > 0 and actor.property.energy > 0"
-      inputs:
-        - id: card
+      steps:
+        - input: card
           label: Choose a creature
           type:
             kind: gamepiece-select
@@ -654,15 +654,14 @@ actions:
             fromPlayer: self
             # AFFORDABILITY, item 3 above. Same filter mechanism freeze uses.
             filter: "piece.property.cost <= actor.property.energy"
-      effects:
-        - kind: move
+        - effect: move
           from: { inventory: hand, select: { id: { param: card } } }
           to: { inventory: field }
-        - kind: update
+        - effect: update
           pieces: { inventory: field, select: { id: { param: card } } }
           property: playedThisTurn
           value: true
-        - kind: set-state
+        - effect: set-state
           path: player.property.energy
           source: { param: card }
           value: { delta: { var: "source.property.cost", negate: true } }
@@ -673,8 +672,8 @@ actions:
       # Card 425: exact on field-emptiness (playerCount is exactly 2), see
       # the v3 header note. Does not confirm the attacker is unfrozen.
       preconditions: "all(count(player.inventory.field) > 0)"
-      inputs:
-        - id: attacker
+      steps:
+        - input: attacker
           label: Choose your attacker
           type:
             kind: gamepiece-select
@@ -682,24 +681,23 @@ actions:
             ofType: creature
             fromPlayer: self
             filter: "piece.property.frozen == false and piece.property.attackedThisTurn == false and piece.property.playedThisTurn == false"
-        - id: defenderOwner
+        - input: defenderOwner
           label: Choose whose creature to attack
           type:
             kind: player-select
             excludeSelf: true
-        - id: defender
+        - input: defender
           label: Choose the creature to attack
           type:
             kind: gamepiece-select
             inventory: field
             ofType: creature
             fromPlayer: { param: defenderOwner }
-      effects:
-        - kind: update
+        - effect: update
           pieces: { inventory: field, select: { id: { param: attacker } } }
           property: attackedThisTurn
           value: true
-        - kind: update
+        - effect: update
           source: { param: attacker }
           pieces:
             player: { param: defenderOwner }
@@ -707,7 +705,7 @@ actions:
             select: { id: { param: defender } }
           property: defense
           value: { delta: { var: "source.property.power", negate: true } }
-        - kind: update
+        - effect: update
           source: { param: defender }
           pieces: { inventory: field, select: { id: { param: attacker } } }
           property: defense
@@ -718,7 +716,7 @@ actions:
         # omitted defaults to the acting player, the attacker — this default
         # applies to an ACTION's own effects, which do carry an actorId,
         # unlike the hook effects in item 1/2 above).
-        - kind: move
+        - effect: move
           from:
             player: { param: defenderOwner }
             inventory: field
@@ -726,7 +724,7 @@ actions:
             ofType: creature
             filter: "piece.property.defense <= 0"
           to: { inventory: discard }
-        - kind: move
+        - effect: move
           from:
             inventory: field
             select: all
@@ -739,8 +737,8 @@ actions:
       description: Your creature strikes the other player directly.
       # Card 425: necessary-not-sufficient proxy, see the v3 header note.
       preconditions: "count(actor.inventory.field) > 0"
-      inputs:
-        - id: attacker
+      steps:
+        - input: attacker
           label: Choose your attacker
           type:
             kind: gamepiece-select
@@ -748,12 +746,11 @@ actions:
             ofType: creature
             fromPlayer: self
             filter: "piece.property.frozen == false and piece.property.attackedThisTurn == false and piece.property.playedThisTurn == false"
-      effects:
-        - kind: update
+        - effect: update
           pieces: { inventory: field, select: { id: { param: attacker } } }
           property: attackedThisTurn
           value: true
-        - kind: set-state
+        - effect: set-state
           path: player.property.life
           target: { kind: all-other }
           source: { param: attacker }
@@ -770,8 +767,8 @@ actions:
       # holds a creature and the opponent's is empty -- self/other is not
       # distinguishable at this pin, see the header note).
       preconditions: "count(actor.inventory.hand) > 0 and actor.property.energy > 0 and any(count(player.inventory.field) > 0)"
-      inputs:
-        - id: card
+      steps:
+        - input: card
           label: Choose a freeze card
           type:
             kind: gamepiece-select
@@ -779,37 +776,36 @@ actions:
             ofType: spell
             fromPlayer: self
             filter: "piece.property.cost <= actor.property.energy"
-        - id: victimOwner
+        - input: victimOwner
           label: Choose whose creature to freeze
           type:
             kind: player-select
             excludeSelf: true
-        - id: victim
+        - input: victim
           label: Choose the creature to freeze
           type:
             kind: gamepiece-select
             inventory: field
             ofType: creature
             fromPlayer: { param: victimOwner }
-      effects:
-        - kind: move
+        - effect: move
           from: { inventory: hand, select: { id: { param: card } } }
           to: { inventory: discard }
-        - kind: update
+        - effect: update
           pieces:
             player: { param: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozen
           value: true
-        - kind: update
+        - effect: update
           pieces:
             player: { param: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozenRounds
           value: { expr: "actor.property.seatOrder" }
-        - kind: set-state
+        - effect: set-state
           path: player.property.energy
           source: { param: card }
           value: { delta: { var: "source.property.cost", negate: true } }
@@ -820,11 +816,11 @@ flow:
     label: Board Battler v3
     hooks:
       onEnter:
-        - ref: fillLibrary
-        - ref: shuffleLibrary
-        - ref: dealHands
-        - ref: dealDecks
-        - ref: announceStart
+        - effectRef: fillLibrary
+        - effectRef: shuffleLibrary
+        - effectRef: dealHands
+        - effectRef: dealDecks
+        - effectRef: announceStart
     winConditions:
       - rule: ranking
         property: player.property.life
@@ -832,7 +828,7 @@ flow:
         # v10: both at 0 at the same check means nobody survived, so nobody wins.
         tiebreak: no-winner
         onVictory:
-          - kind: message
+          - effect: message
             to: all
             template: "{{game.winners[0]}} wins with the most life remaining."
     children:
@@ -895,13 +891,13 @@ flow:
                   - { kind: action, ref: castFreeze }
             hooks:
               onEnter:
-                - ref: turnEnergyCapUp
-                - ref: turnEnergyRefill
+                - effectRef: turnEnergyCapUp
+                - effectRef: turnEnergyRefill
               onComplete:
-                - ref: freezeTick
-                - ref: thawAll
-                - ref: readyAll
-                - ref: wakeAll
+                - effectRef: freezeTick
+                - effectRef: thawAll
+                - effectRef: readyAll
+                - effectRef: wakeAll
 
 catalog:
   entries:

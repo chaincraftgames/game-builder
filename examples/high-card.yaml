@@ -104,7 +104,7 @@ inventories:
 effects:
   effects:
     - id: fillDeck
-      kind: move
+      effect: move
       from:
         inventory: "game:unassigned"
         select: all
@@ -113,11 +113,11 @@ effects:
         inventory: deck
 
     - id: shuffleDeck
-      kind: shuffle
+      effect: shuffle
       inventory: deck
 
     - id: dealCards
-      kind: distribute
+      effect: distribute
       from:
         inventory: deck
         select: top
@@ -127,12 +127,12 @@ effects:
       count: 3
 
     - id: announceStart
-      kind: message
+      effect: message
       to: all
       template: "Cards dealt. Highest card takes the trick — most tricks wins!"
 
     - id: awardTrick
-      kind: set-state
+      effect: set-state
       path: player.property.score
       value:
         delta: 1
@@ -141,12 +141,12 @@ effects:
         path: game.property.roundWinner
 
     - id: announceTrick
-      kind: message
+      effect: message
       to: all
       template: "{{state.game.property.roundWinner}} takes the trick!"
 
     - id: clearTable
-      kind: move
+      effect: move
       from:
         inventory: table
         select: all
@@ -155,7 +155,7 @@ effects:
         inventory: discard
 
     - id: resetRoundWinner
-      kind: set-state
+      effect: set-state
       path: game.property.roundWinner
       value: ""
 
@@ -164,16 +164,15 @@ actions:
     - id: playCard
       label: Play a Card
       description: Play one card from your hand to the table.
-      inputs:
-        - id: card
+      steps:
+        - input: card
           label: Choose a card to play
           type:
             kind: gamepiece-select
             inventory: hand
             ofType: card
             fromPlayer: self
-      effects:
-        - kind: move
+        - effect: move
           from:
             inventory: hand
             select:
@@ -188,16 +187,16 @@ flow:
     label: High Card
     hooks:
       onEnter:
-        - ref: fillDeck
-        - ref: shuffleDeck
-        - ref: dealCards
-        - ref: announceStart
+        - effectRef: fillDeck
+        - effectRef: shuffleDeck
+        - effectRef: dealCards
+        - effectRef: announceStart
     winConditions:
       - rule: ranking
         property: player.property.score
         order: highest
         onVictory:
-          - kind: message
+          - effect: message
             to: all
             template: "The winner is {{game.winners[0]}}!"
     children:
@@ -220,11 +219,11 @@ flow:
               ref: playCard
             hooks:
               onComplete:
-                - ref: "chaincraft:dominant-gamepiece:resolve" # writes game.property.roundWinner
-                - ref: awardTrick
-                - ref: announceTrick
-                - ref: clearTable
-                - ref: resetRoundWinner
+                - effectRef: "chaincraft:dominant-gamepiece:resolve" # writes game.property.roundWinner
+                - effectRef: awardTrick
+                - effectRef: announceTrick
+                - effectRef: clearTable
+                - effectRef: resetRoundWinner
 
 mechanics:
   - kind: chaincraft:dominant-gamepiece

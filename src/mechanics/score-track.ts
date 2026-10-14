@@ -11,8 +11,8 @@
  *     Game-scoped line inventory of length trackLength. Not in inventories module.
  *   Gamepiece types: "chaincraft:score-track:<id>:marker"   (mechanic-owned)
  *     Score marker piece — one instance per player or team. Not in gamepiece-types.
- *   Effects (by ref):
- *     { ref: "chaincraft:score-track:<id>:advance", params: { delta: N } }
+ *   Effects (by effectRef):
+ *     { effectRef: "chaincraft:score-track:<id>:advance", params: { delta: N } }
  *     Moves the actor's marker N positions forward. Call from actions or flow hooks
  *     whenever a player/team scores points.
  *   Setup effect (auto-injected):

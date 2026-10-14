@@ -18,7 +18,7 @@ describe("PlayersModuleSchema — role passives", () => {
               id: "divine-protection",
               trigger: { kind: "state-write", scope: "target", path: "player.property.hp", direction: "decrease" },
               effects: [
-                { kind: "adjust", adjustment: { delta: 1 } },
+                { effect: "adjust", adjustment: { delta: 1 } },
               ],
             },
           ],
@@ -42,7 +42,7 @@ describe("PlayersModuleSchema — role passives", () => {
               trigger: { kind: "state-write", scope: "actor", path: "player.property.hp", direction: "decrease" },
               effects: [
                 {
-                  kind: "adjust",
+                  effect: "adjust",
                   adjustment: { delta: { var: "player.property.rage", negate: true } },
                 },
               ],

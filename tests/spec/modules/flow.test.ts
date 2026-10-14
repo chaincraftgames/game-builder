@@ -45,7 +45,7 @@ describe("FlowModuleSchema — Liar's Dice", () => {
   const liarsFlow = {
     root: {
       kind: "game",
-      hooks: { onEnter: [{ ref: "dealDice" }] },
+      hooks: { onEnter: [{ effectRef: "dealDice" }] },
       interruptWindows: [
         {
           id: "stealResponse",
@@ -144,7 +144,7 @@ describe("FlowModuleSchema — Werewolf", () => {
               actor: "all-players",
               grammar: { kind: "action", ref: "voteEliminate" },
               hooks: {
-                onComplete: [{ ref: "revealEliminated" }, { ref: "removeEliminated" }],
+                onComplete: [{ effectRef: "revealEliminated" }, { effectRef: "removeEliminated" }],
               },
             },
           ],

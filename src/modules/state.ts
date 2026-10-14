@@ -9,7 +9,7 @@
  * Physical state (piece positions, properties, face states) belongs in the
  * gamepieceTypes + inventories modules. Abstract state belongs here.
  *
- * State is mutated by `kind: set-state` effects and read in JSON Logic
+ * State is mutated by `effect: set-state` effects and read in JSON Logic
  * preconditions and flow endConditions via dot-paths:
  *   game.property.<id>           → game-scoped state
  *   player.property.<id>         → per-player state (resolved per acting player)

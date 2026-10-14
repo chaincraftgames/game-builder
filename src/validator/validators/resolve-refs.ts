@@ -6,7 +6,7 @@
  * ordering in index.ts: consumers reference producers, never the other way.
  *
  * Rules:
- *   - actions[*].effects[*].ref        → must exist in effects.effects[*].id
+ *   - actions[*].steps[*].effectRef    → must exist in effects.effects[*].id
  *   - mechanics[*] (dominantGamepiece).evaluationInventory → must exist in inventories.types[*].id
  *   - gamepieceTypes[*].mechanics[*] (charges).action → must exist in actions.actions[*].id
  *   - gamepieceTypes[*].mechanics[*].availableInSubflows[*] → must exist as a flow node ID
@@ -46,16 +46,14 @@ export class ResolveRefsValidator implements SpecValidator {
     const flowNodeIds = new Set<string>();
     if (spec.flow?.root) collectFlowNodeIds(spec.flow.root, flowNodeIds);
 
-    // actions: effect call refs must exist in effects
+    // actions: effectRef steps must exist in effects
     spec.actions?.actions?.forEach((action, ai) => {
-      action.effects?.forEach((call, ci) => {
-        if (typeof call === "object" && call !== null && "ref" in call && call.ref) {
-          if (!effectIds.has(call.ref as string)) {
-            errors.push({
-              path: `actions.actions[${ai}].effects[${ci}].ref`,
-              message: `Effect ref "${call.ref}" not found in effects module`,
-            });
-          }
+      action.steps.forEach((step, si) => {
+        if ("effectRef" in step && !effectIds.has(step.effectRef)) {
+          errors.push({
+            path: `actions.actions[${ai}].steps[${si}].effectRef`,
+            message: `Effect ref "${step.effectRef}" not found in effects module`,
+          });
         }
       });
     });

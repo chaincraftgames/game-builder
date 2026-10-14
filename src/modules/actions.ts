@@ -1,24 +1,27 @@
 /**
  * Actions Module Schema
  *
- * Depends on: effects (EffectCallsSchema).
+ * Depends on: effects (EffectSchema, EffectCallRefSchema).
  * Referenced by: flow (phases list available actions by ID),
  *                gamepiece-types (actionSlots reference action IDs via catalog),
  *                mechanics (mechanic patterns may trigger actions).
  *
  * An action is a named, player-initiatable operation. Actions declare WHAT a player
- * does; effects declare HOW the game state changes. Every action carries an effects
- * list — inline effects, named-effect refs, or both.
+ * does; effects declare HOW the game state changes. Every action carries an ordered
+ * steps list — input steps (player-provided values), inline effect steps, and
+ * named-effect refs.
  *
  * Key design decisions:
- * - No pattern discriminator. Every action has the same shape: id + optional inputs
- *   + effects. The effects list determines what actually happens.
+ * - No pattern discriminator. Every action has the same shape: id + steps.
+ *   The effect steps determine what actually happens.
  * - Prose logic belongs in a prose effect, not a special action kind.
  * - Resource conversions are expressed as move effects (take from source, add to dest).
  *   If the engine needs to validate availability first, that's a prose effect.
- * - Actions may declare 'inputs[]' — typed, player-provided values collected at
- *   action time. Inline effects in the same action can use { param: id } in
- *   PropertyValue to reference those values. Engine resolves by name — no bind map.
+ * - Each step has exactly one of 'input: <id>' (a typed, player-provided value),
+ *   'effect: <kind>' (an inline effect), or 'effectRef: <id>' (a named effect).
+ *   Inline effects can use { param: id } in PropertyValue to reference an input step's
+ *   value. Engine resolves by name — no bind map. Every action needs at least one
+ *   effect step. Currently all input steps must come before the first effect step.
  * - 'preconditions' is an infix expression evaluated against runtime state before
  *   the action is offered. State paths: 'actor.property.<id>',
  *   'actor.inventory.<id>.count', 'game.property.<id>', 'game.inventory.<id>.count'.
@@ -47,48 +50,46 @@
  * actions:
  *   - id: makeBid
  *     label: Make Bid
- *     inputs:
- *       - id: quantity
+ *     steps:
+ *       - input: quantity
  *         type: { kind: number, min: 1, max: 30 }
  *         label: Quantity
- *       - id: faceValue
+ *       - input: faceValue
  *         type: { kind: number, min: 1, max: 6 }
  *         label: Face Value
  *         validation: >-
  *           input.quantity > game.property.bidQuantity or
  *           (input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)
  *         validationMessage: Bid a higher quantity, or the same quantity with a higher face
- *     effects:
- *       - kind: update
+ *       - effect: update
  *         pieces: { inventory: currentBid, select: top }
  *         property: quantity
  *         value: { param: quantity }
- *       - kind: update
+ *       - effect: update
  *         pieces: { inventory: currentBid, select: top }
  *         property: faceValue
  *         value: { param: faceValue }
  *
  *   - id: drawCard
  *     label: Draw Card
- *     effects:
- *       - ref: drawFromDeck
+ *     steps:
+ *       - effectRef: drawFromDeck
  *     oncePerTurn: true
  *
  *   - id: discardChosen
  *     label: Discard
- *     inputs:
- *       - id: card
+ *     steps:
+ *       - input: card
  *         type: { kind: gamepiece-select, inventory: playerHand }
  *         label: Choose card to discard
- *     effects:
- *       - kind: move
+ *       - effect: move
  *         from: { inventory: playerHand, select: { id: { param: card } } }
  *         to: { inventory: discardPile, at: { kind: stack-top } }
  *
  *   - id: resolveBattle
  *     label: Resolve Battle
- *     effects:
- *       - kind: custom
+ *     steps:
+ *       - effect: custom
  *         description: >
  *           Compare power totals of all face-up cards in each player's combat zone.
  *           The player with the higher total wins the round and scores 1 point.
@@ -97,51 +98,51 @@
  */
 
 import { z } from "zod";
-import { EffectCallsSchema } from "./effects.js";
-import { ConditionExpressionSchema, IdentifierSchema } from "./common.js";
+import { EffectCallRefSchema, EffectSchema } from "./effects.js";
+import { ConditionExpressionSchema, IdentifierSchema, keyedUnion } from "./common.js";
 
 // ---------------------------------------------------------------------------
-// Action input (player-provided values collected when action is taken)
+// Input step (player-provided value collected when action is taken)
 // ---------------------------------------------------------------------------
 
 /**
  * @example
  * ```yaml
- * inputs:
- *   - id: quantity
+ * steps:
+ *   - input: quantity
  *     type: { kind: number, min: 1, max: 30 }
  *     label: Quantity
- *   - id: faceValue
+ *   - input: faceValue
  *     type: { kind: number, min: 1, max: 6 }
  *     label: Face Value
  *     validation: >-
  *       input.quantity > game.property.bidQuantity or
  *       (input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)
  *     validationMessage: Bid a higher quantity, or the same quantity with a higher face
- *   - id: targetPlayer
+ *   - input: targetPlayer
  *     type: { kind: enum, values: [player1, player2, player3, player4] }
  *     label: Target Player
- *   - id: attacker
+ *   - input: attacker
  *     type: { kind: effect-originator }
  *     label: Attacker
  *     # engine auto-populates; effects reference via { param: attacker }
- *   - id: chosenCard
+ *   - input: chosenCard
  *     type: { kind: gamepiece-select, inventory: playerHand }
  *     label: Choose Card to Play
- *   - id: targetCreature
+ *   - input: targetCreature
  *     type: { kind: gamepiece-select, inventory: battlefield, ofType: creature, fromPlayer: { param: targetPlayer } }
  *     label: Choose Creature to Attack
- *   - id: opponent
+ *   - input: opponent
  *     type: { kind: player-select, excludeSelf: true }
  *     label: Choose Opponent
- *   - id: targetCell
+ *   - input: targetCell
  *     type: { kind: inventory-position, inventory: battleGrid }
  *     label: Choose Placement
  * ```
  */
 export const ActionInputSchema = z
   .object({
-    id: IdentifierSchema.describe(
+    input: IdentifierSchema.describe(
         "Unique identifier for this input within the action. " +
           "Inline effects in the same action reference it via { param: id } in PropertyValue.",
       ),
@@ -182,7 +183,7 @@ export const ActionInputSchema = z
               z.literal("self").describe("Acting player's own inventory instance (default)."),
               z.object({ param: z.string() }).describe(
                 "Player identified by a prior player-select input. " +
-                  "References the input id of a player-select input declared earlier in the inputs array.",
+                  "References the input id of a player-select input step declared earlier in the action.",
               ),
             ])
             .optional()
@@ -280,6 +281,23 @@ export const ActionInputSchema = z
   );
 
 // ---------------------------------------------------------------------------
+// Action step
+// ---------------------------------------------------------------------------
+
+/**
+ * One step of an action: an input step (`input: <id>`), an inline effect step
+ * (`effect: <kind>`), or a named-effect step (`effectRef: <id>`).
+ */
+export const ActionStepSchema = keyedUnion({
+  input: ActionInputSchema,
+  effect: EffectSchema,
+  effectRef: EffectCallRefSchema,
+}).describe(
+  "One action step. Exactly one of: 'input: <id>' (player-supplied value), " +
+    "'effect: <kind>' (inline effect), or 'effectRef: <id>' (named effect).",
+);
+
+// ---------------------------------------------------------------------------
 // Action schema
 // ---------------------------------------------------------------------------
 
@@ -288,20 +306,19 @@ export const ActionInputSchema = z
  * ```yaml
  * id: drawCard
  * label: Draw Card
- * effects:
- *   - ref: drawFromDeck
+ * steps:
+ *   - effectRef: drawFromDeck
  * oncePerTurn: true
  * ```
  * @example Discard a chosen card (gamepiece-select input)
  * ```yaml
  * id: discardChosen
  * label: Discard
- * inputs:
- *   - id: card
+ * steps:
+ *   - input: card
  *     type: { kind: gamepiece-select, inventory: playerHand }
  *     label: Choose card to discard
- * effects:
- *   - kind: move
+ *   - effect: move
  *     from: { inventory: playerHand, select: { id: { param: card } } }
  *     to: { inventory: discardPile, at: { kind: stack-top } }
  * ```
@@ -309,15 +326,14 @@ export const ActionInputSchema = z
  * ```yaml
  * id: deployUnit
  * label: Deploy Unit
- * inputs:
- *   - id: unit
+ * steps:
+ *   - input: unit
  *     type: { kind: gamepiece-select, inventory: reserves, ofType: soldier }
  *     label: Choose unit to deploy
- *   - id: cell
+ *   - input: cell
  *     type: { kind: inventory-position, inventory: battleGrid }
  *     label: Choose deployment position
- * effects:
- *   - kind: move
+ *   - effect: move
  *     from: { inventory: reserves, select: { id: { param: unit } } }
  *     to: { inventory: battleGrid, at: { param: cell } }
  * ```
@@ -325,15 +341,14 @@ export const ActionInputSchema = z
  * ```yaml
  * id: stealCard
  * label: Steal Card
- * inputs:
- *   - id: target
+ * steps:
+ *   - input: target
  *     type: { kind: player-select, excludeSelf: true }
  *     label: Choose opponent
- *   - id: card
+ *   - input: card
  *     type: { kind: gamepiece-select, inventory: playerHand, fromPlayer: { param: target } }
  *     label: Choose card to steal
- * effects:
- *   - kind: move
+ *   - effect: move
  *     from: { player: { param: target }, inventory: playerHand, select: { id: { param: card } } }
  *     to: { inventory: playerHand }
  * ```
@@ -341,21 +356,20 @@ export const ActionInputSchema = z
  * ```yaml
  * id: makeBid
  * label: Make Bid
- * inputs:
- *   - id: quantity
+ * steps:
+ *   - input: quantity
  *     type: { kind: number, min: 1, max: 30 }
- *   - id: faceValue
+ *   - input: faceValue
  *     type: { kind: number, min: 1, max: 6 }
  *     validation: >-
  *       input.quantity > game.property.bidQuantity or
  *       (input.quantity == game.property.bidQuantity and input.faceValue > game.property.bidFace)
  *     validationMessage: Bid a higher quantity, or the same quantity with a higher face
- * effects:
- *   - kind: update
+ *   - effect: update
  *     pieces: { inventory: currentBid, select: top }
  *     property: quantity
  *     value: { param: quantity }
- *   - kind: update
+ *   - effect: update
  *     pieces: { inventory: currentBid, select: top }
  *     property: faceValue
  *     value: { param: faceValue }
@@ -364,8 +378,8 @@ export const ActionInputSchema = z
  * ```yaml
  * id: resolveBattle
  * label: Resolve Battle
- * effects:
- *   - kind: custom
+ * steps:
+ *   - effect: custom
  *     description: >
  *       Compare power totals of all face-up cards in each player's combat zone.
  *       Higher total wins and scores 1 point. On a tie no points scored; both draw.
@@ -378,12 +392,11 @@ export const ActionInputSchema = z
  * reactive:
  *   trigger: dealDamage      # named effect ID in effects module
  *   timing: before            # fires before the effect resolves
- * inputs:
- *   - id: attacker
+ * steps:
+ *   - input: attacker
  *     type: { kind: effect-originator }  # engine auto-populates with triggering player
  *     label: Attacker
- * effects:
- *   - kind: cancel-effect     # void the triggering effect entirely
+ *   - effect: cancel-effect   # void the triggering effect entirely
  * ```
  * @example Reactive adjust — reduce incoming damage by armor rating (var delta)
  * ```yaml
@@ -392,8 +405,8 @@ export const ActionInputSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { delta: { var: "player.property.armorRating" } }
  * ```
  * @example Reactive adjust — halve incoming damage (literal mult)
@@ -403,8 +416,8 @@ export const ActionInputSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: before
- * effects:
- *   - kind: adjust
+ * steps:
+ *   - effect: adjust
  *     adjustment: { mult: 0.5 }
  * ```
  * @example Reactive counter-attack — damage the creature that attacked you
@@ -414,13 +427,12 @@ export const ActionInputSchema = z
  * reactive:
  *   trigger: dealDamage
  *   timing: after
- * inputs:
- *   - id: attacker
+ * steps:
+ *   - input: attacker
  *     type: { kind: effect-originator }
- *   - id: attackingCreature
+ *   - input: attackingCreature
  *     type: { kind: trigger-input, inputId: creature }  # piece from triggering action's "creature" input
- * effects:
- *   - kind: update
+ *   - effect: update
  *     pieces: { inventory: battlefield, select: { id: { param: attackingCreature } } }
  *     property: hp
  *     value: { delta: -2 }
@@ -432,24 +444,24 @@ export const ActionInputSchema = z
  * reactive:
  *   trigger: takeDamage      # named effect ID in effects module
  *   timing: after             # fires after effect resolves
- * effects:
- *   - ref: healOneHp
+ * steps:
+ *   - effectRef: healOneHp
  * ```
  * @example Precondition — can only challenge if a bid has been made
  * ```yaml
  * id: challenge
  * label: Challenge
  * preconditions: "game.inventory.currentBid.count != 0"
- * effects:
- *   - ref: resolveChallenge
+ * steps:
+ *   - effectRef: resolveChallenge
  * ```
  * @example Precondition — can only buy if actor can afford it
  * ```yaml
  * id: buyCard
  * label: Buy Card
  * preconditions: "actor.property.coins >= 3"
- * effects:
- *   - ref: purchaseCard
+ * steps:
+ *   - effectRef: purchaseCard
  * ```
  */
 export const ActionSchema = z
@@ -541,22 +553,23 @@ export const ActionSchema = z
           "Games using reactive actions should define triggering effects as named effects " +
           "in the effects module so they can be referenced here.",
       ),
-    inputs: z
-      .array(ActionInputSchema)
-      .optional()
+    steps: z
+      .array(ActionStepSchema)
+      .min(1)
+      .refine((steps) => steps.some((s) => !("input" in s)), {
+        message: "An action needs at least one effect or effectRef step.",
+      })
       .describe(
-        "Typed values the player supplies when taking this action. " +
-          "Inline effects in this action can reference them via { param: id } in PropertyValue. " +
-          "Omit for actions that require no player input beyond choosing to act.",
+        "Ordered steps executed when this action is taken. Input steps ('input: <id>') " +
+          "collect typed player-supplied values; inline effects reference them via " +
+          "{ param: id } in PropertyValue. Effect steps ('effect: <kind>' inline, or " +
+          "'effectRef: <id>' named) change game state. At least one effect step is required. " +
+          "Currently all input steps must come before the first effect step.",
       ),
-    effects: EffectCallsSchema.describe(
-      "Ordered list of effect calls to execute when this action resolves. " +
-        "Each entry is a named-effect reference ({ ref }) or an inline effect ({ kind, ... }).",
-    ),
   })
   .describe(
-    "A named, player-initiatable game operation. The action declares what the player does; " +
-      "the effects list declares how the game state changes. " +
+    "A named, player-initiatable game operation. Input steps declare what the player supplies; " +
+      "effect steps declare how the game state changes. " +
       "Referenced by flow phases (which actions are available) and gamepiece action slots.",
   );
 
@@ -581,5 +594,6 @@ export const ActionsModuleSchema = z
 // ---------------------------------------------------------------------------
 
 export type ActionInput = z.infer<typeof ActionInputSchema>;
+export type ActionStep = z.infer<typeof ActionStepSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 export type ActionsModule = z.infer<typeof ActionsModuleSchema>;

@@ -76,7 +76,7 @@ inventories:
 effects:
   effects:
     - id: dealDice
-      kind: distribute
+      effect: distribute
       from:
         inventory: "game:unassigned"
         select: top
@@ -87,51 +87,51 @@ effects:
       count: 5
 
     - id: rollAllDice
-      kind: roll
+      effect: roll
       pieces:
         inventory: playerCup
         select: all
 
     - id: revealAllDice
-      kind: reveal
+      effect: reveal
       pieces:
         inventory: playerCup
         select: all
       to: all
 
     - id: hideAllDice
-      kind: hide
+      effect: hide
       pieces:
         inventory: playerCup
         select: all
 
     - id: resetBid
-      kind: set-state
+      effect: set-state
       path: game.property.currentBidQuantity
       value: 0
 
     - id: resetBidFace
-      kind: set-state
+      effect: set-state
       path: game.property.currentBidFace
       value: 0
 
     - id: resetBidder
-      kind: set-state
+      effect: set-state
       path: game.property.currentBidder
       value: ""
 
     - id: resetChallengeMade
-      kind: set-state
+      effect: set-state
       path: game.property.challengeMade
       value: false
 
     - id: setChallengeMade
-      kind: set-state
+      effect: set-state
       path: game.property.challengeMade
       value: true
 
     - id: resolveChallenge
-      kind: custom
+      effect: custom
       description: >-
         Count all dice across every player's playerCup where face equals
         game.property.currentBidFace. If the total count is greater than or
@@ -141,7 +141,7 @@ effects:
         value of game.property.currentBidder.
 
     - id: eliminateDie
-      kind: move
+      effect: move
       from:
         player:
           stateRef: game.property.roundLoser
@@ -152,7 +152,7 @@ effects:
         inventory: "game:unassigned"
 
     - id: checkElimination
-      kind: set-state
+      effect: set-state
       path: player.property.eliminated
       value: true
       target:
@@ -166,14 +166,14 @@ actions:
       description: >-
         Declare how many dice across all players show a given face value.
         Must be strictly higher than the previous bid.
-      inputs:
-        - id: quantity
+      steps:
+        - input: quantity
           label: Quantity
           type:
             kind: number
             min: 1
             max: 30
-        - id: faceValue
+        - input: faceValue
           label: Face Value
           type:
             kind: number
@@ -185,20 +185,19 @@ actions:
             input.faceValue > game.property.currentBidFace)
           validationMessage: >-
             Bid a higher quantity, or the same quantity with a higher face value.
-      effects:
-        - kind: set-state
+        - effect: set-state
           path: game.property.currentBidQuantity
           value:
             param: quantity
-        - kind: set-state
+        - effect: set-state
           path: game.property.currentBidFace
           value:
             param: faceValue
-        - kind: set-state
+        - effect: set-state
           path: game.property.currentBidder
           value:
             actor: true
-        - kind: message
+        - effect: message
           to: all
           template: >-
             {{actor.name}} bids {{input.quantity}} dice showing
@@ -210,13 +209,13 @@ actions:
         Call out the current bid as a lie. Reveals all dice to all players,
         resolves the round, then waits for a player to start the next round.
       preconditions: "game.property.currentBidQuantity != 0"
-      effects:
-        - ref: revealAllDice
-        - ref: resolveChallenge
-        - ref: eliminateDie
-        - ref: checkElimination
-        - ref: setChallengeMade
-        - kind: message
+      steps:
+        - effectRef: revealAllDice
+        - effectRef: resolveChallenge
+        - effectRef: eliminateDie
+        - effectRef: checkElimination
+        - effectRef: setChallengeMade
+        - effect: message
           to: all
           template: >-
             {{actor.name}} challenges the bid of
@@ -229,26 +228,26 @@ actions:
       description: >-
         Hide the dice, roll for the next round, and reset the bid. Use
         this after reviewing the results of a challenge.
-      effects:
-        - ref: hideAllDice
-        - ref: rollAllDice
-        - ref: resetBid
-        - ref: resetBidFace
-        - ref: resetBidder
-        - ref: resetChallengeMade
+      steps:
+        - effectRef: hideAllDice
+        - effectRef: rollAllDice
+        - effectRef: resetBid
+        - effectRef: resetBidFace
+        - effectRef: resetBidder
+        - effectRef: resetChallengeMade
 
 flow:
   root:
     kind: game
     hooks:
       onEnter:
-        - ref: dealDice        # once at game start — dice stay in cups all game
-        - ref: rollAllDice    # initial roll before the first round
+        - effectRef: dealDice        # once at game start — dice stay in cups all game
+        - effectRef: rollAllDice    # initial roll before the first round
     winConditions:
       - rule: condition
         condition: "not player.property.eliminated"
         onVictory:
-          - kind: message
+          - effect: message
             to: all
             template: "{{game.winners[0]}} wins Liar's Dice — the last player with dice remaining!"
     children:

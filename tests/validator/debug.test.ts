@@ -26,8 +26,8 @@ test("debug - availableInSubflows", () => {
   const result = validate({
     metadata: META,
     flow: { root: { kind: "loop", count: 1, children: [DUMMY_TURN] } },
-    effects: { effects: [{ id: "use-e", kind: "move", from: { inventory: "src", select: "top" }, to: { inventory: "dst" } }] },
-    actions: { actions: [{ id: "use-ability", label: "use-ability", description: "use", effects: [{ ref: "use-e" }] }] },
+    effects: { effects: [{ id: "use-e", effect: "move", from: { inventory: "src", select: "top" }, to: { inventory: "dst" } }] },
+    actions: { actions: [{ id: "use-ability", label: "use-ability", description: "use", steps: [{ effectRef: "use-e" }] }] },
     gamepieceTypes: {
       types: [
         {

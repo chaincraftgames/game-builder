@@ -101,7 +101,7 @@
  *   kind: game
  *   hooks:
  *     onEnter:                          # game setup — runs once before first turn
- *       - kind: distribute              # give each player 5 dice from game:unassigned
+ *       - effect: distribute            # give each player 5 dice from game:unassigned
  *         from: { inventory: game:unassigned, select: top, ofType: die }
  *         to: { inventory: playerDiceCup }
  *         count: 5
@@ -168,8 +168,8 @@
  *             ref: voteEliminate
  *           hooks:
  *             onComplete:
- *               - ref: revealEliminated
- *               - ref: removeEliminated
+ *               - effectRef: revealEliminated
+ *               - effectRef: removeEliminated
  * ```
  */
 
@@ -973,7 +973,7 @@ const onVictoryField = {
  *   - rule: ranking
  *     property: player.property.score
  *     onVictory:
- *       - ref: announce-winner
+ *       - effectRef: announce-winner
  * ```
  * @example Lowest penalty wins (golf)
  * ```yaml
@@ -1018,7 +1018,7 @@ const RankingWinConditionSchema = z.object({
  *   - rule: condition
  *     condition: "player.inventory.escaped.count >= 1"
  *     onVictory:
- *       - ref: announce-escapees
+ *       - effectRef: announce-escapees
  * ```
  * @example Best-of — player who won enough rounds wins
  * ```yaml
@@ -1051,13 +1051,13 @@ const ConditionWinConditionSchema = z.object({
  *     winners:
  *       roles: [werewolf]
  *     onVictory:
- *       - ref: wolves-win-ceremony
+ *       - effectRef: wolves-win-ceremony
  *   - rule: role-condition
  *     condition: "game.property.wolfCount < game.property.villagerCount"
  *     winners:
  *       roles: [villager]
  *     onVictory:
- *       - ref: villagers-win-ceremony
+ *       - effectRef: villagers-win-ceremony
  * ```
  */
 const RoleConditionWinConditionSchema = z.object({
@@ -1116,13 +1116,13 @@ export const WinConditionSchema = z
  *   kind: game
  *   hooks:
  *     onEnter:
- *       - ref: deal-dice        # runs once at game start
+ *       - effectRef: deal-dice  # runs once at game start
  *   children:
  *     - kind: loop
  *       endCondition: "countPlayers(not player.property.eliminated) <= 1"
  *       hooks:
  *         onEnter:
- *           - ref: roll-all-dice
+ *           - effectRef: roll-all-dice
  *       children:
  *         - kind: turn
  *           actor: all-players

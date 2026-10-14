@@ -16,7 +16,7 @@ const META = { name: "Test Game", playerCount: { min: 2, max: 2 } };
 function makeEffect(id: string) {
   return {
     id,
-    kind: "move",
+    effect: "move",
     from: { inventory: "src", select: "top" },
     to: { inventory: "dst" },
   };
@@ -28,7 +28,7 @@ function makeAction(id: string, effectRef?: string) {
     id,
     label: id,
     description: `${id} action`,
-    effects: [{ ref: effectRef ?? id }],
+    steps: [{ effectRef: effectRef ?? id }],
   };
 }
 
@@ -445,7 +445,7 @@ describe("Catalog binding validation", () => {
           passives: [{
             id: "armorAbsorb",
             trigger: { kind: "state-write", scope: "target", path: "player.property.hp", direction: "decrease" },
-            effects: [{ kind: "cancel-effect" }],
+            effects: [{ effect: "cancel-effect" }],
           }],
         },
         gamepieceTypes: {
@@ -468,7 +468,7 @@ describe("Catalog binding validation", () => {
           passives: [{
             id: "armorAbsorb",
             trigger: { kind: "state-write", scope: "target", path: "player.property.hp", direction: "decrease" },
-            effects: [{ kind: "cancel-effect" }],
+            effects: [{ effect: "cancel-effect" }],
           }],
         },
         gamepieceTypes: {
@@ -494,7 +494,7 @@ describe("Catalog binding validation", () => {
           entries: [{
             typeId: "card",
             actionBindings: {
-              "playEffect": { label: "Inline Play", effects: [{ ref: "e1" }] },
+              "playEffect": { label: "Inline Play", steps: [{ effectRef: "e1" }] },
             },
           }],
         },
@@ -577,8 +577,8 @@ describe("Duplicate passive ID detection", () => {
         effects: {
           effects: [makeEffect("e1")],
           passives: [
-            { id: "armor", trigger: { kind: "state-write", scope: "target", path: "player.property.hp", direction: "decrease" }, effects: [{ kind: "cancel-effect" }] },
-            { id: "armor", trigger: { kind: "state-write", scope: "actor", path: "player.property.hp", direction: "decrease" }, effects: [{ kind: "cancel-effect" }] },
+            { id: "armor", trigger: { kind: "state-write", scope: "target", path: "player.property.hp", direction: "decrease" }, effects: [{ effect: "cancel-effect" }] },
+            { id: "armor", trigger: { kind: "state-write", scope: "actor", path: "player.property.hp", direction: "decrease" }, effects: [{ effect: "cancel-effect" }] },
           ],
         },
       }),

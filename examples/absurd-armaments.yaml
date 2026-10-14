@@ -163,7 +163,7 @@ effects:
     # ---------------------------------------------------------------------------
 
     - id: dealBlankWeapons
-      kind: distribute
+      effect: distribute
       from:
         inventory: "game:unassigned"
         select: top
@@ -180,7 +180,7 @@ effects:
     # ---------------------------------------------------------------------------
 
     - id: setWeaponDescription
-      kind: update
+      effect: update
       pieces:
         inventory: forge
         select: top
@@ -189,7 +189,7 @@ effects:
         param: weaponDescription
 
     - id: classifyWeapon
-      kind: custom
+      effect: custom
       description: >-
         Read the top piece in the forge inventory's description property. Using
         the following archetypes, assign exactly one of rock, paper, or scissors
@@ -201,7 +201,7 @@ effects:
         that most closely aligns and has not been used yet in this arsenal. 
 
     - id: illustrateWeapon
-      kind: generate-gamepiece-image
+      effect: generate-gamepiece-image
       pieces:
         inventory: forge
         select: top
@@ -211,7 +211,7 @@ effects:
       target: imageUrl
 
     - id: stowWeapon
-      kind: move
+      effect: move
       from:
         inventory: forge
         select: top
@@ -219,7 +219,7 @@ effects:
         inventory: arsenal
 
     - id: confirmWeapon
-      kind: message
+      effect: message
       to: actor
       template: >-
         Your weapon "{{input.weaponDescription}}" has been forged and added to your
@@ -231,7 +231,7 @@ effects:
     # ---------------------------------------------------------------------------
 
     - id: generateOpening
-      kind: llm-effect
+      effect: llm-effect
       prompt:
         rules:
           - "Use obnoxious game-show announcer style — think a pro-wrestling hype man
@@ -249,14 +249,14 @@ effects:
             visibility: public
 
     - id: revealArsenals
-      kind: reveal
+      effect: reveal
       pieces:
         inventory: arsenal
         select: all
       to: all
 
     - id: generateArsenalReveal
-      kind: llm-effect
+      effect: llm-effect
       inputs:
         - name: arsenals
           pieces:
@@ -289,14 +289,14 @@ effects:
     # ---------------------------------------------------------------------------
 
     - id: revealArena
-      kind: reveal
+      effect: reveal
       pieces:
         inventory: arena
         select: all
       to: all
 
     - id: rollReversal
-      kind: set-random
+      effect: set-random
       path: game.property.includeReversal
       source:
         kind: options
@@ -307,7 +307,7 @@ effects:
             weight: 0.75
 
     - id: resolveRound
-      kind: llm-effect
+      effect: llm-effect
       inputs:
         - name: roundWinner
           state: game.property.roundWinner
@@ -344,7 +344,7 @@ effects:
             visibility: public
 
     - id: updateScores
-      kind: custom
+      effect: custom
       description: >-
         If game.property.roundWinner is not empty, find the player whose ID matches
         game.property.roundWinner and increment their player.property.roundsWon by 1. If
@@ -353,29 +353,29 @@ effects:
         (tie), make no score changes.
 
     - id: concealArena
-      kind: hide
+      effect: hide
       pieces:
         inventory: arena
         select: all
 
     - id: returnWeapons
-      kind: custom
+      effect: custom
       description: >-
         Move every weapon currently in the arena back to its owning player's arsenal
         inventory, so each player's arsenal is whole again for the next round.
 
     - id: resetRoundWinner
-      kind: set-state
+      effect: set-state
       path: game.property.roundWinner
       value: ""
 
     - id: resetWinningWeapon
-      kind: set-state
+      effect: set-state
       path: game.property.winningWeapon
       value: ""
 
     - id: resetReversal
-      kind: set-state
+      effect: set-state
       path: game.property.includeReversal
       value: false
 
@@ -385,7 +385,7 @@ effects:
     # ---------------------------------------------------------------------------
 
     - id: announceVictory
-      kind: llm-effect
+      effect: llm-effect
       inputs:
         - name: winners
           state: game.winners           # engine-populated array of winning player IDs
@@ -413,8 +413,8 @@ actions:
         Forge one absurd weapon for your arsenal. Each player creates exactly three weapons
         during the creation phase. The more ridiculous, the better — its hidden combat class
         is judged from your description.
-      inputs:
-        - id: weaponDescription
+      steps:
+        - input: weaponDescription
           label: Weapon Description
           type:
             kind: string
@@ -422,12 +422,11 @@ actions:
           validationMessage: >-
             Describe your weapon. Be creative — "stale toast", "existential dread",
             and "sentient spatula" are all valid weapons.
-      effects:
-        - ref: setWeaponDescription
-        - ref: classifyWeapon
-        - ref: illustrateWeapon
-        - ref: stowWeapon
-        - ref: confirmWeapon
+        - effectRef: setWeaponDescription
+        - effectRef: classifyWeapon
+        - effectRef: illustrateWeapon
+        - effectRef: stowWeapon
+        - effectRef: confirmWeapon
 
     - id: selectWeapon
       label: Select Weapon
@@ -435,11 +434,10 @@ actions:
         Secretly send one weapon from your arsenal into the arena for this round's clash.
         Both players choose simultaneously; the picks stay hidden until both have committed,
         then are revealed together for resolution.
-      inputs:
-        - id: weapon
+      steps:
+        - input: weapon
           type: { kind: gamepiece-select, inventory: arsenal, count: 1 }
-      effects:
-        - kind: move
+        - effect: move
           from:
             inventory: arsenal
             select: { id: { param: weapon } }
@@ -451,13 +449,13 @@ flow:
     kind: game
     hooks:
       onEnter:
-        - ref: dealBlankWeapons   # 3 blank weapons into each player's forge
-        - ref: generateOpening
+        - effectRef: dealBlankWeapons   # 3 blank weapons into each player's forge
+        - effectRef: generateOpening
     winConditions:
       - rule: condition
         condition: "player.property.roundsWon >= game.property.roundsToWin"
         onVictory:
-          - ref: announceVictory
+          - effectRef: announceVictory
     children:
       - kind: simultaneous       # weapon creation — both players build arsenals concurrently
           # Completes when both players finish their repeat-3 grammar.
@@ -473,8 +471,8 @@ flow:
             ref: createWeapon
         hooks:
           onComplete:
-            - ref: revealArsenals
-            - ref: generateArsenalReveal
+            - effectRef: revealArsenals
+            - effectRef: generateArsenalReveal
 
       - kind: loop               # battle loop — clashes continue until someone wins
         id: battle
@@ -491,16 +489,16 @@ flow:
               ref: selectWeapon
             hooks:
               onComplete:
-                - ref: revealArena
-                - ref: rollReversal
-                - ref: "chaincraft:dominant-gamepiece:resolve"   # writes game.property.roundWinner
-                - ref: resolveRound
-                - ref: updateScores
-                - ref: concealArena
-                - ref: returnWeapons
-                - ref: resetRoundWinner
-                - ref: resetWinningWeapon
-                - ref: resetReversal
+                - effectRef: revealArena
+                - effectRef: rollReversal
+                - effectRef: "chaincraft:dominant-gamepiece:resolve"   # writes game.property.roundWinner
+                - effectRef: resolveRound
+                - effectRef: updateScores
+                - effectRef: concealArena
+                - effectRef: returnWeapons
+                - effectRef: resetRoundWinner
+                - effectRef: resetWinningWeapon
+                - effectRef: resetReversal
 
 mechanics:
   - kind: chaincraft:dominant-gamepiece
