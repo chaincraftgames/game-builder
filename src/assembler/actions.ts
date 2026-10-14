@@ -7,7 +7,7 @@
 // synthetic IDs.
 // ---------------------------------------------------------------------------
 
-import type { ModularGameSpec, ActionInput } from '@chaincraft/gamedef';
+import type { ModularGameSpec, ActionInput, ActionStep, EffectCall } from '@chaincraft/gamedef';
 import { numberOptionCount } from '@chaincraft/runtime';
 import type {
   ActionDef,
@@ -33,9 +33,9 @@ export const MAX_LOOKAHEAD_COMBINATIONS = 500;
 const AUTO_INPUT_KINDS = new Set(['effect-originator', 'trigger-input']);
 const SELECTION_KINDS = new Set(['gamepiece-select', 'player-select']);
 
-/** Map a gamedef ActionInput to the runtime's ActionInputDef, compiling filter expressions. */
-function mapActionInput(input: ActionInput, dependsOn: string[]): ActionInputDef {
-  const rawType = input.type as Record<string, unknown>;
+/** Map a gamedef input step to the runtime's ActionInputDef, compiling filter expressions. */
+function mapActionInput(step: ActionInput, dependsOn: string[]): ActionInputDef {
+  const rawType = step.type as Record<string, unknown>;
   let type: ActionInputType;
 
   if (rawType.kind === 'gamepiece-select' && typeof rawType.filter === 'string') {
@@ -53,11 +53,11 @@ function mapActionInput(input: ActionInput, dependsOn: string[]): ActionInputDef
   }
 
   return {
-    id: input.id,
-    ...(input.label != null && { label: input.label }),
+    id: step.input,
+    ...(step.label != null && { label: step.label }),
     type,
-    ...(input.validation != null && { validate: compileInputValidation(input.validation) }),
-    ...(input.validationMessage != null && { validationMessage: input.validationMessage }),
+    ...(step.validation != null && { validate: compileInputValidation(step.validation) }),
+    ...(step.validationMessage != null && { validationMessage: step.validationMessage }),
     ...(dependsOn.length > 0 && { dependsOn }),
   };
 }
@@ -69,11 +69,11 @@ function fail(actionId: string, message: string): never {
 /** Earlier input ids this input's options depend on. Throws on any other reference. */
 function inputDependencies(
   actionId: string,
-  input: ActionInput,
+  step: ActionInput,
   earlier: ReadonlySet<string>,
 ): string[] {
   const refs = new Set<string>();
-  const rawType = input.type as { fromPlayer?: unknown; filter?: unknown };
+  const rawType = step.type as { fromPlayer?: unknown; filter?: unknown };
   const fromPlayer = rawType.fromPlayer;
   if (typeof fromPlayer === "object" && fromPlayer !== null && "param" in fromPlayer) {
     refs.add(String(fromPlayer.param));
@@ -81,17 +81,17 @@ function inputDependencies(
   if (typeof rawType.filter === "string") {
     for (const ref of referencedInputs(rawType.filter)) refs.add(ref);
   }
-  if (input.validation != null) {
+  if (step.validation != null) {
     // Validation sees its own candidate answer as input.<id>.
-    for (const ref of referencedInputs(input.validation)) {
-      if (ref !== input.id) refs.add(ref);
+    for (const ref of referencedInputs(step.validation)) {
+      if (ref !== step.input) refs.add(ref);
     }
   }
   for (const ref of refs) {
     if (!earlier.has(ref)) {
       fail(
         actionId,
-        `input "${input.id}" references "${ref}", which is not an earlier input of the same action`,
+        `input "${step.input}" references "${ref}", which is not an earlier input of the same action`,
       );
     }
   }
@@ -168,11 +168,38 @@ function checkActionInputs(actionId: string, inputs: readonly ActionInputDef[]):
 }
 
 /**
+ * Split an action's steps into the runtime's inputs-then-effects shape.
+ * Throws on an input after an effect: the runtime collects every input before any effect runs.
+ */
+function splitSteps(
+  actionId: string,
+  steps: readonly ActionStep[],
+): { inputs: ActionInput[]; effects: EffectCall[] } {
+  const inputs: ActionInput[] = [];
+  const effects: EffectCall[] = [];
+  for (const step of steps) {
+    if ("input" in step) {
+      if (effects.length > 0) {
+        fail(
+          actionId,
+          `input "${step.input}" comes after an effect step; all input steps must come ` +
+            "before the first effect step",
+        );
+      }
+      inputs.push(step);
+    } else {
+      effects.push(step);
+    }
+  }
+  return { inputs, effects };
+}
+
+/**
  * Compile all actions from the spec into ActionDef objects.
  *
- * Inline effects within actions are walked and assigned synthetic IDs,
- * then added to the provided effectDefs accumulator. The action's effects[]
- * array becomes all { ref } entries.
+ * Input steps become the ActionDef's inputs. Inline effect steps are walked and
+ * assigned synthetic IDs (indexed among effect steps only), then added to the
+ * provided effectDefs accumulator. The action's effects[] array becomes all { ref } entries.
  *
  * @param spec - The parsed game spec
  * @param effectDefs - Mutable accumulator; inline effects are added here
@@ -187,12 +214,13 @@ export function assembleActions(
   if (!spec.actions?.actions) return actions;
 
   for (const action of spec.actions.actions) {
-    const effects = normalizeEffectList(action.effects, `${action.id}._effect`, effectDefs);
+    const steps = splitSteps(action.id, action.steps);
+    const effects = normalizeEffectList(steps.effects, `${action.id}._effect`, effectDefs);
 
     const earlier = new Set<string>();
-    const inputs: ActionInputDef[] = (action.inputs ?? []).map((input) => {
-      const def = mapActionInput(input, inputDependencies(action.id, input, earlier));
-      earlier.add(input.id);
+    const inputs: ActionInputDef[] = steps.inputs.map((step) => {
+      const def = mapActionInput(step, inputDependencies(action.id, step, earlier));
+      earlier.add(step.input);
       return def;
     });
     checkActionInputs(action.id, inputs);

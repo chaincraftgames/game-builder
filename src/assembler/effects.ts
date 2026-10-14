@@ -87,6 +87,7 @@ export function buildExecutorRegistry(
  * Walk a single effect body, compiling value expressions where needed.
  * Returns a new object suitable for storage in effectDefs.
  *
+ * The spec's `effect` discriminator becomes the runtime's `kind`.
  * Today this is largely structural passthrough — the { expr } compilation
  * hook will add compileExpression() calls here. The walk
  * ensures we never store raw unparsed YAML; every field is explicitly
@@ -96,13 +97,15 @@ export function walkEffectBody(
   effect: NamedEffect | Effect,
 ): Record<string, unknown> {
   const raw = effect as unknown as Record<string, unknown>;
-  const kind = raw.kind as string | undefined;
+  const kind = raw.effect as string | undefined;
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(raw)) {
     if (key === "id") continue; // strip the name — stored as the effectDefs key
     const selectorFields = kind ? GAMEPIECE_SELECTOR_FIELDS[kind] : undefined;
-    if (selectorFields?.includes(key)) {
+    if (key === "effect") {
+      result.kind = value;
+    } else if (selectorFields?.includes(key)) {
       result[key] = walkSelector(value);
     } else if (key === "target" && isMatchingTarget(value)) {
       result[key] = {
@@ -162,7 +165,7 @@ function walkSelector(value: unknown): unknown {
  * Normalize an EffectCall[] into EffectRef[], accumulating inline effects into
  * effectDefs with synthetic IDs derived from the given prefix.
  *
- * Named refs (`{ ref }`) pass through unchanged. Inline effects are walked via
+ * Named refs (`{ effectRef }`) become runtime `{ ref }`. Inline effects are walked via
  * walkEffectBody and stored under `${prefix}_${index}`.
  *
  * This is the single shared implementation used by both the actions assembler
@@ -174,7 +177,7 @@ export function normalizeEffectList(
   effectDefs: Record<string, Record<string, unknown>>,
 ): EffectRef[] {
   return calls.map((call, i): EffectRef => {
-    if ("ref" in call) return { ref: call.ref };
+    if ("effectRef" in call) return { ref: call.effectRef };
     const syntheticId = `${prefix}_${i}`;
     effectDefs[syntheticId] = walkEffectBody(call);
     return { ref: syntheticId };

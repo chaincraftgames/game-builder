@@ -32,11 +32,7 @@ const BEFORE_KINDS = new Set(["adjust", "cancel-effect"]);
 
 /** Infer passive timing from its effects list. */
 function inferTiming(effects: Effect[]): "before" | "after" {
-  return effects.some((e) =>
-    BEFORE_KINDS.has((e as Record<string, unknown>).kind as string),
-  )
-    ? "before"
-    : "after";
+  return effects.some((e) => BEFORE_KINDS.has(e.effect)) ? "before" : "after";
 }
 
 /**

@@ -319,53 +319,74 @@ describe('assembleActions — High Card', () => {
 });
 
 describe("assembleActions — input dependencies", () => {
-  const ownerInput = { id: "owner", type: { kind: "player-select", excludeSelf: true } };
+  const ownerInput = { input: "owner", type: { kind: "player-select", excludeSelf: true } };
   const targetInput = {
-    id: "target",
+    input: "target",
     type: { kind: "gamepiece-select", inventory: "field", fromPlayer: { param: "owner" } },
   };
-  const specWithInputs = (inputs: unknown[]) =>
+  const specWithSteps = (steps: unknown[]) =>
     ({
-      actions: { actions: [{ id: "attack", label: "Attack", inputs, effects: [] }] },
+      actions: { actions: [{ id: "attack", label: "Attack", steps }] },
     }) as unknown as Parameters<typeof assembleActions>[0];
 
   it("emits dependsOn for a fromPlayer param on an earlier input", () => {
-    const actions = assembleActions(specWithInputs([ownerInput, targetInput]), {});
+    const actions = assembleActions(specWithSteps([ownerInput, targetInput]), {});
     expect(actions.attack.inputs[0].dependsOn).toBeUndefined();
     expect(actions.attack.inputs[1].dependsOn).toEqual(["owner"]);
   });
 
   it("rejects a reference to a later input", () => {
-    expect(() => assembleActions(specWithInputs([targetInput, ownerInput]), {})).toThrow(
+    expect(() => assembleActions(specWithSteps([targetInput, ownerInput]), {})).toThrow(
       /input "target" references "owner", which is not an earlier input/,
     );
   });
 
   it("rejects a reference to an unknown input", () => {
-    expect(() => assembleActions(specWithInputs([targetInput]), {})).toThrow(
+    expect(() => assembleActions(specWithSteps([targetInput]), {})).toThrow(
       /input "target" references "owner", which is not an earlier input/,
     );
   });
 
+  it("splits steps into inputs and effects, indexing inline effects among effect steps", () => {
+    const effectDefs: Record<string, Record<string, unknown>> = {};
+    const actions = assembleActions(
+      specWithSteps([
+        ownerInput,
+        { effectRef: "announce" },
+        { effect: "shuffle", inventory: "deck" },
+      ]),
+      effectDefs,
+    );
+    expect(actions.attack.inputs.map((i) => i.id)).toEqual(["owner"]);
+    expect(actions.attack.effects).toEqual([{ ref: "announce" }, { ref: "attack._effect_1" }]);
+    expect(effectDefs["attack._effect_1"]).toEqual({ kind: "shuffle", inventory: "deck" });
+  });
+
+  it("rejects an input step after an effect step", () => {
+    expect(() =>
+      assembleActions(specWithSteps([{ effectRef: "announce" }, ownerInput]), {}),
+    ).toThrow(/input "owner" comes after an effect step/);
+  });
+
   const die = (id: string, extra: Record<string, unknown> = {}) => ({
-    id,
+    input: id,
     type: { kind: "number", min: 1, max: 6 },
     ...extra,
   });
 
   it("collects input references from filters into dependsOn", () => {
-    const budget = { id: "budget", type: { kind: "number", min: 1, max: 10 } };
+    const budget = { input: "budget", type: { kind: "number", min: 1, max: 10 } };
     const card = {
-      id: "card",
+      input: "card",
       type: { kind: "gamepiece-select", inventory: "hand", filter: "piece.property.cost <= input.budget" },
     };
-    const actions = assembleActions(specWithInputs([budget, card]), {});
+    const actions = assembleActions(specWithSteps([budget, card]), {});
     expect(actions.attack.inputs[1].dependsOn).toEqual(["budget"]);
   });
 
   it("compiles validation, keeping a self-reference out of dependsOn", () => {
     const actions = assembleActions(
-      specWithInputs([die("roll", { validation: "input.roll > 2", validationMessage: "Too low" })]),
+      specWithSteps([die("roll", { validation: "input.roll > 2", validationMessage: "Too low" })]),
       {},
     );
     const [roll] = actions.attack.inputs;
@@ -376,64 +397,64 @@ describe("assembleActions — input dependencies", () => {
 
   it("rejects a filter that reads its own input", () => {
     const card = {
-      id: "card",
+      input: "card",
       type: { kind: "gamepiece-select", inventory: "hand", filter: "input.card != \"\"" },
     };
-    expect(() => assembleActions(specWithInputs([card]), {})).toThrow(
+    expect(() => assembleActions(specWithSteps([card]), {})).toThrow(
       /input "card" references "card", which is not an earlier input/,
     );
   });
 
   it("rejects a number input whose min exceeds its max", () => {
-    const bad = { id: "n", type: { kind: "number", min: 6, max: 1 } };
-    expect(() => assembleActions(specWithInputs([bad]), {})).toThrow(
+    const bad = { input: "n", type: { kind: "number", min: 6, max: 1 } };
+    expect(() => assembleActions(specWithSteps([bad]), {})).toThrow(
       /input "n" has min 6 greater than max 1/,
     );
   });
 
   it("rejects validation on selection inputs, pointing at filter", () => {
-    const attacker = { id: "attacker", type: { kind: "gamepiece-select", inventory: "field" } };
+    const attacker = { input: "attacker", type: { kind: "gamepiece-select", inventory: "field" } };
     const defender = {
-      id: "defender",
+      input: "defender",
       type: { kind: "gamepiece-select", inventory: "field" },
       validation: "input.defender != input.attacker",
     };
-    expect(() => assembleActions(specWithInputs([attacker, defender]), {})).toThrow(
+    expect(() => assembleActions(specWithSteps([attacker, defender]), {})).toThrow(
       /input "defender" is a gamepiece-select; use 'filter' instead of 'validation'/,
     );
-    expect(() => assembleActions(specWithInputs([{ ...ownerInput, validation: "true" }]), {})).toThrow(
+    expect(() => assembleActions(specWithSteps([{ ...ownerInput, validation: "true" }]), {})).toThrow(
       /input "owner" is a player-select; use 'filter' instead of 'validation'/,
     );
   });
 
   it("rejects more than MAX_PLAYER_INPUTS player-supplied inputs, not counting auto inputs", () => {
-    const auto = { id: "attacker", type: { kind: "effect-originator" } };
+    const auto = { input: "attacker", type: { kind: "effect-originator" } };
     const four = [die("a"), die("b"), die("c"), die("d")];
-    expect(() => assembleActions(specWithInputs([auto, ...four]), {})).not.toThrow();
-    expect(() => assembleActions(specWithInputs([...four, die("e")]), {})).toThrow(
+    expect(() => assembleActions(specWithSteps([auto, ...four]), {})).not.toThrow();
+    expect(() => assembleActions(specWithSteps([...four, die("e")]), {})).toThrow(
       /has 5 player-supplied inputs; at most 4 are allowed/,
     );
   });
 
   it("rejects a later input reading an input that has no finite option list", () => {
-    const amount = { id: "amount", type: { kind: "number", min: 1, max: 100 } };
-    const name = { id: "name", type: { kind: "string" } };
+    const amount = { input: "amount", type: { kind: "number", min: 1, max: 100 } };
+    const name = { input: "name", type: { kind: "string" } };
     expect(() =>
-      assembleActions(specWithInputs([amount, die("x", { validation: "input.x < input.amount" })]), {}),
+      assembleActions(specWithSteps([amount, die("x", { validation: "input.x < input.amount" })]), {}),
     ).toThrow(/input "amount" is read by a later input but has no finite option list/);
     expect(() =>
-      assembleActions(specWithInputs([name, die("x", { validation: "input.name != \"\"" })]), {}),
+      assembleActions(specWithSteps([name, die("x", { validation: "input.name != \"\"" })]), {}),
     ).toThrow(/input "name" is read by a later input but has no finite option list/);
   });
 
   it("rejects dependent inputs whose combinations exceed MAX_LOOKAHEAD_COMBINATIONS", () => {
     const thirty = (id: string, extra: Record<string, unknown> = {}) => ({
-      id,
+      input: id,
       type: { kind: "number", min: 1, max: 30 },
       ...extra,
     });
     expect(() =>
-      assembleActions(specWithInputs([thirty("a"), thirty("b", { validation: "input.b > input.a" })]), {}),
+      assembleActions(specWithSteps([thirty("a"), thirty("b", { validation: "input.b > input.a" })]), {}),
     ).toThrow(/dependent inputs allow 900 answer combinations; at most 500 are allowed/);
   });
 });
