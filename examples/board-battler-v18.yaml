@@ -1,0 +1,1038 @@
+# ---------------------------------------------------------------------------
+# v4: starting energy 2 so an opening hand has playable cards; FG-010 remains
+# the underlying gap; Card 429.
+#
+# v4 CHANGE (the ONLY change from board-battler-v3.yaml, which is untouched):
+# the player property defaults energyCap 0 -> 1 and energy 0 -> 2. WHY BOTH,
+# AND WHY energyCap IS THE OPERATIVE ONE: the round-start hook (turnEnergyCapUp
+# then turnEnergyRefill, item 2 below) fires at the turn node's onEnter, i.e.
+# BEFORE the first turn, and refills energy to energyCap. So a starting
+# `energy` alone would be overwritten before anyone could spend it. With
+# energyCap 1 the first hook makes cap 2 and refills energy to 2, so round 1
+# opens at energy 2 (v3 opened at 1). The ramp is the v3 ramp shifted up by
+# one: cap = round + 1, clamped at 6 from round 5 on (v3 reached 6 at round 6).
+# `energy` 2 is set to match so the declared starting state is self-consistent.
+# Nothing else moved: cap ceiling 6, once-per-round refill, death sweep, 20
+# rounds, passives, draw, preconditions, and the whole-library deal all as v3.
+# This lowers how often FG-010's dead end (energy > 0 but no affordable creature
+# in hand) occurs; it does not close it.
+#
+# What follows is the v3/v2 header, unchanged.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# BOARD BATTLER V2. Card 418. A real game on a real set.
+#
+# Base: spec-lab/board-battler.yaml (unedited by this file; its own header
+# comment, THE MISSING PIECES section, and every design note it carries stay
+# true of THAT file — this is a new, separate spec, not a rewrite of it).
+# Set: spec-lab/catalog-new-set-v1-copies2.yaml, the 30-card mage /
+# necromancer / shaman / neutral set, 2 copies each, 60 physical pieces.
+#
+# THE SPLICE. gamepieceTypes and catalog below are exactly what
+# chaincraft-frontend-spec's spliceGamepieceTypesAndCatalog produced
+# (scratch/battler-v2/splice.ts, run against the real merge function, not a
+# hand overwrite) — verified to keep every property attackCreature,
+# attackPlayer and castFreeze read (frozen, passiveSlots) while adding every
+# property the new set's cards carry (cost, cardClass, cardId, setId,
+# displayName). No conflicts; the union produced a clean merge on the first
+# run (power/defense are declared identically by both sides).
+#
+# WHAT THIS FILE ADDS ON TOP OF THE SPLICE, each a Card 418 design decision,
+# with the engine facts that decided its shape (all pins be57e0f /
+# 43670aa / 7bbda86, unchanged from every report cited below):
+#
+# 1. THE FLOW STAYS board-battler.yaml's OWN SHAPE (actor: all-players, one
+#    turn node per round), REVERSED FROM AN EARLIER DRAFT OF THIS FILE that
+#    restructured to actor: active-player expecting per-player hook timing.
+#    THAT DRAFT WAS PROVEN WRONG BY DRIVING IT, not by reasoning about it:
+#    chaincraft-runtime's flow-runner (src/orchestration/flow-runner.ts) calls
+#    `buildHookItems(node.hooks?.onEnter, undefined)` for every node kind —
+#    the actorId argument is a HARDCODED undefined, so no flow hook, on ANY
+#    node shape, ever carries an actorId. A hook effect that let `target`
+#    default to "actor" (the plain reading of "own turn start") threw
+#    "Player target 'actor' requires an actorId in the effect context"
+#    (engine/chaincraft-runtime/dist/effects/player-target.js) the moment
+#    `GameController.init()` ran the very first turn's onEnter, regardless of
+#    whether the turn node covered one player or all of them. Restructuring
+#    the flow bought nothing: hooks cannot bind to "whichever player this
+#    turn belongs to" under any node shape at this pin, so board-battler.yaml's
+#    own proven-safe all-players/rounds structure is kept, unmodified.
+#
+# 2. ENERGY, a Hearthstone-shaped two-property ramp, per the new set's own
+#    cost range (1 to 6, confirmed by reading catalog-new-set-v1-copies2.yaml
+#    directly): energyCap rises by 1 at the start of each ROUND, clamped at 6
+#    by the property's own declared max (the same delta-clamps-to-declared-max
+#    behavior reports/FG002_DISCARD_ON_ZERO_v1.md already proved for defense);
+#    energy is refilled to energyCap at the same moment. BOTH APPLY TO EVERY
+#    PLAYER AT ONCE (`target: { kind: all }`), because item 1 rules out a
+#    single-player target from a hook. This is "own round start," not
+#    literally "own turn start": traced directly in
+#    engine/chaincraft-runtime/src/effects/set-state.ts, `target: { kind: all }`
+#    resolves player IDs with no actorId needed (resolvePlayerTarget), and
+#    for EACH targeted player the value expression is evaluated with
+#    `targetPlayerId` bound (not actorId) — engine/chaincraft-runtime/src/
+#    effects/resolve-value.ts's `resolveStateVar` reads
+#    `ctx.targetPlayerId ?? ctx.actorId` for any `player.property.<id>` var,
+#    so `value: { var: "player.property.energyCap" }` correctly reads EACH
+#    player's OWN energyCap back, per player, with zero actorId dependency.
+#    Both players ramp and refill on the same schedule, symmetrically; there
+#    is no notion of "your own turn" separate from "this round" for energy.
+#    A card's cost is spent via `source: { param: card }` +
+#    `value: { delta: { var: "source.property.cost", negate: true } } }` on
+#    the card-playing ACTION itself (which DOES carry a real actorId, unlike
+#    a hook) — the exact source-piece-var shape attackCreature's own combat
+#    effects already use for power.
+#
+# 3. AFFORDABILITY IS ENFORCED WITH THE SAME MECHANISM board-battler.yaml
+#    ALREADY USES FOR FREEZE: a `filter` on the gamepiece-select input
+#    (`piece.property.cost <= actor.property.energy`), proven live at these
+#    exact pins by board-battler.yaml's own attack actions and confirmed
+#    working end to end by reports/BATTLER_RECONCILIATION_v1.md. This filter
+#    runs at action-submission time, where a real actorId always exists
+#    (compilePieceFilter binds it from the submitting player, not from a
+#    flow hook) — a completely different, already-proven code path from the
+#    hook-only "actor" target problem in items 1 and 2. An unaffordable card
+#    simply is not offered; a client submitting one anyway is refused by the
+#    anti-cheat check (game-step.ts's validatePlayerInput), same as a frozen
+#    creature.
+#
+# 4. DRAW IS ITS OWN ACTION, NOT AN UNCONDITIONAL HOOK EFFECT, and this is
+#    the one place this file deliberately does NOT do the most literal
+#    reading of "at own turn start." Traced before writing anything: gamedef's
+#    only mandatory-turn-structure primitive for "always happens" is
+#    `kind: sequence`, but chaincraft-compiler's own assembler
+#    (src/assembler/flow.ts, assembleGrammar) throws "sequence steps must all
+#    be 'action' nodes" if a step is anything else, AND a mandatory
+#    `kind: action` grammar node compiles to `{ actions: [ref], canPass: false }`
+#    in the runtime's own grammar.ts (resolveLegalActions) — meaning if that
+#    action's own precondition ever fails (hand at 8, deck empty) the player
+#    would be offered exactly one illegal move and NOTHING ELSE, a real
+#    deadlock. Instead, `drawCard` is a precondition-gated CHOICE OPTION
+#    (`count(actor.inventory.hand) < 8 and count(actor.inventory.deck) > 0`,
+#    the exact working `count(path)` syntax reports/
+#    GAME_SPEC_STUDIO_READINESS_REGISTER_v1.md proved against this evaluator,
+#    correcting gamedef's own stale `.count` dotted-path docstring example),
+#    inside a `repeat: { min: 0, max: 2 }` wrapping the turn's whole choice
+#    list. This is deadlock-safe by construction: `min: 0` means
+#    `resolveLegalActions` reports `canPass: true` from the first pick
+#    onward, so a player can always end their turn even if every other
+#    option's precondition or filter currently excludes it. A turn is
+#    therefore: pick up to two of {draw, play a creature, attack a creature,
+#    attack a player, cast a freeze}, in any order, passing whenever done —
+#    "draw, then act" is available every turn without being compulsory or
+#    risking a stuck game.
+#
+# 5. HAND CAP 8 is declared as `capacity: { max: 8 }` on `hand` (documenting
+#    intent, matching drawCard's own precondition number) AND separately
+#    real-enforced by that same precondition — `capacity` itself is declared
+#    but not read anywhere in chaincraft-runtime (confirmed by a direct grep
+#    of engine/chaincraft-runtime/src, zero hits outside the bare type
+#    declaration; chaincraft-compiler carries it through to config unused,
+#    src/assembler/config.ts line 109), exactly the "declared, not yet
+#    enforced" state reports/GAME_SPEC_STUDIO_READINESS_REGISTER_v1.md
+#    already found for field capacity and hand capacity alike. The
+#    precondition is what actually stops growth at 8, not the capacity key.
+#
+# 6. ROUND COUNT is raised from board-battler.yaml's 3 (a minimal fixture) to
+#    20, the same FG-003 workaround reports/BATTLER_RECONCILIATION_v1.md's
+#    own item 4 anticipated: win conditions still only ever evaluate once,
+#    when the whole rounds loop's children phase completes (flow-runner.ts's
+#    loop handling, confirmed unchanged at this pin) — no early end exists —
+#    so the fix is giving combat, energy ramp, and hand growth enough rounds
+#    to visibly happen and be provable before that one evaluation, not making
+#    the loop exit early. 20 rounds is comfortably past round 6, where
+#    energyCap first reaches its 6 ceiling and every card in the set becomes
+#    affordable in principle.
+#
+# 7. A DEATH SWEEP is added to attackCreature's own effects, verbatim the
+#    two-effect `move` + `filter: "piece.property.defense <= 0"` pattern
+#    reports/FG002_DISCARD_ON_ZERO_v1.md already validated, assembled, and
+#    drove live against these exact pins. board-battler.yaml's own comment
+#    calling this impossible ("the effect-level piece selector has no filter
+#    field at all") is confirmed stale there (gamedef 7f97ab2 added it,
+#    2026-08-30) and is not repeated in this file.
+#
+# 8. PASSIVES: Bloodleech (necromancer, nc-23) binds lifesteal; Thornhide
+#    (shaman, nc-24) binds thorns — the identical `passiveBindings:
+#    { whileOnField: <id> }` shape board-battler.yaml's own bloodHunter/
+#    thornBeast entries carry, and the identical mechanism reports/
+#    FG004_PASSIVES_PROOF_v1.md proved fires correctly at these pins. FREEZE
+#    NEEDS NO CARD-LEVEL BINDING: castFreeze already targets any card of
+#    typeId `spell` generically (`ofType: spell`), so the set's own Flash
+#    Freeze (mage, nc-2) already works as a freeze spell with zero further
+#    wiring — the one Mage-side "freeze" card the brief asks for. Siphon Life
+#    (necromancer) and Barbed Ward (shaman) are also plain `spell` cards and
+#    would ALSO cast as freeze if drawn and played; this file does not invent
+#    a second spell mechanic to stop that, since board-battler.yaml's own
+#    template has exactly one spell-shaped action (castFreeze) and giving
+#    each class its own spell verb is new design scope Card 418 did not ask
+#    for. Flagged here rather than silently left implicit.
+#
+# 9. DECK CONSTRUCTION (per seat, 20 hand+deck cards, at most 2 copies of any
+#    one card, one class plus neutrals): AUTHORED AS DATA/INTENT ONLY, per
+#    FG-007 and the standing rule that a game rule this engine cannot
+#    structurally express is logged and designed around, never faked as
+#    enforced. The "at most 2 copies" half is true by construction (every
+#    catalog entry above already caps at quantity: 2, so no deal can ever
+#    exceed it). The "one class plus neutrals" half is NOT enforced: setup
+#    still shuffles the WHOLE shared library (all 60 pieces, every class) and
+#    deals from it, exactly as board-battler.yaml's own fillLibrary/
+#    shuffleLibrary/dealHands/dealDecks chain already does — building
+#    class-filtered per-player decks would need per-class sub-libraries or an
+#    equivalent structural change this card was not asked to make. A real
+#    match dealt from this file can and will mix classes on one side. This is
+#    the honest state, not a defect discovered later.
+#
+# HAND/DECK SPLIT: dealHands count 4 (opening hand), dealDecks count 16
+# (drawable reserve) = 20 accessible cards per seat, satisfying (9)'s 20-card
+# figure; 20 of the library's 60 pieces are never dealt to anyone, which is
+# ordinary for a deckbuilder where not every printed card sees a given match.
+# ---------------------------------------------------------------------------
+#
+# v3: actions offered only when a legal input exists; Card 425.
+#
+# THE BUG (Cards 422/424): v2's four non-draw actions carried NO top-level
+# `preconditions`, so player-effects-resolver.ts:53-56 offers them
+# structurally (grammar shape alone) regardless of state; the real
+# affordability/target checks live only in each gamepiece-select input's
+# own `filter`, which options.ts:84-87 runs at SUSPEND time, after the
+# action is already chosen. A real bots run hit this directly: seat-one
+# played a creature (energy 1 -> 0), then playCreature was offered AGAIN
+# with energy 0, and the follow-up gamepiece-select for "card" resolved to
+# zero options (scratch/battler-v3/bot-seat-one.log, decisions 1-4).
+#
+# EXPRESSIBILITY (read before writing anything, engine/gamedef be57e0f /
+# engine/chaincraft-compiler 43670aa): `ActionSchema.preconditions` compiles
+# through the SAME generic evaluator as every other context
+# (chaincraft-compiler/src/expressions/eval-bridge.ts's compilePrecondition
+# calls the identical compilePredicate() compilePieceFilter/
+# compilePlayerFilter use, and sessionToEvalContext always populates
+# ctx.playerIds with the full roster) — so `all()`/`any()` player
+# quantifiers ARE usable in a top-level action precondition, not only in
+# player-select filters or loop endConditions, despite gamedef's own
+# per-context doc table (common.ts) implying otherwise. What is NOT
+# expressible anywhere in this grammar, at any pin: a piece-level
+# existential/count check ("does inventory X contain a piece matching
+# filter Y"). `piece.property.<id>` only resolves inside a gamepiece-select
+# input's own per-piece `filter` (options.ts) or an effect's own piece
+# filter — never inside an action's top-level `preconditions`, which can
+# only read `count(inventory)` (aggregate size) and scalar
+# actor/game/player property comparisons. So "a hand creature costing
+# <= my energy" and "an opponent field creature that is not frozen" cannot
+# be precondition-checked directly; count()-and-energy proxies below are
+# the narrowest expressible approximation, not an exact match. See FG-010.
+#
+# A SECOND DOC/GRAMMAR MISMATCH FOUND WHILE PROVING THIS (FG-009, new):
+# common.ts's own examples show a two-argument form, `all(players, <expr>)`
+# / `any(players, <expr>)`; the real parser (parser.ts's call()) DOES parse
+# two comma-separated arguments, but the real evaluator
+# (evaluator.ts's compileQuantifier) throws unless args.length === 1. The
+# actually-working form, proven by
+# chaincraft-compiler/src/expressions/__tests__/expressions.test.ts lines
+# 230-257, is one argument only: `all(<expr>)` / `any(<expr>)`, with
+# `player.property.<id>` / `count(player.inventory.<id>)` bound per
+# iteration inside it — no leading "players," token. Every quantifier below
+# uses the proven one-argument form. This is FG-001's sibling: the same
+# docstring family (gamedef common.ts) documents syntax the real compiler
+# does not accept, a second time.
+#
+# THE FOUR PRECONDITIONS ADDED, each the narrowest sound proxy the grammar
+# allows, and each proven not to falsely EXCLUDE a legal move (only to
+# exclude cases already known dead):
+#   - playCreature: `count(actor.inventory.hand) > 0 and
+#     actor.property.energy > 0`. Necessary, not sufficient — does not
+#     confirm hand holds a card of the right kind (creature vs spell) at or
+#     under current energy. Directly fixes the observed bug (energy hits 0
+#     -> playCreature no longer offered).
+#   - attackCreature: `all(count(player.inventory.field) > 0)`. Exploits
+#     `metadata.playerCount: {min:2, max:2}` — with exactly two players,
+#     "every player's field is nonempty" means BOTH the actor's own field
+#     AND the opponent's field hold a creature, which is EXACTLY the real
+#     rule for field emptiness (no proxy gap on that dimension). Does not
+#     confirm the actor's own creature is unfrozen — unchanged, still
+#     caught by the attacker input's own existing `filter`.
+#   - attackPlayer: `count(actor.inventory.field) > 0`. The opponent always
+#     exists as a player (exactly 2 players), so only the actor's own field
+#     needs checking. Does not confirm the actor's own creature is
+#     unfrozen, same limit as attackCreature.
+#   - castFreeze: `count(actor.inventory.hand) > 0 and
+#     actor.property.energy > 0 and any(count(player.inventory.field) > 0)`.
+#     A LIVE BOTS RUN CAUGHT A SECOND FAILURE MODE the headless proof did
+#     not exercise: at round 1 before ANY creature exists on either field,
+#     the hand/energy proxy alone still offered castFreeze, and its
+#     `victim` gamepiece-select (a spell cast needs a creature to target)
+#     resolved empty because the target simply did not exist yet, not
+#     because of affordability. The `any()` clause closes exactly that
+#     window (both fields empty -> false, correctly excluded) but is STILL
+#     imprecise the other two ways: (a) type-blind, same as playCreature,
+#     does not confirm the hand actually holds a spell rather than only
+#     creatures; (b) self/other-blind, `any()` is satisfied by the actor's
+#     OWN field alone even when the opponent's is empty (no `player.id`/
+#     `actor.id` comparison exists in this grammar to exclude the actor
+#     from the quantifier — confirmed absent by reading
+#     chaincraft-compiler/src/expressions/evaluator.ts's resolveRoot,
+#     which only accepts `property`/`inventory` sub-paths off `player`,
+#     never a bare identity). Both remaining gaps are genuinely
+#     inexpressible at this pin, not a proxy this card failed to tighten;
+#     see FG-010.
+# ---------------------------------------------------------------------------
+
+metadata:
+  name: "Board Battler v4"
+  description: >-
+    Two player board battler on a real 30-card set: three classes plus
+    neutrals, energy that ramps and refills each round, a draw step, a hand
+    cap, and bound lifesteal and thorns passives. Built on board-battler.yaml
+    for Card 418. v3 (Card 425) adds top-level preconditions to every
+    non-draw action so an action with no legal input is never offered. v4 (Card 429)
+    starts the energy ramp one higher so round 1 opens at energy 2. v10 ends
+    the match after any turn that leaves a player at 0 life.
+  playerCount:
+    min: 2
+    max: 2
+  rng:
+    seedSource: fixed # a constant seed: the deal is identical on every run
+
+state:
+  player:
+    properties:
+      - id: life
+        type:
+          kind: number
+          min: 0
+          max: 30
+        default: 30
+        description: >-
+          Reaching 0 ends the match at the end of the turn in which it
+          happens; the player with life left wins (v10).
+      - id: energyCap
+        type:
+          kind: number
+          min: 0
+          max: 6
+        default: 1
+        description: >-
+          Permanent ramp ceiling, shared schedule for both players. +1 at the
+          start of each round, clamped at 6 (the new set's highest card cost)
+          by this property's own declared max.
+      - id: energy
+        type:
+          kind: number
+          min: 0
+          max: 6
+        default: 2
+        description: >-
+          Spendable resource. Refilled to energyCap at the start of each
+          round; spent when a creature or spell is played.
+      - id: seatOrder
+        type:
+          kind: number
+          min: 0
+          max: 2
+        default: 0
+        description: >-
+          This player's place in the turn order, 1 or 2, recorded once at the
+          start by takeSeat. A freeze reads it to know whether the frozen
+          creature's owner still acts this round (Card 788).
+
+# ---------------------------------------------------------------------------
+# GAMEPIECE TYPES, exactly the output of spliceGamepieceTypesAndCatalog
+# (scratch/battler-v2/splice.ts) merging board-battler.yaml's own types with
+# catalog-new-set-v1-copies2.yaml's. frozen and passiveSlots are
+# board-battler.yaml's own template-only properties, kept untouched by the
+# union; cost/cardClass/cardId/setId/displayName are the catalog's, appended.
+# ---------------------------------------------------------------------------
+gamepieceTypes:
+  types:
+    - id: creature
+      category: card
+      description: A creature. Stands on the field until something removes it.
+      properties:
+        - id: power
+          label: Power
+          type: { kind: number, min: 0, max: 20 }
+          mutable: true
+          visibility: always
+        - id: defense
+          label: Defense
+          type: { kind: number, min: 0, max: 20 }
+          mutable: true
+          visibility: always
+        - id: frozen
+          label: Frozen
+          type: { kind: boolean }
+          mutable: true
+          visibility: always
+          default: false
+        - id: frozenRounds
+          label: Frozen rounds left
+          type: { kind: number, min: 0, max: 2 }
+          mutable: true
+          source: runtime
+          visibility: always
+          default: 0
+        - id: attackedThisTurn
+          label: Attacked this turn
+          type: { kind: boolean }
+          mutable: true
+          source: runtime
+          visibility: always
+          default: false
+        - id: playedThisTurn
+          label: Played this turn
+          type: { kind: boolean }
+          mutable: true
+          source: runtime
+          visibility: always
+          default: false
+        - id: cost
+          label: Cost
+          type: { kind: number, min: 0, max: 20 }
+          mutable: false
+          visibility: always
+        - id: cardClass
+          label: Class
+          type: { kind: string }
+          mutable: false
+          visibility: always
+        - id: cardId
+          label: Card ID
+          type: { kind: string }
+          mutable: false
+          visibility: always
+        - id: setId
+          label: Set ID
+          type: { kind: string }
+          mutable: false
+          visibility: always
+        - id: displayName
+          label: Display Name
+          type: { kind: string }
+          mutable: false
+          visibility: always
+      passiveSlots:
+        - id: whileOnField
+          description: >-
+            Active while this creature is on the field. Holds whichever passive
+            the card binds to it.
+          enabledIn: [field]
+          faceFilter: any
+    - id: spell
+      category: card
+      description: Fires once and goes to the discard.
+      properties:
+        - id: cost
+          label: Cost
+          type: { kind: number, min: 0, max: 20 }
+          mutable: false
+          visibility: always
+        - id: cardClass
+          label: Class
+          type: { kind: string }
+          mutable: false
+          visibility: always
+        - id: cardId
+          label: Card ID
+          type: { kind: string }
+          mutable: false
+          visibility: always
+        - id: setId
+          label: Set ID
+          type: { kind: string }
+          mutable: false
+          visibility: always
+        - id: displayName
+          label: Display Name
+          type: { kind: string }
+          mutable: false
+          visibility: always
+
+inventories:
+  types:
+    - id: library
+      label: Library
+      scope: { kind: game }
+      accepts: [creature, spell]
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: >-
+        Shared staging pile, shuffled at setup and emptied into the two sides.
+    - id: deck
+      label: Deck
+      scope: { kind: player }
+      accepts: [creature, spell]
+      visibility: never
+      countVisibility: always
+      structure: stack
+    - id: hand
+      label: Hand
+      scope: { kind: player }
+      accepts: [creature, spell]
+      visibility: owner
+      capacity: { max: 8 }
+      # Declared per D96's hand-cap spirit and matching drawCard's own
+      # precondition number below. NOT itself enforced: `capacity` is
+      # compiled through (chaincraft-compiler assembler/config.ts:109) but
+      # never read anywhere in chaincraft-runtime (confirmed by grep). The
+      # real gate is drawCard's precondition, item 5 above.
+    - id: field
+      label: Field
+      scope: { kind: player }
+      accepts: [creature]
+      visibility: always
+      description: Where creatures stand. They persist here across rounds.
+    - id: discard
+      label: Discard
+      scope: { kind: game }
+      accepts: [creature, spell]
+      visibility: always
+
+effects:
+  effects:
+    - id: fillLibrary
+      kind: move
+      from: { inventory: "game:unassigned", select: all }
+      to: { inventory: library }
+
+    - id: shuffleLibrary
+      kind: shuffle
+      inventory: library
+
+    - id: dealHands
+      kind: distribute
+      from: { inventory: library, select: top }
+      to: { inventory: hand }
+      count: 4
+
+    - id: dealDecks
+      kind: distribute
+      from: { inventory: library, select: top }
+      to: { inventory: deck }
+      count: 16
+
+    - id: announceStart
+      kind: message
+      to: all
+      template: >-
+        Both sides start at 30 life with 4 cards in hand and 16 in the deck.
+        Energy ramps by 1 each round. Play creatures, cast spells, attack,
+        and bring the other side down.
+
+    # -------------------------------------------------------------------
+    # ENERGY, fired once per round (item 2 above). Both effects target
+    # { kind: all } because a flow hook never carries an actorId (item 1),
+    # so "actor"/default-target set-state is unusable here — proven by
+    # driving it, not assumed. capUp clamps to 6 via the property's own
+    # declared max, the same delta-clamp behavior FG-002 proved for defense.
+    # refill reads each targeted player's OWN just-incremented cap back via
+    # targetPlayerId (resolve-value.ts), not actorId — verified by reading
+    # chaincraft-runtime's own set-state executor before relying on it.
+    # -------------------------------------------------------------------
+    - id: turnEnergyCapUp
+      kind: set-state
+      path: player.property.energyCap
+      target: { kind: all }
+      value: { delta: 1 }
+
+    - id: turnEnergyRefill
+      kind: set-state
+      path: player.property.energy
+      target: { kind: all }
+      value: { var: "player.property.energyCap" }
+
+    # -------------------------------------------------------------------
+    # FREEZE, THE CLEAR. Unchanged from board-battler.yaml: fires once per
+    # round at the turn node's onComplete, sweeps BOTH fields (no player
+    # qualifier needed or resolvable from a hook), thawing every creature.
+    # board-battler.yaml's own asymmetric-freeze finding (frozen by the last
+    # player to act in a round never bites) is unchanged and not fixed here;
+    # Card 418 did not ask for it and the flow-restructuring path that would
+    # have let it be per-player turn-end was ruled out by item 1.
+    # -------------------------------------------------------------------
+    # Card 788: a freeze lasts exactly its owner's next turn, whichever seat
+    # cast it. The caster stores its seatOrder in frozenRounds: 1 when the
+    # owner still acts this round (thawed at this round's end), 2 when the
+    # owner's next turn is next round (thawed at the next round's end).
+    - id: freezeTick
+      kind: update
+      pieces: { inventory: field, select: all, filter: "piece.property.frozenRounds > 0" }
+      property: frozenRounds
+      value: { delta: -1 }
+
+    - id: thawAll
+      kind: update
+      pieces: { inventory: field, select: all, filter: "piece.property.frozenRounds == 0" }
+      property: frozen
+      value: false
+
+    - id: readyAll
+      kind: update
+      pieces: { inventory: field, select: all }
+      property: attackedThisTurn
+      value: false
+
+    - id: wakeAll
+      kind: update
+      pieces: { inventory: field, select: all }
+      property: playedThisTurn
+      value: false
+
+  passives:
+    # LIFESTEAL. Bound to Bloodleech (necromancer). Flat 2, the filed
+    # total-versus-amount gap (a passive sees the resulting total, never
+    # the size of the change) unchanged from board-battler.yaml's own note.
+    - id: lifesteal
+      trigger:
+        kind: state-write
+        scope: actor
+        path: player.property.life
+        direction: decrease
+      effects:
+        - kind: set-state
+          path: player.property.life
+          value: { delta: 2 }
+
+    # THORNS. Bound to Thornhide (shaman). Flat 2, no `target:
+    # {kind:trigger-actor}` line (the runtime throws on that literal value
+    # even though the schema still accepts it — board-battler.yaml's own
+    # note, unchanged and reconfirmed by reports/FG004_PASSIVES_PROOF_v1.md).
+    - id: thorns
+      trigger:
+        kind: state-write
+        scope: target
+        path: gamepiece.property.defense
+        direction: decrease
+      effects:
+        - kind: set-state
+          path: player.property.life
+          value: { delta: -2 }
+
+actions:
+  actions:
+    - id: takeSeat
+      label: Take a seat
+      description: Runs once per player at the start, in turn order, and records that player's place in it. Never offered as a choice.
+      effects:
+        - kind: set-state
+          path: player.property.seatOrder
+          value: { expr: "1 + countPlayers(player.property.seatOrder > 0)" }
+
+    - id: roundDraw
+      label: Draw a card
+      description: At the start of each round, draw the top card of your deck into your hand. An empty deck draws nothing.
+      preconditions: "count(actor.inventory.hand) < 8 or count(actor.inventory.deck) == 0"
+      effects:
+        - kind: move
+          from: { inventory: deck, select: top }
+          to: { inventory: hand }
+
+    - id: burnCard
+      label: Hand full
+      description: Your hand is full, so the card you draw goes to the discard pile.
+      preconditions: "count(actor.inventory.hand) >= 8 and count(actor.inventory.deck) > 0"
+      effects:
+        - kind: move
+          from: { inventory: deck, select: top }
+          to: { inventory: discard }
+        - kind: message
+          to: actor
+          template: "Your hand is full (8 cards), so the card you drew went to the discard pile."
+
+    - id: playCreature
+      label: Play a creature
+      description: Put a creature from your hand onto your field. Costs energy.
+      # Card 425: necessary-not-sufficient proxy, see the v3 header note.
+      preconditions: "count(actor.inventory.hand) > 0 and actor.property.energy > 0"
+      inputs:
+        - id: card
+          label: Choose a creature
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: creature
+            fromPlayer: self
+            # AFFORDABILITY, item 3 above. Same filter mechanism freeze uses.
+            filter: "piece.property.cost <= actor.property.energy"
+      effects:
+        - kind: move
+          from: { inventory: hand, select: { id: { param: card } } }
+          to: { inventory: field }
+        - kind: update
+          pieces: { inventory: field, select: { id: { param: card } } }
+          property: playedThisTurn
+          value: true
+        - kind: set-state
+          path: player.property.energy
+          source: { param: card }
+          value: { delta: { var: "source.property.cost", negate: true } }
+
+    - id: attackCreature
+      label: Attack a creature
+      description: Your creature and theirs each take the other's power.
+      # Card 425: exact on field-emptiness (playerCount is exactly 2), see
+      # the v3 header note. Does not confirm the attacker is unfrozen.
+      preconditions: "all(count(player.inventory.field) > 0)"
+      inputs:
+        - id: attacker
+          label: Choose your attacker
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: self
+            filter: "piece.property.frozen == false and piece.property.attackedThisTurn == false and piece.property.playedThisTurn == false"
+        - id: defenderOwner
+          label: Choose whose creature to attack
+          type:
+            kind: player-select
+            excludeSelf: true
+        - id: defender
+          label: Choose the creature to attack
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: { param: defenderOwner }
+      effects:
+        - kind: update
+          pieces: { inventory: field, select: { id: { param: attacker } } }
+          property: attackedThisTurn
+          value: true
+        - kind: update
+          source: { param: attacker }
+          pieces:
+            player: { param: defenderOwner }
+            inventory: field
+            select: { id: { param: defender } }
+          property: defense
+          value: { delta: { var: "source.property.power", negate: true } }
+        - kind: update
+          source: { param: defender }
+          pieces: { inventory: field, select: { id: { param: attacker } } }
+          property: defense
+          value: { delta: { var: "source.property.power", negate: true } }
+        # THE DEATH SWEEP, item 7 above. Verbatim
+        # reports/FG002_DISCARD_ON_ZERO_v1.md's proven pattern: sweep the
+        # defender's own field first, then the attacker's own (player
+        # omitted defaults to the acting player, the attacker — this default
+        # applies to an ACTION's own effects, which do carry an actorId,
+        # unlike the hook effects in item 1/2 above).
+        - kind: move
+          from:
+            player: { param: defenderOwner }
+            inventory: field
+            select: all
+            ofType: creature
+            filter: "piece.property.defense <= 0"
+          to: { inventory: discard }
+        - kind: move
+          from:
+            inventory: field
+            select: all
+            ofType: creature
+            filter: "piece.property.defense <= 0"
+          to: { inventory: discard }
+
+    - id: attackPlayer
+      label: Attack the opposing player
+      description: Your creature strikes the other player directly.
+      # Card 425: necessary-not-sufficient proxy, see the v3 header note.
+      preconditions: "count(actor.inventory.field) > 0"
+      inputs:
+        - id: attacker
+          label: Choose your attacker
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: self
+            filter: "piece.property.frozen == false and piece.property.attackedThisTurn == false and piece.property.playedThisTurn == false"
+      effects:
+        - kind: update
+          pieces: { inventory: field, select: { id: { param: attacker } } }
+          property: attackedThisTurn
+          value: true
+        - kind: set-state
+          path: player.property.life
+          target: { kind: all-other }
+          source: { param: attacker }
+          value: { delta: { var: "source.property.power", negate: true } }
+
+    - id: castFreeze
+      label: Cast a freeze
+      description: Freeze one of the opposing player's creatures. Costs energy.
+      # Card 425: necessary-not-sufficient proxy, see the v3 header note.
+      # any(count(player.inventory.field) > 0) is a genuine live-run addition
+      # over playCreature's shape: castFreeze's victim gamepiece-select needs
+      # SOME player's field nonempty (target-blind when both are empty,
+      # correctly excluded; still over-offers if only the actor's own field
+      # holds a creature and the opponent's is empty -- self/other is not
+      # distinguishable at this pin, see the header note).
+      preconditions: "count(actor.inventory.hand) > 0 and actor.property.energy > 0 and any(count(player.inventory.field) > 0)"
+      inputs:
+        - id: card
+          label: Choose a freeze card
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: spell
+            fromPlayer: self
+            filter: "piece.property.cost <= actor.property.energy"
+        - id: victimOwner
+          label: Choose whose creature to freeze
+          type:
+            kind: player-select
+            excludeSelf: true
+        - id: victim
+          label: Choose the creature to freeze
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: { param: victimOwner }
+      effects:
+        - kind: move
+          from: { inventory: hand, select: { id: { param: card } } }
+          to: { inventory: discard }
+        - kind: update
+          pieces:
+            player: { param: victimOwner }
+            inventory: field
+            select: { id: { param: victim } }
+          property: frozen
+          value: true
+        - kind: update
+          pieces:
+            player: { param: victimOwner }
+            inventory: field
+            select: { id: { param: victim } }
+          property: frozenRounds
+          value: { expr: "actor.property.seatOrder" }
+        - kind: set-state
+          path: player.property.energy
+          source: { param: card }
+          value: { delta: { var: "source.property.cost", negate: true } }
+
+flow:
+  root:
+    kind: game
+    label: Board Battler v3
+    hooks:
+      onEnter:
+        - ref: fillLibrary
+        - ref: shuffleLibrary
+        - ref: dealHands
+        - ref: dealDecks
+        - ref: announceStart
+    winConditions:
+      - rule: ranking
+        property: player.property.life
+        order: highest
+        # v10: both at 0 at the same check means nobody survived, so nobody wins.
+        tiebreak: no-winner
+        onVictory:
+          - kind: message
+            to: all
+            template: "{{game.winners[0]}} wins with the most life remaining."
+    children:
+      - kind: turn
+        id: seating
+        label: Seating
+        actor: all-players
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          # One option, not passable: the runtime runs it without asking
+          # (player-effects-resolver.ts:69-74), once per player in seat order.
+          kind: choice
+          options:
+            - { kind: action, ref: takeSeat }
+      - kind: loop
+        id: rounds
+        label: Rounds
+        # v10: the match ends after any player's turn that leaves a player at 0
+        # life. Replaces count: 20; the compiler refuses count with endCondition.
+        checkAfter: turn
+        endCondition: "any(player.property.life <= 0)"
+        children:
+          - kind: turn
+            id: draw
+            label: Draw
+            actor: all-players
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              # Not passable, and roundDraw / burnCard exclude each other and
+              # cover every case, so exactly one is legal and the runtime runs
+              # it without asking (player-effects-resolver.ts:69-74).
+              kind: choice
+              options:
+                - { kind: action, ref: roundDraw }
+                - { kind: action, ref: burnCard }
+          - kind: turn
+            id: main
+            label: Take your turn
+            actor: all-players
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              # Any number of (until the player ends the turn): play a creature,
+              # attack a creature, attack a player, cast a freeze. Ending the
+              # turn (pass) is always offered; nothing else ends the turn.
+              kind: repeat
+              count: until-pass
+              body:
+                kind: choice
+                passable: true
+                options:
+                  - { kind: action, ref: playCreature }
+                  - { kind: action, ref: attackCreature }
+                  - { kind: action, ref: attackPlayer }
+                  - { kind: action, ref: castFreeze }
+            hooks:
+              onEnter:
+                - ref: turnEnergyCapUp
+                - ref: turnEnergyRefill
+              onComplete:
+                - ref: freezeTick
+                - ref: thawAll
+                - ref: readyAll
+                - ref: wakeAll
+
+catalog:
+  entries:
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d31
+      typeId: creature
+      quantity: 1
+      properties: { cost: 1, power: 2, defense: 1, cardClass: "mage", cardId: "nc-1", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Novice" }
+    # Flash Freeze — the Mage freeze spell (item 8: no binding needed, castFreeze targets any spell).
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d32
+      typeId: spell
+      quantity: 2
+      properties: { cost: 2, cardClass: "mage", cardId: "nc-2", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Flash Freeze" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d33
+      typeId: creature
+      quantity: 2
+      properties: { cost: 2, power: 3, defense: 2, cardClass: "mage", cardId: "nc-3", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Adept" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d34
+      typeId: creature
+      quantity: 2
+      properties: { cost: 3, power: 3, defense: 4, cardClass: "mage", cardId: "nc-4", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Scholar" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d35
+      typeId: creature
+      quantity: 2
+      properties: { cost: 4, power: 5, defense: 4, cardClass: "mage", cardId: "nc-5", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Conjurer" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d36
+      typeId: creature
+      quantity: 2
+      properties: { cost: 5, power: 5, defense: 6, cardClass: "mage", cardId: "nc-6", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Magus" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d37
+      typeId: creature
+      quantity: 2
+      properties: { cost: 6, power: 7, defense: 6, cardClass: "mage", cardId: "nc-7", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Archmage" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d38
+      typeId: creature
+      quantity: 2
+      properties: { cost: 1, power: 2, defense: 1, cardClass: "necromancer", cardId: "nc-8", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Acolyte" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d39
+      typeId: creature
+      quantity: 2
+      properties: { cost: 2, power: 4, defense: 1, cardClass: "necromancer", cardId: "nc-9", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Gravedigger" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3130
+      typeId: creature
+      quantity: 2
+      properties: { cost: 4, power: 5, defense: 2, cardClass: "necromancer", cardId: "nc-10", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Bonepicker" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3131
+      typeId: creature
+      quantity: 2
+      properties: { cost: 4, power: 6, defense: 3, cardClass: "necromancer", cardId: "nc-11", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Corpsewright" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3132
+      typeId: creature
+      quantity: 2
+      properties: { cost: 5, power: 7, defense: 4, cardClass: "necromancer", cardId: "nc-12", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Soulbinder" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3133
+      typeId: creature
+      quantity: 2
+      properties: { cost: 6, power: 8, defense: 5, cardClass: "necromancer", cardId: "nc-13", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Lich" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3134
+      typeId: creature
+      quantity: 2
+      properties: { cost: 1, power: 1, defense: 2, cardClass: "shaman", cardId: "nc-14", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Initiate" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3135
+      typeId: creature
+      quantity: 2
+      properties: { cost: 2, power: 1, defense: 4, cardClass: "shaman", cardId: "nc-15", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Totemcarver" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3136
+      typeId: creature
+      quantity: 2
+      properties: { cost: 3, power: 2, defense: 5, cardClass: "shaman", cardId: "nc-16", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Spiritbinder" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3137
+      typeId: creature
+      quantity: 2
+      properties: { cost: 4, power: 3, defense: 6, cardClass: "shaman", cardId: "nc-17", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Stormcaller" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3138
+      typeId: creature
+      quantity: 2
+      properties: { cost: 5, power: 4, defense: 7, cardClass: "shaman", cardId: "nc-18", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Ancestor Speaker" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3139
+      typeId: creature
+      quantity: 2
+      properties: { cost: 6, power: 5, defense: 8, cardClass: "shaman", cardId: "nc-19", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Worldroot Elder" }
+    # Siphon Life — a plain spell card today (item 8: casts as a freeze if
+    # played; no separate lifesteal-flavored spell mechanic exists yet).
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3230
+      typeId: spell
+      quantity: 2
+      properties: { cost: 2, cardClass: "necromancer", cardId: "nc-20", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Siphon Life" }
+    # Barbed Ward — same note as Siphon Life, for Shaman.
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3231
+      typeId: spell
+      quantity: 2
+      properties: { cost: 2, cardClass: "shaman", cardId: "nc-21", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Barbed Ward" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3232
+      typeId: creature
+      quantity: 2
+      properties: { cost: 3, power: 2, defense: 3, cardClass: "mage", cardId: "nc-22", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Frostcaller" }
+    # Bloodleech — LIFESTEAL carrier, item 8.
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3233
+      typeId: creature
+      quantity: 2
+      properties: { cost: 2, power: 2, defense: 2, cardClass: "necromancer", cardId: "nc-23", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Bloodleech" }
+      passiveBindings: { whileOnField: lifesteal }
+    # Thornhide — THORNS carrier, item 8.
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3234
+      typeId: creature
+      quantity: 2
+      properties: { cost: 3, power: 2, defense: 4, cardClass: "shaman", cardId: "nc-24", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Thornhide" }
+      passiveBindings: { whileOnField: thorns }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3235
+      typeId: creature
+      quantity: 2
+      properties: { cost: 1, power: 2, defense: 2, cardClass: "neutral", cardId: "nc-25", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Recruit" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3236
+      typeId: creature
+      quantity: 2
+      properties: { cost: 1, power: 1, defense: 2, cardClass: "neutral", cardId: "nc-26", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Scout" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3237
+      typeId: creature
+      quantity: 2
+      properties: { cost: 2, power: 2, defense: 3, cardClass: "neutral", cardId: "nc-27", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Sentinel" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3238
+      typeId: creature
+      quantity: 2
+      properties: { cost: 2, power: 3, defense: 2, cardClass: "neutral", cardId: "nc-28", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Wanderer" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3239
+      typeId: creature
+      quantity: 2
+      properties: { cost: 3, power: 3, defense: 4, cardClass: "neutral", cardId: "nc-29", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Warden" }
+    - id: s2c8a1642c45f40deba70d440cc981f66c6e632d3330
+      typeId: creature
+      quantity: 2
+      properties: { cost: 3, power: 4, defense: 3, cardClass: "neutral", cardId: "nc-30", setId: "2c8a1642-c45f-40de-ba70-d440cc981f66", displayName: "Dune Drifter" }
+    - id: creatureS2jp1wvp
+      typeId: creature
+      quantity: 1
