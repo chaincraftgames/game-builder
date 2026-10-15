@@ -58,18 +58,14 @@ export type IntRange = z.infer<typeof IntRangeSchema>;
  *
  * **Path segments by context:**
  * - `game.property.<id>`           — game-level scalar property
- * - `game.inventory.<id>.count`    — item count in a game-level inventory
  * - `actor.property.<id>`          — property on the acting/evaluated player
- * - `actor.inventory.<id>.count`   — item count in a player's inventory
  * - `actor.role.<id>`              — 1 if the player holds this role, else 0
  * - `piece.property.<id>`          — property on a gamepiece (piece-context only)
- * - `piece.inventory.<id>.count`   — inventory count on a gamepiece (piece-context only)
  * - `input.<id>`                   — value of a named action input (action-context only)
  *
  * @example
  * ```
  * game.property.round
- * actor.inventory.hand.count
  * piece.property.charges
  * input.bidAmount
  * ```
@@ -77,15 +73,14 @@ export type IntRange = z.infer<typeof IntRangeSchema>;
 export const StatePathSchema = z
   .string()
   .regex(
-    /^(game\.(property|inventory)\.|actor\.(property|inventory|role)\.|piece\.(property|inventory)\.|input\.)\S+/,
-    "Must be a valid state path: game.property.<id>, game.inventory.<id>.count, " +
-      "actor.property.<id>, actor.inventory.<id>.count, actor.role.<id>, " +
-      "piece.property.<id>, piece.inventory.<id>.count, or input.<id>.",
+    /^(game\.property\.|actor\.(property|role)\.|piece\.property\.|input\.)\S+/,
+    "Must be a valid state path: game.property.<id>, actor.property.<id>, " +
+      "actor.role.<id>, piece.property.<id>, or input.<id>.",
   )
   .describe(
     "A state path string referencing runtime game state. " +
-      "Valid prefixes: 'game.property.', 'game.inventory.', 'actor.property.', " +
-      "'actor.inventory.', 'actor.role.', 'piece.property.', 'piece.inventory.', 'input.'.",
+      "Valid prefixes: 'game.property.', 'actor.property.', 'actor.role.', " +
+      "'piece.property.', 'input.'.",
   );
 
 export type StatePath = z.infer<typeof StatePathSchema>;
@@ -110,13 +105,18 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  *
  * ## State path identifiers
  *
+ * Inventory paths (`game.inventory.<id>`, `actor.inventory.<id>`, `player.inventory.<id>`)
+ * are collections, not values: use them only as the first argument of an aggregator
+ * (see Built-in functions), e.g. `count(actor.inventory.hand) > 0`.
+ *
  * The available paths depend on the evaluation context:
  *
  * **Action preconditions** (`ActionSchema.preconditions`):
+ * - `actor.id`                    — the acting player's id
  * - `actor.property.<id>`         — property on the acting player
- * - `actor.inventory.<id>.count`  — item count in the actor's named inventory
+ * - `actor.inventory.<id>`        — the actor's named inventory (aggregators only)
  * - `game.property.<id>`          — game-level property
- * - `game.inventory.<id>.count`   — item count in a game-level inventory
+ * - `game.inventory.<id>`         — a game-level inventory (aggregators only)
  *
  * **Input validation** (`ActionInput.validation`, value inputs only):
  * - `input.<id>`                  — this input's candidate answer, or an earlier input's answer
@@ -124,19 +124,17 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  *
  * **Piece-slot context** (`ActionSlotSchema.preconditions`):
  * - `piece.property.<id>`         — property on the gamepiece instance holding this slot
- * - `piece.inventory.<id>.count`  — item count in a piece's own inventory
- * - `actor.property.<id>`         — property on the acting player
- * - `actor.inventory.<id>.count`  — item count in the actor's named inventory
+ * - `actor.*`                     — as for preconditions
  *
  * **Flow end conditions** (`LoopFlowNode.endCondition`, `SimultaneousFlowNode.endCondition`):
  * - `game.property.<id>`          — game-level property
- * - `game.inventory.<id>.count`   — item count in a game-level inventory
+ * - `game.inventory.<id>`         — a game-level inventory (aggregators only)
  * - `actor.property.<id>`         — property on the acting player
  *
  * **Player matching** (`PlayerTarget.matching.condition`, `player-select.filter`):
  * - `player.id`                   — the candidate player's id (`player-select.filter` only)
  * - `player.property.<id>`        — the candidate player's property
- * - `player.inventory.<id>.count` — item count in the candidate player's inventory
+ * - `player.inventory.<id>`       — the candidate player's inventory (aggregators only)
  * - `input.<id>`                  — an earlier input's answer (`player-select.filter` only)
  *
  * **Gamepiece filter** (`gamepiece-select.filter`):
@@ -147,19 +145,24 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  *
  * ## Built-in functions
  *
- * - `count(inventory)`
- *   Number of pieces in an inventory path, e.g. `count(game.inventory.deck)`.
- *   Equivalent to the `.count` suffix but usable in any expression position.
+ * An aggregator takes a collection and an optional per-item expression; inside it the
+ * item is `piece` (inventory) or `player` (`players`). The collection is `players`
+ * (every seat, including eliminated players) or an inventory path.
  *
- * - `all(players, <expr>)`
- *   Universal quantifier — true when `<expr>` holds for every player in the game.
- *   Inside `<expr>`, use `player.property.<id>` and `player.inventory.<id>.count`
- *   to reference each candidate player.
- *   Example: `all(players, player.property.ready == true)`
+ * - `count(c)` — number of items: `count(game.inventory.deck) == 0`
+ * - `count(c, <expr>)` — items where `<expr>` is true:
+ *   `count(players, not player.property.eliminated) == 1`
+ * - `sum(c, <expr>)` — total of a numeric per-item value (0 when empty):
+ *   `sum(actor.inventory.hand, piece.property.value) > 21`
+ * - `all(c, <expr>)` — true when every item matches (true when empty):
+ *   `all(players, player.property.ready == true)`
+ * - `any(c, <expr>)` — true when at least one item matches (false when empty):
+ *   `any(players, player.property.roundsWon >= 5)`
+ * - `if(cond, a, b)` — `a` when `cond` is true, otherwise `b`; only the chosen branch is evaluated:
+ *   `if(actor.property.shielded, 0, game.property.damage)`
  *
- * - `any(players, <expr>)`
- *   Existential quantifier — true when `<expr>` holds for at least one player.
- *   Example: `any(players, player.property.roundsWon >= 5)`
+ * Aggregators nest. Total sixes across every player's cup:
+ * `sum(players, count(player.inventory.cup, piece.property.face == 6))`
  *
  * ## Computed identifiers
  *
@@ -173,7 +176,7 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * ```
  * @example Loop exits when deck is empty
  * ```yaml
- * endCondition: "game.inventory.deck.count == 0"
+ * endCondition: "count(game.inventory.deck) == 0"
  * ```
  * @example Action requires coins and prior turns
  * ```yaml
@@ -181,7 +184,7 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * ```
  * @example Action available only when a bid has been placed
  * ```yaml
- * preconditions: "game.inventory.current-bid.count != 0"
+ * preconditions: "count(game.inventory.currentBid) != 0"
  * ```
  * @example Loop exits when any player reaches 50 points
  * ```yaml
@@ -198,12 +201,15 @@ export const ConditionExpressionSchema = z.string().describe(
   "An infix condition expression compiled to a TypeScript predicate by the game compiler. " +
     "Operators: >, >=, <, <=, ==, != (comparisons); and, or, not (boolean). " +
     "Variants &&/||/= are normalised automatically. " +
-    "Paths: game.property.<id>, game.inventory.<id>.count, " +
-    "actor.property.<id>, actor.inventory.<id>.count, " +
-    "player.property.<id> (player-filter context), player.inventory.<id>.count, " +
-    "piece.property.<id> (gamepiece-filter context), piece.typeId, " +
+    "Paths: game.property.<id>, actor.id, actor.property.<id>, " +
+    "player.id / player.property.<id> (player-filter context or inside an aggregator over players), " +
+    "piece.id / piece.property.<id> / piece.typeId (gamepiece-filter context or inside an aggregator over an inventory), " +
     "input.<id> (input validation and selection filters only). " +
-    "Functions: count(inventory), all(players, expr), any(players, expr).",
+    "Inventories (game.inventory.<id>, actor.inventory.<id>, player.inventory.<id>) are collections: " +
+    "use them only inside aggregators, never with a '.count' suffix. " +
+    "Aggregators take a collection ('players' or an inventory path) and an optional per-item " +
+    "expression in which the item is 'player' or 'piece': count(c), count(c, expr), sum(c, expr), " +
+    "all(c, expr), any(c, expr). if(cond, a, b) chooses between two values.",
 );
 
 export type ConditionExpression = z.infer<typeof ConditionExpressionSchema>;

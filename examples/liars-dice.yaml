@@ -131,14 +131,13 @@ effects:
       value: true
 
     - id: resolveChallenge
-      effect: custom
-      description: >-
-        Count all dice across every player's playerCup where face equals
-        game.property.currentBidFace. If the total count is greater than or
-        equal to game.property.currentBidQuantity, the challenge fails — set
-        game.property.roundLoser to the challenger's player ID. If the total
-        is less, the challenge succeeds — set game.property.roundLoser to the
-        value of game.property.currentBidder.
+      effect: set-state
+      path: game.property.roundLoser
+      value:
+        expr: >-
+          if(sum(players, count(player.inventory.playerCup,
+          piece.property.face == game.property.currentBidFace)) >=
+          game.property.currentBidQuantity, actor.id, game.property.currentBidder)
 
     - id: eliminateDie
       effect: move
@@ -252,7 +251,7 @@ flow:
             template: "{{game.winners[0]}} wins Liar's Dice — the last player with dice remaining!"
     children:
       - kind: loop              # game loop — runs until one player remains
-        endCondition: "countPlayers(not player.property.eliminated) <= 1"
+        endCondition: "count(players, not player.property.eliminated) <= 1"
         children:
           - kind: loop          # bidding loop — players bid until someone challenges
             endCondition: "game.property.challengeMade == true"

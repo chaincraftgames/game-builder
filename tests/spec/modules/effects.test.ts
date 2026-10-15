@@ -637,26 +637,6 @@ describe("PropertyValueSchema — var references", () => {
     expect(r.success).toBe(true);
   });
 
-  it("accepts a game inventory count var reference", () => {
-    const r = EffectSchema.safeParse({
-      effect: "update",
-      pieces: { inventory: "test", select: "top" },
-      property: "cardsLeft",
-      value: { var: "game.inventory.drawPile.count" },
-    });
-    expect(r.success).toBe(true);
-  });
-
-  it("accepts a player inventory count var reference", () => {
-    const r = EffectSchema.safeParse({
-      effect: "update",
-      pieces: { inventory: "test", select: "top" },
-      property: "handSize",
-      value: { var: "player.inventory.hand.count" },
-    });
-    expect(r.success).toBe(true);
-  });
-
   it("accepts delta with a literal number", () => {
     const r = EffectSchema.safeParse({
       effect: "update",

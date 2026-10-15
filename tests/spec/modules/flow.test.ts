@@ -533,7 +533,7 @@ describe("FlowModuleSchema — winConditions", () => {
   it("accepts a per-player condition win condition", () => {
     const result = ok(baseGame([{
       rule: "condition",
-      condition: "player.inventory.escaped.count >= 1",
+      condition: "count(player.inventory.escaped) >= 1",
     }]));
     expect((result.root.winConditions![0] as any).rule).toBe("condition");
   });

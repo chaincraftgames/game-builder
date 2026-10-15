@@ -80,7 +80,7 @@ describe("ActionsModuleSchema — Liar's Dice", () => {
         id: "challenge",
         label: "Challenge",
         description: "Call out the current bid as a lie",
-        preconditions: "game.inventory.currentBid.count != 0",
+        preconditions: "count(game.inventory.currentBid) != 0",
         steps: [{ effectRef: "resolveChallenge" }],
       },
 
@@ -137,7 +137,7 @@ describe("ActionsModuleSchema — Liar's Dice", () => {
       {
         id: "buySpecialDie",
         label: "Buy Special Die",
-        preconditions: "actor.property.coins >= 3 and game.inventory.specialDice.count != 0",
+        preconditions: "actor.property.coins >= 3 and count(game.inventory.specialDice) != 0",
         steps: [
           { effectRef: "purchaseSpecialDie" },
         ],
@@ -241,7 +241,7 @@ describe("ActionsModuleSchema — Liar's Dice", () => {
   it("preserves preconditions as infix expression string", () => {
     const result = ok(validModule);
     const challenge = result.actions.find((a) => a.id === "challenge")!;
-    expect(challenge.preconditions).toBe("game.inventory.currentBid.count != 0");
+    expect(challenge.preconditions).toBe("count(game.inventory.currentBid) != 0");
   });
 
   it("preserves reactive fields", () => {

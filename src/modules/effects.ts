@@ -424,8 +424,8 @@ export const PropertyValueSchema = z
       .object({ var: z.string() })
       .describe(
         "Set this property to the value of another state property. Use a dot-path: " +
-          "'game.property.<id>', 'player.property.<id>', 'game.inventory.<id>.count', " +
-          "'player.inventory.<id>.count', 'source.property.<id>' (requires a source field), " +
+          "'game.property.<id>', 'player.property.<id>', " +
+          "'source.property.<id>' (requires a source field), " +
           "'target.property.<id>' (available in update effects — refers to the current target piece), " +
           "'trigger.<field>' (available only inside a passive's effects when the trigger is state-write; " +
           "fields: delta (signed, newValue - previousValue), previousValue, newValue, path, direction, targetId). " +
@@ -435,18 +435,21 @@ export const PropertyValueSchema = z
       .object({ expr: z.string() })
       .describe(
         "Compute this value from an infix expression evaluated at effect execution time. " +
-          "Supports arithmetic (+, -, *, /), comparisons, boolean operators, and " +
-          "dot-path state references (game.property.x, actor.property.y, trigger.delta in passives, etc.). " +
-          "Example: 'actor.property.attack - target.property.defense'. " +
+          "Supports arithmetic (+, -, *, /), comparisons, boolean operators, " +
+          "dot-path state references (game.property.x, actor.id, actor.property.y, trigger.delta in passives, etc.), " +
+          "aggregators count/sum/all/any over 'players' or an inventory path, and if(cond, a, b) " +
+          "to choose between two values. " +
+          "Example: 'actor.property.attack - target.property.defense' or " +
+          "'if(count(actor.inventory.hand) == 0, actor.id, game.property.leader)'. " +
           "Supersedes var/delta/mult for complex computations.",
       ),
   ])
   .describe(
     "The new value to assign, or a relative change to apply to a property. " +
     "Values can be literals, deltas, multipliers, state references, or action inputs. " +
-    "Each value performs ONE operation. For combined operations (e.g. multiply then subtract), " +
-    "use sequential effects writing to an intermediate state property, or use a custom effect " +
-    "if no intermediate property exists.",
+    "Each value performs ONE operation. For computed values (arithmetic, counting or summing " +
+    "pieces or players, choosing between two values), use { expr: \"...\" } with the " +
+    "aggregators and if() — do not use a custom effect for these.",
   );
 
 // ---------------------------------------------------------------------------
@@ -1399,7 +1402,7 @@ export const GenerateImageEffectSchema = z
  * ```yaml
  * target:
  *   kind: matching
- *   condition: "player.property.score > 5 and player.inventory.resources.count > 0"
+ *   condition: "player.property.score > 5 and count(player.inventory.resources) > 0"
  * ```
  */
 export const PlayerTargetSchema = z
@@ -1446,7 +1449,7 @@ export const PlayerTargetSchema = z
         condition: ConditionExpressionSchema.describe(
           "An infix expression evaluated per candidate player. " +
             "Available paths: 'player.property.<id>' (stored and computed state properties), " +
-            "'player.inventory.<id>.count' (total piece count in a player-scoped inventory). " +
+            "'count(player.inventory.<id>)' (total piece count in a player-scoped inventory). " +
             "Example: 'player.property.roundsWon >= 3' or " +
             "'count(player.inventory.hand) > 0 and not player.property.eliminated'.",
         ),

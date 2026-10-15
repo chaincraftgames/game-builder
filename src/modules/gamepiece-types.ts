@@ -342,7 +342,7 @@ export const ActionSlotSchema = z
       "Infix expression evaluated against the gamepiece instance's state before " +
         "this slot is offered. If false, the slot is unavailable for this piece instance. " +
         "Available paths: 'piece.property.<id>' (property on the piece holding this slot), " +
-        "'piece.inventory.<id>.count', 'actor.property.<id>', 'actor.inventory.<id>.count'. " +
+        "'actor.property.<id>', 'count(actor.inventory.<id>)'. " +
         "Example: 'piece.property.charges >= 1'",
     ),
   })

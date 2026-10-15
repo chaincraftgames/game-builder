@@ -39,7 +39,7 @@
  *         type: { kind: number, min: 0, max: 6 }
  *         default: 0
  * # Elimination uses the built-in player.property.eliminated; remaining players are
- * # counted with countPlayers(not player.property.eliminated).
+ * # counted with count(players, not player.property.eliminated).
  */
 
 import { z } from "zod";

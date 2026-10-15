@@ -42,17 +42,12 @@ describe("StatePathSchema — valid paths", () => {
   const valid = [
     "game.property.round",
     "game.property.activePlayers",
-    "game.inventory.discard.count",
-    "game.inventory.current-bid.count",
     "actor.property.score",
     "actor.property.alive",
-    "actor.inventory.hand.count",
-    "actor.inventory.gold-pile.count",
     "actor.role.dealer",
     "actor.role.mafia-member",
     "piece.property.charges",
     "piece.property.face-state",
-    "piece.inventory.slots.count",
     "input.bidAmount",
     "input.target-player",
   ];
@@ -74,8 +69,9 @@ describe("StatePathSchema — invalid paths", () => {
     "score",                    // bare property name, no prefix
     "property.score",           // missing root segment
     "player.property.score",    // "player" not a valid root (use "actor")
-    "game.score",               // missing "property" or "inventory" segment
+    "game.score",               // missing "property" segment
     "actor.inventory",          // missing trailing id
+    "game.inventory.discard",   // inventories are collections, not state paths
     "game.property.",           // empty id after prefix
     "GAME.property.round",      // wrong case
   ];

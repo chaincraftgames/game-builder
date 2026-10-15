@@ -24,8 +24,8 @@
  *   effect step, and must end with an effect.  It can have multiple input and effect 
  *   steps in between.
  * - 'preconditions' is an infix expression evaluated against runtime state before
- *   the action is offered. State paths: 'actor.property.<id>',
- *   'actor.inventory.<id>.count', 'game.property.<id>', 'game.inventory.<id>.count'.
+ *   the action is offered. State paths: 'actor.id', 'actor.property.<id>',
+ *   'game.property.<id>'; inventories via 'count(actor.inventory.<id>)' / 'count(game.inventory.<id>)'.
  *   Inputs are not yet collected, so 'input.<id>' is unavailable here; rules about
  *   input values go in 'ActionInput.validation' (or a selection input's 'filter').
  * - 'interrupt' names the subflows during which this action may be taken outside turn
@@ -214,7 +214,7 @@ export const ActionInputSchema = z
           filter: ConditionExpressionSchema.optional().describe(
             "Infix expression to filter eligible players. " +
               "Evaluated per-player. Available paths: 'player.id', 'player.property.<id>', " +
-              "'player.inventory.<id>.count', 'input.<id>' (an EARLIER input of this action). " +
+              "'count(player.inventory.<id>)', 'input.<id>' (an EARLIER input of this action). " +
               "Example: 'not player.property.eliminated and count(player.inventory.hand) > 0'. " +
               "Runtime computes valid options and sends them to UX.",
           ),
@@ -452,7 +452,7 @@ export const ActionStepSchema = keyedUnion({
  * ```yaml
  * id: challenge
  * label: Challenge
- * preconditions: "game.inventory.currentBid.count != 0"
+ * preconditions: "count(game.inventory.currentBid) != 0"
  * steps:
  *   - effectRef: resolveChallenge
  * ```
@@ -507,8 +507,8 @@ export const ActionSchema = z
     preconditions: ConditionExpressionSchema.optional().describe(
       "Infix expression evaluated before the action is offered. " +
         "If false, the action is unavailable regardless of flow context. " +
-        "Available paths: 'actor.property.<id>', 'actor.inventory.<id>.count', " +
-        "'game.property.<id>', 'game.inventory.<id>.count'. " +
+        "Available paths: 'actor.id', 'actor.property.<id>', 'count(actor.inventory.<id>)', " +
+        "'game.property.<id>', 'count(game.inventory.<id>)'. " +
         "Example: 'actor.property.coins >= 3 and game.property.roundStarted == true'. " +
         "Inputs are not collected yet, so rules about input values (e.g., bid must exceed " +
         "current bid) belong in ActionInput.validation instead.",

@@ -27,7 +27,7 @@
  *   Optional: label, depleteTo (default: "game:unassigned"), availableInSubflows
  *
  * ## Engine synthesis
- *   1. Precondition: piece.inventory["chaincraft:charges:<slotId>:charges"].count >= count
+ *   1. Precondition: count(piece.inventory["chaincraft:charges:<slotId>:charges"]) >= count
  *   2. An action slot (<slotId>) that executes the referenced action's full effect list
  *   3. Post-execution cleanup: move `count` tokens from charge inventory → depleteTo
  *
@@ -111,7 +111,7 @@ export const ChargesMechanicSchema = z
       .min(1)
       .describe(
         "Number of charge tokens consumed per activation. " +
-          "Engine precondition: piece.inventory.<chargeInventory>.count >= count. " +
+          "Engine precondition: the charge inventory holds at least this many tokens. " +
           "Engine cleanup: move exactly this many tokens to 'depleteTo' after the action resolves.",
       ),
     action: z

@@ -222,19 +222,9 @@
 # be precondition-checked directly; count()-and-energy proxies below are
 # the narrowest expressible approximation, not an exact match. See FG-010.
 #
-# A SECOND DOC/GRAMMAR MISMATCH FOUND WHILE PROVING THIS (FG-009, new):
-# common.ts's own examples show a two-argument form, `all(players, <expr>)`
-# / `any(players, <expr>)`; the real parser (parser.ts's call()) DOES parse
-# two comma-separated arguments, but the real evaluator
-# (evaluator.ts's compileQuantifier) throws unless args.length === 1. The
-# actually-working form, proven by
-# chaincraft-compiler/src/expressions/__tests__/expressions.test.ts lines
-# 230-257, is one argument only: `all(<expr>)` / `any(<expr>)`, with
-# `player.property.<id>` / `count(player.inventory.<id>)` bound per
-# iteration inside it — no leading "players," token. Every quantifier below
-# uses the proven one-argument form. This is FG-001's sibling: the same
-# docstring family (gamedef common.ts) documents syntax the real compiler
-# does not accept, a second time.
+# FG-009 RESOLVED: quantifiers take an explicit collection, `all(players, <expr>)` /
+# `any(players, <expr>)`, with `player.property.<id>` / `count(player.inventory.<id>)`
+# bound per iteration. Every quantifier below uses that form.
 #
 # THE FOUR PRECONDITIONS ADDED, each the narrowest sound proxy the grammar
 # allows, and each proven not to falsely EXCLUDE a legal move (only to
@@ -244,7 +234,7 @@
 #     confirm hand holds a card of the right kind (creature vs spell) at or
 #     under current energy. Directly fixes the observed bug (energy hits 0
 #     -> playCreature no longer offered).
-#   - attackCreature: `all(count(player.inventory.field) > 0)`. Exploits
+#   - attackCreature: `all(players, count(player.inventory.field) > 0)`. Exploits
 #     `metadata.playerCount: {min:2, max:2}` — with exactly two players,
 #     "every player's field is nonempty" means BOTH the actor's own field
 #     AND the opponent's field hold a creature, which is EXACTLY the real
@@ -256,7 +246,7 @@
 #     needs checking. Does not confirm the actor's own creature is
 #     unfrozen, same limit as attackCreature.
 #   - castFreeze: `count(actor.inventory.hand) > 0 and
-#     actor.property.energy > 0 and any(count(player.inventory.field) > 0)`.
+#     actor.property.energy > 0 and any(players, count(player.inventory.field) > 0)`.
 #     A LIVE BOTS RUN CAUGHT A SECOND FAILURE MODE the headless proof did
 #     not exercise: at round 1 before ANY creature exists on either field,
 #     the hand/energy proxy alone still offered castFreeze, and its
@@ -593,7 +583,7 @@ actions:
       description: Your creature and theirs each take the other's power.
       # Card 425: exact on field-emptiness (playerCount is exactly 2), see
       # the v3 header note. Does not confirm the attacker is unfrozen.
-      preconditions: "all(count(player.inventory.field) > 0)"
+      preconditions: "all(players, count(player.inventory.field) > 0)"
       steps:
         - input: attacker
           label: Choose your attacker
@@ -674,13 +664,13 @@ actions:
       label: Cast a freeze
       description: Freeze one of the opposing player's creatures. Costs energy.
       # Card 425: necessary-not-sufficient proxy, see the v3 header note.
-      # any(count(player.inventory.field) > 0) is a genuine live-run addition
+      # any(players, count(player.inventory.field) > 0) is a genuine live-run addition
       # over playCreature's shape: castFreeze's victim gamepiece-select needs
       # SOME player's field nonempty (target-blind when both are empty,
       # correctly excluded; still over-offers if only the actor's own field
       # holds a creature and the opponent's is empty -- self/other is not
       # distinguishable at this pin, see the header note).
-      preconditions: "count(actor.inventory.hand) > 0 and actor.property.energy > 0 and any(count(player.inventory.field) > 0)"
+      preconditions: "count(actor.inventory.hand) > 0 and actor.property.energy > 0 and any(players, count(player.inventory.field) > 0)"
       steps:
         - input: card
           label: Choose a freeze card

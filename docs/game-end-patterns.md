@@ -6,7 +6,7 @@ combination of the two.
 
 | Concern | Where it lives | When it runs | Bound roots |
 |---|---|---|---|
-| **Ending** | `endCondition` / `count` on a `loop` | `checkAfter: iteration` (default) → after every child runs; `checkAfter: turn` → after each player's turn | `iteration`: none (use `all()` / `any()` / `countPlayers()`); `turn`: `actor` = the player who just acted |
+| **Ending** | `endCondition` / `count` on a `loop` | `checkAfter: iteration` (default) → after every child runs; `checkAfter: turn` → after each player's turn | `iteration`: none (use `all(players, …)` / `any(players, …)` / `count(players, …)`); `turn`: `actor` = the player who just acted |
 | **Winning** | `winConditions[]` on the `game` root | Once, when the root completes (after its `onComplete` hooks) | `player` = each player being evaluated (rules are checked once per player) |
 
 Consequences:
@@ -28,10 +28,10 @@ expressions, `matching` targets, messages, and win conditions. Filter explicitly
 | # | Trigger | Status | Pattern |
 |---|---|---|---|
 | 1 | N rounds completed | ✅ | `count: N` |
-| 2a | All but one player eliminated | ✅ | `endCondition: "countPlayers(not player.property.eliminated) <= 1"` |
+| 2a | All but one player eliminated | ✅ | `endCondition: "count(players, not player.property.eliminated) <= 1"` |
 | 2b | All players holding a role eliminated | ❌ | Roles are not readable in expressions. Roadmap R6. |
 | 3a | A game inventory empties | ✅ | `endCondition: "count(game.inventory.deck) == 0"` |
-| 3b | A player's inventory empties | ✅ | `checkAfter: turn` + `"count(actor.inventory.hand) == 0"`, or `"any(count(player.inventory.hand) == 0)"` |
+| 3b | A player's inventory empties | ✅ | `checkAfter: turn` + `"count(actor.inventory.hand) == 0"`, or `"any(players, count(player.inventory.hand) == 0)"` |
 | 4a | Score total reached | ✅ | `checkAfter: turn` + `"actor.property.score >= 10"` (add `finalRound: true` for "everyone else gets one more turn") |
 | 4b | Score-track position reached | ⚠️ | Model the track as a number property; the physical track is presentation. No "position of piece in line" query exists. |
 | 5a | A specific non-player piece is killed | ⚠️ | ✅ when death moves the piece to an inventory and *any* death suffices (`count(game.inventory.graveyard) >= 1`). ❌ for "*this* piece" or "its `hp <= 0`" — pieces cannot be addressed by ID. Roadmap R4. |
@@ -61,7 +61,7 @@ expressions, `matching` targets, messages, and win conditions. Filter explicitly
 ```yaml
 children:
   - kind: loop
-    endCondition: "countPlayers(not player.property.eliminated) <= 1"
+    endCondition: "count(players, not player.property.eliminated) <= 1"
 winConditions:
   - rule: condition
     condition: "not player.property.eliminated"

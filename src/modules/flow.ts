@@ -79,7 +79,7 @@
  * - An endCondition without winConditions ends the game with no winners.
  * Common pairings:
  *   Last player standing:
- *     endCondition: "countPlayers(not player.property.eliminated) <= 1"
+ *     endCondition: "count(players, not player.property.eliminated) <= 1"
  *     winConditions: [{ rule: condition, condition: "not player.property.eliminated" }]
  *   First to N points, others get one more turn, highest wins:
  *     checkAfter: turn, finalRound: true, endCondition: "actor.property.score >= N"
@@ -114,7 +114,7 @@
  *       timeout: 15000
  *   children:
  *     - kind: loop
- *       endCondition: "countPlayers(not player.property.eliminated) <= 1"
+ *       endCondition: "count(players, not player.property.eliminated) <= 1"
  *       children:
  *         - kind: turn
  *           actor: all-players
@@ -644,10 +644,11 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
             ),
           endCondition: FlowEndConditionSchema.optional().describe(
             "Infix expression; the loop exits when true. When it is evaluated is set by 'checkAfter'. " +
-              "Example: 'game.property.gameWinner != \"\"' or 'game.inventory.deck.count == 0'. " +
+              "Example: 'game.property.gameWinner != \"\"' or 'count(game.inventory.deck) == 0'. " +
               "Or the special value 'until-pass' to exit when all players consecutively pass. " +
-              "Paths: game.property.<id>, game.inventory.<id>.count; actor.property.<id> only with checkAfter: turn. " +
-              "Functions: all(players, expr), any(players, expr). " +
+              "Paths: game.property.<id>, count(game.inventory.<id>); actor.property.<id> only with checkAfter: turn. " +
+              "Functions: count(c[, expr]), sum(c, expr), all(c, expr), any(c, expr) where c is " +
+              "'players' or an inventory path; if(cond, a, b). " +
               "Provide either 'count' or 'endCondition', not both.",
           ),
           checkAfter: z
@@ -1016,7 +1017,7 @@ const RankingWinConditionSchema = z.object({
  * ```yaml
  * winConditions:
  *   - rule: condition
- *     condition: "player.inventory.escaped.count >= 1"
+ *     condition: "count(player.inventory.escaped) >= 1"
  *     onVictory:
  *       - effectRef: announce-escapees
  * ```
@@ -1064,7 +1065,7 @@ const RoleConditionWinConditionSchema = z.object({
   rule: z.literal("role-condition"),
   condition: ConditionExpressionSchema.describe(
     "Infix expression evaluated against game state when the game ends. " +
-      "Available paths: 'game.property.<id>', 'game.inventory.<id>.count'. " +
+      "Available paths: 'game.property.<id>', 'count(game.inventory.<id>)'. " +
       "If true, players holding any of the listed roles are declared winners. " +
       "Example: 'game.property.wolfCount >= game.property.villagerCount'",
   ),
@@ -1119,7 +1120,7 @@ export const WinConditionSchema = z
  *       - effectRef: deal-dice  # runs once at game start
  *   children:
  *     - kind: loop
- *       endCondition: "countPlayers(not player.property.eliminated) <= 1"
+ *       endCondition: "count(players, not player.property.eliminated) <= 1"
  *       hooks:
  *         onEnter:
  *           - effectRef: roll-all-dice
