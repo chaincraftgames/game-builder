@@ -15,8 +15,9 @@
 //   target.property.X     → ctx.gamepieces[ctx.targetPieceId].properties[X]
 //   input.X / param.X     → ctx.params[X]
 //
-// The `player` root is only valid inside all()/any()/countPlayers() quantifiers
-// and per-player filters, which bind boundPlayerId for each iteration.
+// `player` is bound by aggregators over `players` (and per-player filters);
+// `piece` is bound by aggregators over an inventory (or by piece filters).
+//   piece.property.X      → ctx.gamepieces[ctx.boundPieceId ?? ctx.targetPieceId].properties[X]
 // ---------------------------------------------------------------------------
 
 import type {
@@ -27,6 +28,7 @@ import type {
   CompareOp,
 } from "#compiler/expressions/types.js";
 import { ExpressionError } from "#compiler/expressions/types.js";
+import { compileCall } from "#compiler/expressions/evaluator-functions.js";
 
 export type ExprFn = (ctx: EvalContext) => unknown;
 export type PredicateFn = (ctx: EvalContext) => boolean;
@@ -51,7 +53,7 @@ export function buildPredicate(ast: Expr): PredicateFn {
 // Internal recursive compiler
 // ---------------------------------------------------------------------------
 
-type InternalFn = (ctx: EvalContext) => unknown;
+export type InternalFn = (ctx: EvalContext) => unknown;
 
 /** Delegates to the appropriate compile* function for this node kind. */
 function compile(node: Expr): InternalFn {
@@ -69,7 +71,7 @@ function compile(node: Expr): InternalFn {
     case "not":
       return compileNot(node.operand);
     case "call":
-      return compileCall(node.fn, node.args);
+      return compileCall(node.fn, node.args, compile);
   }
 }
 
@@ -144,6 +146,7 @@ function resolveRoot(
           0,
         );
       }
+      if (rest[0] === "id") return { base: { id: ctx.actorId }, skip: 0 }
       return resolvePlayerPaths(player, "actor", rest);
     }
     case "player": {
@@ -210,16 +213,17 @@ function resolveRoot(
       return { base: targetPiece.properties, skip: 1 };
     }
     case "piece": {
-      if (!ctx.targetPieceId)
+      const pieceId = ctx.boundPieceId ?? ctx.targetPieceId;
+      if (!pieceId)
         throw new ExpressionError(
-          '"piece" requires targetPieceId in context (piece filter)',
+          '"piece" requires a bound piece in context (aggregator or piece filter)',
           0,
         );
-      const piece = ctx.gamepieces[ctx.targetPieceId];
+      const piece = ctx.gamepieces[pieceId];
       if (!piece)
-        throw new ExpressionError(`Piece '${ctx.targetPieceId}' not found`, 0);
+        throw new ExpressionError(`Piece '${pieceId}' not found`, 0);
       if (rest[0] === "property") return { base: piece.properties, skip: 1 };
-      if (rest[0] === "id") return { base: { id: ctx.targetPieceId }, skip: 0 };
+      if (rest[0] === "id") return { base: { id: pieceId }, skip: 0 };
       return { base: piece, skip: 0 };
     }
     case "trigger": {
@@ -309,82 +313,4 @@ function compileLogical(op: "and" | "or", left: Expr, right: Expr): InternalFn {
 function compileNot(operand: Expr): InternalFn {
   const fn = compile(operand);
   return (ctx) => !fn(ctx);
-}
-
-// --- Function calls ---------------------------------------------------------
-
-function compileCall(fn: string, args: Expr[]): InternalFn {
-  switch (fn) {
-    case "count":
-      return compileCount(args);
-    case "all":
-      return compileQuantifier("all", args);
-    case "any":
-      return compileQuantifier("any", args);
-    case "countPlayers":
-      return compileCountPlayers(args);
-    default:
-      throw new ExpressionError(`Unknown function '${fn}'`, 0);
-  }
-}
-
-function compileCount(args: Expr[]): InternalFn {
-  if (args.length !== 1) {
-    throw new ExpressionError(
-      `count() expects exactly 1 argument, got ${args.length}`,
-      0,
-    );
-  }
-  const argFn = compile(args[0]);
-  return (ctx) => {
-    const inv = argFn(ctx);
-    return countInventory(inv);
-  };
-}
-
-/** Counts occupied slots across all inventory structure shapes. */
-function countInventory(inv: unknown): number {
-  if (inv == null || typeof inv !== "object") return 0;
-  const obj = inv as InventoryLike;
-  if (obj.pieceIds) return obj.pieceIds.length;
-  if (obj.slots) return obj.slots.filter((s) => s != null).length;
-  if (obj.cells)
-    return Object.values(obj.cells).filter((v) => v != null).length;
-  if (obj.nodes)
-    return Object.values(obj.nodes).filter((v) => v != null).length;
-  return 0;
-}
-
-/** Sets boundPlayerId for each player so the body predicate can use player.* paths. */
-function compileQuantifier(mode: "all" | "any", args: Expr[]): InternalFn {
-  if (args.length !== 1) {
-    throw new ExpressionError(
-      `${mode}() expects exactly 1 argument, got ${args.length}`,
-      0,
-    );
-  }
-  const predicateFn = compile(args[0]);
-
-  return (ctx) => {
-    const method = mode === "all" ? "every" : "some";
-    return ctx.playerIds[method]((pid) => {
-      const bound: EvalContext = { ...ctx, boundPlayerId: pid };
-      return Boolean(predicateFn(bound));
-    });
-  };
-}
-
-function compileCountPlayers(args: Expr[]): InternalFn {
-  if (args.length !== 1) {
-    throw new ExpressionError(
-      `countPlayers() expects exactly 1 argument, got ${args.length}`,
-      0,
-    );
-  }
-  const predicateFn = compile(args[0]);
-
-  return (ctx) =>
-    ctx.playerIds.filter((pid) =>
-      Boolean(predicateFn({ ...ctx, boundPlayerId: pid })),
-    ).length;
 }

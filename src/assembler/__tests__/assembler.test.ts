@@ -648,7 +648,7 @@ describe('assembleFlow — loop endCondition', () => {
 
   it('compiles an iteration-checked endCondition into a predicate over live session state', () => {
     const { loop, session } = assembleLoop({
-      endCondition: 'any(player.property.score >= 2)',
+      endCondition: 'any(players, player.property.score >= 2)',
     });
     expect(loop.count).toBeUndefined();
     expect(loop.checkAfter).toBeUndefined();
@@ -689,13 +689,13 @@ describe('assembleFlow — loop endCondition', () => {
 
   it('rejects finalRound without checkAfter: turn', () => {
     expect(() =>
-      assembleLoop({ endCondition: 'any(player.property.score >= 2)', finalRound: true }),
+      assembleLoop({ endCondition: 'any(players, player.property.score >= 2)', finalRound: true }),
     ).toThrow('finalRound requires checkAfter: turn');
   });
 
-  it('countPlayers() over the reserved eliminated flag', () => {
+  it('count(players, ...) over the reserved eliminated flag', () => {
     const { loop, session } = assembleLoop({
-      endCondition: 'countPlayers(not player.property.eliminated) <= 1',
+      endCondition: 'count(players, not player.property.eliminated) <= 1',
     });
     expect(loop.endCondition!(session)).toBe(false);
     session.state.players.bob.properties.eliminated = true;

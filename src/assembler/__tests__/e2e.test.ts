@@ -236,3 +236,66 @@ describe("Compiler e2e — Liar's Dice bid validation", () => {
     expect(state.gameProperties.currentBidFace).toBe(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Liar's Dice — resolveChallenge is a native set-state using aggregators
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — Liar's Dice challenge resolution", () => {
+  // Alice holds three 3s, bob holds two 3s: five 3s in play.
+  const ALICE_FACES = [3, 3, 3, 1, 1];
+  const BOB_FACES = [3, 3, 1, 1, 1];
+
+  async function playChallenge(bidQuantity: number) {
+    const mod = assembleModule(loadSpec("liars-dice.yaml"), "liars-dice");
+    let live: ReturnType<typeof mod.createSession> | undefined;
+    const origCreateSession = mod.createSession.bind(mod);
+    (mod as { createSession: typeof mod.createSession }).createSession = (gameId, players) => {
+      live = origCreateSession(gameId, players);
+      return live;
+    };
+
+    const controller = new GameController(mod, {});
+    await controller.init("ld-challenge", ["alice", "bob"]);
+
+    const faces: Record<string, number[]> = { alice: ALICE_FACES, bob: BOB_FACES };
+    for (const [playerId, playerFaces] of Object.entries(faces)) {
+      const cup = live!.state.players[playerId].inventories.playerCup;
+      const pieceIds = "pieceIds" in cup ? cup.pieceIds : [];
+      expect(pieceIds).toHaveLength(5);
+      pieceIds.forEach((id, i) => { live!.state.gamepieces[id].properties.face = playerFaces[i]; });
+    }
+
+    await controller.processAction({ playerId: "alice", value: bidQuantity });
+    await controller.processAction({ playerId: "alice", value: 3 });
+    await controller.processAction({ playerId: "bob", value: { kind: "act", actionId: "challenge" } });
+    return controller.getState();
+  }
+
+  const cupSize = (state: GameState, playerId: string) => {
+    const cup = state.players[playerId].inventories.playerCup;
+    return "pieceIds" in cup ? cup.pieceIds.length : -1;
+  };
+
+  it("challenger loses when the bid quantity equals the actual count", async () => {
+    const state = await playChallenge(5);
+    expect(state.gameProperties.roundLoser).toBe("bob");
+    expect(cupSize(state, "bob")).toBe(4);
+    expect(cupSize(state, "alice")).toBe(5);
+  });
+
+  it("challenger loses when the actual count exceeds the bid quantity", async () => {
+    const state = await playChallenge(4);
+    expect(state.gameProperties.roundLoser).toBe("bob");
+    expect(cupSize(state, "bob")).toBe(4);
+    expect(cupSize(state, "alice")).toBe(5);
+  });
+
+  it("bidder loses when the actual count is below the bid quantity", async () => {
+    const state = await playChallenge(6);
+    expect(state.gameProperties.roundLoser).toBe("alice");
+    expect(cupSize(state, "alice")).toBe(4);
+    expect(cupSize(state, "bob")).toBe(5);
+  });
+});
+

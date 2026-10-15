@@ -9,17 +9,19 @@
 //   game.inventory.X      → gameInventories[X]
 //   actor.property.X      → players[actorId].properties[X]
 //   actor.inventory.X     → players[actorId].inventories[X]
-//   player.property.X     → bound player (inside all/any quantifiers)
-//   player.inventory.X    → bound player (inside all/any quantifiers)
+//   player.property.X     → bound player (inside aggregators over `players`)
+//   player.inventory.X    → bound player (inside aggregators over `players`)
+//   piece.property.X      → bound piece (inside aggregators over an inventory)
 //   source.property.X     → gamepieces[sourcePieceId].properties[X]
 //   target.property.X     → gamepieces[targetPieceId].properties[X]
 //   trigger.X             → trigger[X] (passive effects only)
 //
-// Functions:
-//   count(inventoryPath)  → number of pieces in the resolved inventory
-//   all(booleanExpr)      → true if expr holds for every player
-//   any(booleanExpr)      → true if expr holds for at least one player
-//   countPlayers(booleanExpr) → number of players for whom expr holds
+// Functions (a collection is `players` or an inventory path like actor.inventory.hand):
+//   count(collection[, filter])       → number of items passing the filter
+//   sum(collection, value[, filter])  → total of value over the items passing the filter
+//   all(collection, predicate)        → true if predicate holds for every item
+//   any(collection, predicate)        → true if predicate holds for at least one item
+//   if(condition, then, else)         → then or else, evaluating only the chosen branch
 // ---------------------------------------------------------------------------
 
 // --- AST node types ---------------------------------------------------------
@@ -98,6 +100,8 @@ export interface EvalContext {
   trigger?: Record<string, unknown>;
   /** Bound player ID for per-player iteration; resolves `player.property.X` outside quantifiers. */
   boundPlayerId?: string;
+  /** Bound piece ID for per-piece iteration; resolves `piece.property.X` outside quantifiers. */
+  boundPieceId?: string;
 }
 
 // --- Error types -----------------------------------------------------------

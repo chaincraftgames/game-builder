@@ -253,50 +253,244 @@ describe('count()', () => {
 describe('all() and any()', () => {
   it('all() — true when all players match', () => {
     const ctx = makeCtx(); // both ready: true
-    expect(compilePredicate('all(player.property.ready == true)')(ctx)).toBe(true);
+    expect(compilePredicate('all(players, player.property.ready == true)')(ctx)).toBe(true);
   });
 
   it('all() — false when one player does not match', () => {
     const ctx = makeCtx();
     ctx.players.bob.properties.ready = false;
-    expect(compilePredicate('all(player.property.ready == true)')(ctx)).toBe(false);
+    expect(compilePredicate('all(players, player.property.ready == true)')(ctx)).toBe(false);
   });
 
   it('any() — true when at least one player matches', () => {
     const ctx = makeCtx();
     ctx.players.bob.properties.eliminated = true;
-    expect(compilePredicate('any(player.property.eliminated == true)')(ctx)).toBe(true);
+    expect(compilePredicate('any(players, player.property.eliminated == true)')(ctx)).toBe(true);
   });
 
   it('any() — false when no player matches', () => {
     const ctx = makeCtx(); // both eliminated: false
-    expect(compilePredicate('any(player.property.eliminated == true)')(ctx)).toBe(false);
+    expect(compilePredicate('any(players, player.property.eliminated == true)')(ctx)).toBe(false);
   });
 
   it('nested count inside quantifier', () => {
     // "any player has an empty hand"
     const ctx = makeCtx(); // bob has 0 cards
-    expect(compilePredicate('any(count(player.inventory.hand) == 0)')(ctx)).toBe(true);
+    expect(compilePredicate('any(players, count(player.inventory.hand) == 0)')(ctx)).toBe(true);
     // "all players have an empty hand" — alice still has 1
-    expect(compilePredicate('all(count(player.inventory.hand) == 0)')(ctx)).toBe(false);
+    expect(compilePredicate('all(players, count(player.inventory.hand) == 0)')(ctx)).toBe(false);
+  });
+
+  it('all() over an inventory binds each piece', () => {
+    expect(compilePredicate('all(game.inventory.table, piece.property.value >= 1)')(makeCtx())).toBe(true);
+    expect(compilePredicate('all(game.inventory.table, piece.property.value >= 5)')(makeCtx())).toBe(false);
+  });
+
+  it('any() over an inventory binds each piece', () => {
+    expect(compilePredicate('any(game.inventory.table, piece.property.value == 5)')(makeCtx())).toBe(true);
+    expect(compilePredicate('any(game.inventory.table, piece.property.value == 7)')(makeCtx())).toBe(false);
+  });
+
+  it('all() over an empty collection is true and any() is false', () => {
+    expect(compilePredicate('all(game.inventory.deck, piece.property.value > 0)')(makeCtx())).toBe(true);
+    expect(compilePredicate('any(game.inventory.deck, piece.property.value > 0)')(makeCtx())).toBe(false);
+  });
+
+  it.each(['all', 'any'])('%s() rejects the 1-argument form with a hint', (fn) => {
+    expect(() => compileExpression(`${fn}(player.property.ready == true)`)).toThrow(
+      `${fn}() needs a collection: ${fn}(players, <expr>)`,
+    );
+  });
+
+  it.each(['all', 'any'])('%s() rejects 3 arguments', (fn) => {
+    expect(() => compileExpression(`${fn}(players, true, true)`)).toThrow(
+      `${fn}() expects exactly 2 arguments, got 3`,
+    );
+  });
+
+  it('rejects a first argument that is not a collection', () => {
+    expect(() => compileExpression('all(game.property.x, true)')).toThrow(
+      "first argument of all() must be 'players' or an inventory path",
+    );
   });
 });
 
-describe('countPlayers()', () => {
-  it('counts players for whom the predicate holds', () => {
+describe('count() over players', () => {
+  it('counts every player without a filter', () => {
+    expect(compileExpression('count(players)')(makeCtx())).toBe(2);
+  });
+
+  it('counts players for whom the filter holds', () => {
     const ctx = makeCtx();
-    expect(compileExpression('countPlayers(not player.property.eliminated)')(ctx)).toBe(2);
+    expect(compileExpression('count(players, not player.property.eliminated)')(ctx)).toBe(2);
     ctx.players.bob.properties.eliminated = true;
-    expect(compileExpression('countPlayers(not player.property.eliminated)')(ctx)).toBe(1);
+    expect(compileExpression('count(players, not player.property.eliminated)')(ctx)).toBe(1);
   });
 
   it('works in comparisons', () => {
     const ctx = makeCtx();
-    expect(compilePredicate('countPlayers(player.property.score >= 2) == 1')(ctx)).toBe(true);
+    expect(compilePredicate('count(players, player.property.score >= 2) == 1')(ctx)).toBe(true);
   });
 
-  it('rejects wrong arity', () => {
-    expect(() => compileExpression('countPlayers()')).toThrow('countPlayers() expects exactly 1 argument');
+  it('rejects 3 arguments', () => {
+    expect(() => compileExpression('count(players, true, true)')).toThrow(
+      'count() expects 1 or 2 arguments, got 3',
+    );
+  });
+
+  it('rejects the removed countPlayers()', () => {
+    expect(() => compileExpression('countPlayers(not player.property.eliminated)')).toThrow(
+      "Unknown function 'countPlayers'",
+    );
+  });
+});
+
+describe('count() with a filter over an inventory', () => {
+  it('counts only pieces passing the filter', () => {
+    expect(compileExpression('count(game.inventory.table, piece.property.value > 1)')(makeCtx())).toBe(1);
+    expect(compileExpression('count(game.inventory.table, piece.property.value > 0)')(makeCtx())).toBe(2);
+  });
+
+  it('skips empty slots in a line inventory', () => {
+    const ctx = makeCtx({
+      gameInventories: {
+        ...makeCtx().gameInventories,
+        board: { slots: ['card-1', null, 'card-5', null] },
+      },
+    });
+    expect(compileExpression('count(game.inventory.board, piece.property.value >= 5)')(ctx)).toBe(1);
+  });
+
+  it('iterates the bound player inventory inside a players aggregator', () => {
+    expect(compileExpression('sum(players, count(player.inventory.hand, piece.property.value == 1))')(makeCtx())).toBe(1);
+  });
+});
+
+describe('sum()', () => {
+  it('sums a value over an inventory', () => {
+    expect(compileExpression('sum(game.inventory.table, piece.property.value)')(makeCtx())).toBe(6);
+  });
+
+  it('sums a value over players', () => {
+    expect(compileExpression('sum(players, player.property.score)')(makeCtx())).toBe(3);
+  });
+
+  it('applies the optional filter before summing', () => {
+    expect(
+      compileExpression('sum(game.inventory.table, piece.property.value, piece.property.value > 1)')(makeCtx()),
+    ).toBe(5);
+  });
+
+  it('returns 0 for an empty collection', () => {
+    expect(compileExpression('sum(game.inventory.deck, piece.property.value)')(makeCtx())).toBe(0);
+  });
+
+  it('throws when an item value is not a number', () => {
+    expect(() => compileExpression('sum(players, player.id)')(makeCtx())).toThrow(
+      'sum() item value is not a number',
+    );
+  });
+
+  it('rejects the wrong number of arguments', () => {
+    expect(() => compileExpression('sum(players)')).toThrow('sum() expects 2 or 3 arguments, got 1');
+    expect(() => compileExpression('sum(players, 1, true, true)')).toThrow(
+      'sum() expects 2 or 3 arguments, got 4',
+    );
+  });
+});
+
+describe('aggregator bindings', () => {
+  it('binding piece does not shadow target', () => {
+    const ctx = makeCtx({ targetPieceId: 'card-5' });
+    expect(
+      compileExpression('count(game.inventory.table, piece.property.value < target.property.value)')(ctx),
+    ).toBe(1);
+  });
+
+  it('exposes piece.id for the bound piece', () => {
+    expect(compilePredicate("any(game.inventory.table, piece.id == 'card-5')")(makeCtx())).toBe(true);
+  });
+
+  // Challenge resolution: loser is the challenger when the bid is met, else the bidder.
+  describe('nested aggregator with if()', () => {
+    const expr =
+      'if(sum(players, count(player.inventory.cup, piece.property.face == game.property.bidFace)) >= game.property.bidQty, actor.id, game.property.bidder)';
+    const challengeCtx = (bidQty: number) =>
+      makeCtx({
+        actorId: 'bob',
+        gameProperties: { bidFace: 3, bidQty, bidder: 'alice' },
+        players: {
+          alice: { properties: {}, inventories: { cup: { pieceIds: ['d1', 'd2', 'd3'] } } },
+          bob: { properties: {}, inventories: { cup: { pieceIds: ['d4', 'd5'] } } },
+        },
+        gamepieces: {
+          d1: { typeId: 'die', properties: { face: 3 } },
+          d2: { typeId: 'die', properties: { face: 3 } },
+          d3: { typeId: 'die', properties: { face: 5 } },
+          d4: { typeId: 'die', properties: { face: 3 } },
+          d5: { typeId: 'die', properties: { face: 1 } },
+        },
+      });
+
+    it('picks the actor when the actual count exceeds the bid', () => {
+      expect(compileExpression(expr)(challengeCtx(2))).toBe('bob');
+    });
+
+    it('picks the actor when the actual count equals the bid', () => {
+      expect(compileExpression(expr)(challengeCtx(3))).toBe('bob');
+    });
+
+    it('picks the bidder when the actual count is below the bid', () => {
+      expect(compileExpression(expr)(challengeCtx(4))).toBe('alice');
+    });
+  });
+});
+
+describe('if()', () => {
+  it('returns the then-branch when the condition is true', () => {
+    expect(compileExpression('if(true, 1, 2)')(makeCtx())).toBe(1);
+  });
+
+  it('returns the else-branch when the condition is false', () => {
+    expect(compileExpression('if(false, 1, 2)')(makeCtx())).toBe(2);
+  });
+
+  it('evaluates the condition against context', () => {
+    const fn = compileExpression('if(game.property.tricksPlayed >= 3, actor.id, game.property.winner)');
+    expect(fn(makeCtx())).toBe('alice');
+    expect(fn(makeCtx({ gameProperties: { tricksPlayed: 1, winner: 'carol' } }))).toBe('carol');
+  });
+
+  it('does not evaluate the untaken else-branch', () => {
+    const fn = compileExpression('if(true, 1, actor.property.score)');
+    expect(fn(makeCtx({ actorId: undefined }))).toBe(1);
+  });
+
+  it('does not evaluate the untaken then-branch', () => {
+    const fn = compileExpression('if(false, actor.property.score, 2)');
+    expect(fn(makeCtx({ actorId: undefined }))).toBe(2);
+  });
+
+  it('still throws when the taken branch fails', () => {
+    const fn = compileExpression('if(true, actor.property.score, 2)');
+    expect(() => fn(makeCtx({ actorId: undefined }))).toThrow('no actorId');
+  });
+
+  it('coerces a non-boolean condition', () => {
+    expect(compileExpression("if(game.property.tricksPlayed, 'yes', 'no')")(makeCtx())).toBe('yes');
+    expect(compileExpression("if(game.property.roundWinner, 'yes', 'no')")(makeCtx())).toBe('no');
+  });
+
+  it('composes with arithmetic and comparison', () => {
+    expect(compilePredicate('if(actor.property.score > 1, 10, 0) + 1 == 11')(makeCtx())).toBe(true);
+  });
+
+  it('nests', () => {
+    expect(compileExpression('if(false, 1, if(true, 2, 3))')(makeCtx())).toBe(2);
+  });
+
+  it.each(['if()', 'if(true, 1)', 'if(true, 1, 2, 3)'])('rejects %s (wrong arity)', (input) => {
+    expect(() => compileExpression(input)).toThrow('if() expects exactly 3 arguments');
   });
 });
 
@@ -323,8 +517,8 @@ describe('compound expressions', () => {
 
   it('end condition: score threshold', () => {
     const ctx = makeCtx();
-    expect(compilePredicate('any(player.property.score >= 2)')(ctx)).toBe(true); // alice has 2
-    expect(compilePredicate('any(player.property.score >= 5)')(ctx)).toBe(false);
+    expect(compilePredicate('any(players, player.property.score >= 2)')(ctx)).toBe(true); // alice has 2
+    expect(compilePredicate('any(players, player.property.score >= 5)')(ctx)).toBe(false);
   });
 
   it('combined game + actor conditions', () => {
@@ -422,6 +616,15 @@ describe("candidate id paths", () => {
 
   it("resolves player.id to the bound player", () => {
     expect(compileExpression("player.id")(makeCtx({ boundPlayerId: "bob" }))).toBe("bob");
+  });
+
+  it("resolves actor.id to the acting player", () => {
+    expect(compileExpression("actor.id")(makeCtx())).toBe("alice");
+    expect(compileExpression("actor.id")(makeCtx({ actorId: "bob" }))).toBe("bob");
+  });
+
+  it("throws on actor.id when there is no actor", () => {
+    expect(() => compileExpression("actor.id")(makeCtx({ actorId: undefined }))).toThrow("no actorId");
   });
 });
 
