@@ -21,7 +21,8 @@
  *   'effect: <kind>' (an inline effect), or 'effectRef: <id>' (a named effect).
  *   Inline effects can use { param: id } in PropertyValue to reference an input step's
  *   value. Engine resolves by name — no bind map. Every action needs at least one
- *   effect step. Currently all input steps must come before the first effect step.
+ *   effect step, and must end with an effect.  It can have multiple input and effect 
+ *   steps in between.
  * - 'preconditions' is an infix expression evaluated against runtime state before
  *   the action is offered. State paths: 'actor.property.<id>',
  *   'actor.inventory.<id>.count', 'game.property.<id>', 'game.inventory.<id>.count'.
@@ -564,7 +565,8 @@ export const ActionSchema = z
           "collect typed player-supplied values; inline effects reference them via " +
           "{ param: id } in PropertyValue. Effect steps ('effect: <kind>' inline, or " +
           "'effectRef: <id>' named) change game state. At least one effect step is required. " +
-          "Currently all input steps must come before the first effect step.",
+          "An input step after an effect step is asked only once those effects have run; the " +
+          "last step must be an effect.",
       ),
   })
   .describe(
