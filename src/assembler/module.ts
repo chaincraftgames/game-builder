@@ -104,7 +104,7 @@ function linkAndValidate(
 
   // All action effect refs must resolve
   for (const [actionId, action] of Object.entries(actions)) {
-    for (const eff of action.effects) {
+    for (const eff of action.segments.flatMap((s) => s.effects)) {
       if ("ref" in eff && typeof eff.ref === "string" && !effectDefs[eff.ref]) {
         errors.push(
           `Action "${actionId}" effect ref "${eff.ref}" has no effectDef`,

@@ -11,6 +11,7 @@ import type { ModularGameSpec, ActionInput, ActionStep, EffectCall } from '@chai
 import { numberOptionCount } from '@chaincraft/runtime';
 import type {
   ActionDef,
+  ActionSegmentDef,
   ActionInputDef,
   ActionInputType,
   NumberInputType,
@@ -18,9 +19,8 @@ import type {
 import { normalizeEffectList } from '#compiler/assembler/effects.js';
 import {
   compileInputValidation,
-  compilePieceFilter,
-  compilePlayerFilter,
   compilePrecondition,
+  compileSelectionFilter,
 } from '#compiler/expressions/eval-bridge.js';
 import { referencedInputs } from '#compiler/expressions/index.js';
 
@@ -33,30 +33,29 @@ export const MAX_LOOKAHEAD_COMBINATIONS = 500;
 const AUTO_INPUT_KINDS = new Set(['effect-originator', 'trigger-input']);
 const SELECTION_KINDS = new Set(['gamepiece-select', 'player-select']);
 
-/** Map a gamedef input step to the runtime's ActionInputDef, compiling filter expressions. */
+/** Map a gamedef input step to the runtime's ActionInputDef; a selection's filter becomes its `validate`. */
 function mapActionInput(step: ActionInput, dependsOn: string[]): ActionInputDef {
-  const rawType = step.type as Record<string, unknown>;
-  let type: ActionInputType;
+  const { filter, ...typeFields } = step.type as Record<string, unknown>;
+  const type = typeFields as ActionInputType;
 
-  if (rawType.kind === 'gamepiece-select' && typeof rawType.filter === 'string') {
-    type = {
-      ...(rawType as ActionInputType),
-      filter: compilePieceFilter(rawType.filter),
-    } as ActionInputType;
-  } else if (rawType.kind === 'player-select' && typeof rawType.filter === 'string') {
-    type = {
-      ...(rawType as ActionInputType),
-      filter: compilePlayerFilter(rawType.filter),
-    } as ActionInputType;
-  } else {
-    type = rawType as ActionInputType;
+  let validate: ActionInputDef["validate"];
+  if (SELECTION_KINDS.has(type.kind)) {
+    if (typeof filter === 'string') {
+      validate = compileSelectionFilter(
+        type.kind as 'gamepiece-select' | 'player-select',
+        step.input,
+        filter,
+      );
+    }
+  } else if (step.validation != null) {
+    validate = compileInputValidation(step.validation);
   }
 
   return {
     id: step.input,
     ...(step.label != null && { label: step.label }),
     type,
-    ...(step.validation != null && { validate: compileInputValidation(step.validation) }),
+    ...(validate && { validate }),
     ...(step.validationMessage != null && { validationMessage: step.validationMessage }),
     ...(dependsOn.length > 0 && { dependsOn }),
   };
@@ -118,16 +117,16 @@ function staticOptionCount(type: ActionInputType): number | "dynamic" | undefine
   }
 }
 
-/** Reject input shapes the runtime cannot prompt for or look ahead through. */
-function checkActionInputs(actionId: string, inputs: readonly ActionInputDef[]): void {
+/**
+ * Reject input shapes the runtime cannot prompt for or look ahead through.
+ * Limits on the whole action apply across segments; lookahead rules apply per segment.
+ */
+function checkActionInputs(
+  actionId: string,
+  segmentInputs: readonly (readonly ActionInputDef[])[],
+): void {
+  const inputs = segmentInputs.flat();
   for (const input of inputs) {
-    if (input.validate && SELECTION_KINDS.has(input.type.kind)) {
-      fail(
-        actionId,
-        `input "${input.id}" is a ${input.type.kind}; use 'filter' instead of 'validation' ` +
-          "(compare identities with piece.id / player.id)",
-      );
-    }
     if (input.type.kind === "number") {
       const { min, max } = input.type as NumberInputType;
       if (min !== undefined && max !== undefined && min > max) {
@@ -144,62 +143,73 @@ function checkActionInputs(actionId: string, inputs: readonly ActionInputDef[]):
     );
   }
 
-  const dependedOn = new Set(inputs.flatMap((i) => i.dependsOn ?? []));
-  let combinations = 1;
-  for (const input of inputs) {
-    const count = staticOptionCount(input.type);
-    if (dependedOn.has(input.id) && count === undefined) {
+  for (const segment of segmentInputs) {
+    const ids = new Set(segment.map((i) => i.id));
+    const dependedOn = new Set(segment.flatMap((i) => i.dependsOn ?? []));
+    let combinations = 1;
+    for (const input of segment) {
+      const count = staticOptionCount(input.type);
+      if (dependedOn.has(input.id) && count === undefined) {
+        fail(
+          actionId,
+          `input "${input.id}" is read by a later input but has no finite option list ` +
+            "(use enum, boolean, a selection, or a whole-number range with min and max)",
+        );
+      }
+      const inChain =
+        dependedOn.has(input.id) || (input.dependsOn ?? []).some((d) => ids.has(d));
+      if (inChain && typeof count === "number") combinations *= count;
+    }
+    if (combinations > MAX_LOOKAHEAD_COMBINATIONS) {
       fail(
         actionId,
-        `input "${input.id}" is read by a later input but has no finite option list ` +
-          "(use enum, boolean, a selection, or a whole-number range with min and max)",
+        `dependent inputs allow ${combinations} answer combinations; at most ` +
+          `${MAX_LOOKAHEAD_COMBINATIONS} are allowed`,
       );
     }
-    const inChain = dependedOn.has(input.id) || (input.dependsOn?.length ?? 0) > 0;
-    if (inChain && typeof count === "number") combinations *= count;
-  }
-  if (combinations > MAX_LOOKAHEAD_COMBINATIONS) {
-    fail(
-      actionId,
-      `dependent inputs allow ${combinations} answer combinations; at most ` +
-        `${MAX_LOOKAHEAD_COMBINATIONS} are allowed`,
-    );
   }
 }
 
 /**
- * Split an action's steps into the runtime's inputs-then-effects shape.
- * Throws on an input after an effect: the runtime collects every input before any effect runs.
+ * Split an action's steps into segments (inputs then effects). An input that follows an
+ * effect starts a new segment. Throws when the last segment ends with inputs.
  */
-function splitSteps(
+function buildSegments(
   actionId: string,
   steps: readonly ActionStep[],
-): { inputs: ActionInput[]; effects: EffectCall[] } {
-  const inputs: ActionInput[] = [];
-  const effects: EffectCall[] = [];
+): { inputs: ActionInput[]; effects: EffectCall[] }[] {
+  const segments: { inputs: ActionInput[]; effects: EffectCall[] }[] = [
+    { inputs: [], effects: [] },
+  ];
   for (const step of steps) {
+    let current = segments[segments.length - 1];
     if ("input" in step) {
-      if (effects.length > 0) {
-        fail(
-          actionId,
-          `input "${step.input}" comes after an effect step; all input steps must come ` +
-            "before the first effect step",
-        );
+      if (current.effects.length > 0) {
+        current = { inputs: [], effects: [] };
+        segments.push(current);
       }
-      inputs.push(step);
+      current.inputs.push(step);
     } else {
-      effects.push(step);
+      current.effects.push(step);
     }
   }
-  return { inputs, effects };
+  const last = segments[segments.length - 1];
+  if (last.effects.length === 0 && last.inputs.length > 0) {
+    fail(
+      actionId,
+      `input "${last.inputs[last.inputs.length - 1].input}" has no effect step after it; ` +
+        "nothing can use its answer",
+    );
+  }
+  return segments;
 }
 
 /**
  * Compile all actions from the spec into ActionDef objects.
  *
- * Input steps become the ActionDef's inputs. Inline effect steps are walked and
- * assigned synthetic IDs (indexed among effect steps only), then added to the
- * provided effectDefs accumulator. The action's effects[] array becomes all { ref } entries.
+ * Steps are grouped into segments of inputs followed by effects. Inline effect steps are
+ * walked and assigned synthetic IDs (indexed among all effect steps of the action), then
+ * added to the provided effectDefs accumulator. Each segment's effects become { ref } entries.
  *
  * @param spec - The parsed game spec
  * @param effectDefs - Mutable accumulator; inline effects are added here
@@ -214,16 +224,37 @@ export function assembleActions(
   if (!spec.actions?.actions) return actions;
 
   for (const action of spec.actions.actions) {
-    const steps = splitSteps(action.id, action.steps);
-    const effects = normalizeEffectList(steps.effects, `${action.id}._effect`, effectDefs);
+    const rawSegments = buildSegments(action.id, action.steps);
+    const allEffects = normalizeEffectList(
+      rawSegments.flatMap((s) => s.effects),
+      `${action.id}._effect`,
+      effectDefs,
+    );
 
     const earlier = new Set<string>();
-    const inputs: ActionInputDef[] = steps.inputs.map((step) => {
-      const def = mapActionInput(step, inputDependencies(action.id, step, earlier));
-      earlier.add(step.input);
-      return def;
+    let effectOffset = 0;
+    const segments: ActionSegmentDef[] = rawSegments.map((raw) => {
+      const inputs: ActionInputDef[] = raw.inputs.map((step) => {
+        const kind = (step.type as { kind: string }).kind;
+        if (step.validation != null && SELECTION_KINDS.has(kind)) {
+          fail(
+            action.id,
+            `input "${step.input}" is a ${kind}; use 'filter' instead of 'validation' ` +
+              "(compare identities with piece.id / player.id)",
+          );
+        }
+        const def = mapActionInput(step, inputDependencies(action.id, step, earlier));
+        earlier.add(step.input);
+        return def;
+      });
+      const effects = allEffects.slice(effectOffset, effectOffset + raw.effects.length);
+      effectOffset += raw.effects.length;
+      return { inputs, effects };
     });
-    checkActionInputs(action.id, inputs);
+    checkActionInputs(
+      action.id,
+      segments.map((s) => s.inputs),
+    );
 
     const precondition =
       typeof action.preconditions === 'string'
@@ -234,8 +265,7 @@ export function assembleActions(
       id: action.id,
       label: action.label ?? action.id,
       description: action.description ?? "",
-      inputs,
-      effects,
+      segments,
       ...(precondition != null && { precondition }),
     };
   }

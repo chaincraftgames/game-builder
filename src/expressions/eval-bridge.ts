@@ -92,6 +92,28 @@ export function compileInputValidation(
     predicate(sessionToEvalContext(session, actorId, inputs));
 }
 
+/** Compile a selection filter into a `validate` whose candidate (piece.* / player.*) is inputs[inputId]. */
+export function compileSelectionFilter(
+  kind: "gamepiece-select" | "player-select",
+  inputId: string,
+  expr: string,
+): (
+  session: GameSession,
+  actorId: string,
+  inputs: Readonly<Record<string, unknown>>,
+) => boolean {
+  const predicate = compilePredicate(expr);
+  return (session, actorId, inputs) => {
+    const candidate = inputs[inputId] as string;
+    return kind === "gamepiece-select"
+      ? predicate(sessionToEvalContext(session, actorId, inputs, undefined, candidate))
+      : predicate({
+          ...sessionToEvalContext(session, actorId, inputs),
+          boundPlayerId: candidate,
+        });
+  };
+}
+
 /** Compile a precondition expression into the runtime's (session, actorId) => boolean shape. */
 export function compilePrecondition(
   expr: string,

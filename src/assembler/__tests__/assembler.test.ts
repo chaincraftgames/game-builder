@@ -288,7 +288,7 @@ describe('assembleActions — High Card', () => {
   });
 
   it('maps the gamepiece-select input correctly', () => {
-    const inputs = actions.playCard.inputs;
+    const inputs = actions.playCard.segments[0].inputs;
     expect(inputs).toHaveLength(1);
     expect(inputs[0].id).toBe('card');
     expect(inputs[0].label).toBe('Choose a card to play');
@@ -301,13 +301,14 @@ describe('assembleActions — High Card', () => {
   });
 
   it('normalizes inline effects to { ref } entries', () => {
-    const effects = actions.playCard.effects;
+    expect(actions.playCard.segments).toHaveLength(1);
+    const effects = actions.playCard.segments[0].effects;
     expect(effects).toHaveLength(1);
     expect(effects[0]).toHaveProperty('ref');
   });
 
   it('adds inline action effects to the effectDefs accumulator', () => {
-    const refId = (actions.playCard.effects[0] as { ref: string }).ref;
+    const refId = (actions.playCard.segments[0].effects[0] as { ref: string }).ref;
     expect(effectDefs[refId]).toBeDefined();
     expect(effectDefs[refId].kind).toBe('move');
     expect(effectDefs[refId]).toEqual({
@@ -324,15 +325,26 @@ describe("assembleActions — input dependencies", () => {
     input: "target",
     type: { kind: "gamepiece-select", inventory: "field", fromPlayer: { param: "owner" } },
   };
+  // Every action needs an effect step (gamedef enforces it); add one when a fixture has none.
   const specWithSteps = (steps: unknown[]) =>
     ({
-      actions: { actions: [{ id: "attack", label: "Attack", steps }] },
+      actions: {
+        actions: [
+          {
+            id: "attack",
+            label: "Attack",
+            steps: steps.some((s) => !("input" in (s as object)))
+              ? steps
+              : [...steps, { effectRef: "done" }],
+          },
+        ],
+      },
     }) as unknown as Parameters<typeof assembleActions>[0];
 
   it("emits dependsOn for a fromPlayer param on an earlier input", () => {
     const actions = assembleActions(specWithSteps([ownerInput, targetInput]), {});
-    expect(actions.attack.inputs[0].dependsOn).toBeUndefined();
-    expect(actions.attack.inputs[1].dependsOn).toEqual(["owner"]);
+    expect(actions.attack.segments[0].inputs[0].dependsOn).toBeUndefined();
+    expect(actions.attack.segments[0].inputs[1].dependsOn).toEqual(["owner"]);
   });
 
   it("rejects a reference to a later input", () => {
@@ -357,15 +369,85 @@ describe("assembleActions — input dependencies", () => {
       ]),
       effectDefs,
     );
-    expect(actions.attack.inputs.map((i) => i.id)).toEqual(["owner"]);
-    expect(actions.attack.effects).toEqual([{ ref: "announce" }, { ref: "attack._effect_1" }]);
+    expect(actions.attack.segments).toHaveLength(1);
+    expect(actions.attack.segments[0].inputs.map((i) => i.id)).toEqual(["owner"]);
+    expect(actions.attack.segments[0].effects).toEqual([
+      { ref: "announce" },
+      { ref: "attack._effect_1" },
+    ]);
     expect(effectDefs["attack._effect_1"]).toEqual({ kind: "shuffle", inventory: "deck" });
   });
 
-  it("rejects an input step after an effect step", () => {
+  it("starts a new segment at an input that follows an effect, numbering effects across segments", () => {
+    const effectDefs: Record<string, Record<string, unknown>> = {};
+    const actions = assembleActions(
+      specWithSteps([
+        ownerInput,
+        { effect: "shuffle", inventory: "deck" },
+        targetInput,
+        { effectRef: "announce" },
+        { effect: "shuffle", inventory: "field" },
+      ]),
+      effectDefs,
+    );
+    const { segments } = actions.attack;
+    expect(segments).toHaveLength(2);
+    expect(segments[0].inputs.map((i) => i.id)).toEqual(["owner"]);
+    expect(segments[0].effects).toEqual([{ ref: "attack._effect_0" }]);
+    expect(segments[1].inputs.map((i) => i.id)).toEqual(["target"]);
+    expect(segments[1].effects).toEqual([{ ref: "announce" }, { ref: "attack._effect_2" }]);
+    expect(effectDefs["attack._effect_0"]).toEqual({ kind: "shuffle", inventory: "deck" });
+    expect(effectDefs["attack._effect_2"]).toEqual({ kind: "shuffle", inventory: "field" });
+  });
+
+  it("allows an input to reference an input from an earlier segment", () => {
+    const actions = assembleActions(
+      specWithSteps([ownerInput, { effectRef: "announce" }, targetInput, { effectRef: "done" }]),
+      {},
+    );
+    expect(actions.attack.segments[1].inputs[0].dependsOn).toEqual(["owner"]);
+  });
+
+  it("rejects a forward reference across segments", () => {
+    expect(() =>
+      assembleActions(
+        specWithSteps([targetInput, { effectRef: "announce" }, ownerInput, { effectRef: "done" }]),
+        {},
+      ),
+    ).toThrow(/input "target" references "owner", which is not an earlier input/);
+  });
+
+  it("does not require a finite option list for an input read only by a later segment", () => {
+    const name = { input: "name", type: { kind: "string" } };
+    const check = {
+      input: "check",
+      type: { kind: "number", min: 1, max: 6 },
+      validation: "input.name != \"\"",
+    };
+    expect(() =>
+      assembleActions(
+        specWithSteps([name, { effectRef: "announce" }, check, { effectRef: "done" }]),
+        {},
+      ),
+    ).not.toThrow();
+  });
+
+  it("gives an effect-first action an input-less first segment", () => {
+    const actions = assembleActions(
+      specWithSteps([{ effectRef: "announce" }, ownerInput, { effectRef: "done" }]),
+      {},
+    );
+    const { segments } = actions.attack;
+    expect(segments).toHaveLength(2);
+    expect(segments[0].inputs).toEqual([]);
+    expect(segments[0].effects).toEqual([{ ref: "announce" }]);
+    expect(segments[1].inputs.map((i) => i.id)).toEqual(["owner"]);
+  });
+
+  it("rejects a trailing input with no effect after it", () => {
     expect(() =>
       assembleActions(specWithSteps([{ effectRef: "announce" }, ownerInput]), {}),
-    ).toThrow(/input "owner" comes after an effect step/);
+    ).toThrow(/input "owner" has no effect step after it; nothing can use its answer/);
   });
 
   const die = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -381,7 +463,9 @@ describe("assembleActions — input dependencies", () => {
       type: { kind: "gamepiece-select", inventory: "hand", filter: "piece.property.cost <= input.budget" },
     };
     const actions = assembleActions(specWithSteps([budget, card]), {});
-    expect(actions.attack.inputs[1].dependsOn).toEqual(["budget"]);
+    expect(actions.attack.segments[0].inputs[1].dependsOn).toEqual(["budget"]);
+    expect(actions.attack.segments[0].inputs[1].validate).toEqual(expect.any(Function));
+    expect(actions.attack.segments[0].inputs[1].type).not.toHaveProperty("filter");
   });
 
   it("compiles validation, keeping a self-reference out of dependsOn", () => {
@@ -389,7 +473,7 @@ describe("assembleActions — input dependencies", () => {
       specWithSteps([die("roll", { validation: "input.roll > 2", validationMessage: "Too low" })]),
       {},
     );
-    const [roll] = actions.attack.inputs;
+    const [roll] = actions.attack.segments[0].inputs;
     expect(roll.validate).toEqual(expect.any(Function));
     expect(roll.validationMessage).toBe("Too low");
     expect(roll.dependsOn).toBeUndefined();
@@ -466,7 +550,7 @@ describe("assembleActions — Liar's Dice bid validation", () => {
   const result = validate(raw);
   if (!result.valid) throw new Error(JSON.stringify(result.errors));
   const mod = assembleModule(result.spec, "liars-dice");
-  const [quantity, faceValue] = mod.actions.makeBid.inputs;
+  const [quantity, faceValue] = mod.actions.makeBid.segments[0].inputs;
   const session = mod.createSession("g", ["p1", "p2"]);
   session.state.gameProperties.currentBidQuantity = 5;
   session.state.gameProperties.currentBidFace = 6;
@@ -779,7 +863,7 @@ describe('assembleModule — High Card', () => {
 
   it('actions map contains playCard', () => {
     expect(mod.actions.playCard).toBeDefined();
-    expect(mod.actions.playCard.inputs).toHaveLength(1);
+    expect(mod.actions.playCard.segments[0].inputs).toHaveLength(1);
   });
 
   it('passes link/validate (no unresolved refs)', () => {
