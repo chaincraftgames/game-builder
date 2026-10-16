@@ -18,6 +18,7 @@
 // `player` is bound by aggregators over `players` (and per-player filters);
 // `piece` is bound by aggregators over an inventory (or by piece filters).
 //   piece.property.X      → ctx.gamepieces[ctx.boundPieceId ?? ctx.targetPieceId].properties[X]
+//   piece.faceValue / piece.faceUp → the same piece's built-in face fields
 // ---------------------------------------------------------------------------
 
 import type {

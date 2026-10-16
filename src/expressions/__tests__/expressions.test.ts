@@ -411,6 +411,38 @@ describe('aggregator bindings', () => {
     expect(compilePredicate("any(game.inventory.table, piece.id == 'card-5')")(makeCtx())).toBe(true);
   });
 
+  describe('piece.faceValue and piece.faceUp', () => {
+    const diceCtx = () =>
+      makeCtx({
+        gameInventories: { ...makeCtx().gameInventories, tray: { pieceIds: ['d1', 'd2', 'd3'] } },
+        gamepieces: {
+          d1: { typeId: 'die', properties: {}, faceValue: 'skull', faceUp: true },
+          d2: { typeId: 'die', properties: {}, faceValue: 'brain', faceUp: false },
+          d3: { typeId: 'die', properties: {}, faceValue: 'skull', faceUp: true },
+        },
+      });
+
+    it('counts pieces by string face value', () => {
+      expect(compileExpression("count(game.inventory.tray, piece.faceValue == 'skull')")(diceCtx())).toBe(2);
+    });
+
+    it('compares numeric face values', () => {
+      const ctx = makeCtx({
+        gameInventories: { ...makeCtx().gameInventories, tray: { pieceIds: ['d1', 'd2'] } },
+        gamepieces: {
+          d1: { typeId: 'die', properties: {}, faceValue: 6 },
+          d2: { typeId: 'die', properties: {}, faceValue: 2 },
+        },
+      });
+      expect(compileExpression('count(game.inventory.tray, piece.faceValue >= 5)')(ctx)).toBe(1);
+      expect(compileExpression('sum(game.inventory.tray, piece.faceValue)')(ctx)).toBe(8);
+    });
+
+    it('reads piece.faceUp', () => {
+      expect(compileExpression('count(game.inventory.tray, piece.faceUp)')(diceCtx())).toBe(2);
+    });
+  });
+
   // Challenge resolution: loser is the challenger when the bid is met, else the bidder.
   describe('nested aggregator with if()', () => {
     const expr =

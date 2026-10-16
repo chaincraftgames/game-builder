@@ -12,6 +12,8 @@
 //   player.property.X     → bound player (inside aggregators over `players`)
 //   player.inventory.X    → bound player (inside aggregators over `players`)
 //   piece.property.X      → bound piece (inside aggregators over an inventory)
+//   piece.faceValue       → the face the bound piece is showing (dice / pieces with a face table)
+//   piece.faceUp          → whether the bound piece is face-up
 //   source.property.X     → gamepieces[sourcePieceId].properties[X]
 //   target.property.X     → gamepieces[targetPieceId].properties[X]
 //   trigger.X             → trigger[X] (passive effects only)
@@ -73,11 +75,16 @@ export interface EvalContext {
    * All instantiated gamepieces in the session, keyed by piece ID — lookup table
    * for `source.property.X` and `target.property.X` path resolution.
    * Pieces are included regardless of which inventory they currently occupy.
-   * Only typeId and properties are projected; inventory membership is not.
+   * Only typeId, properties, faceUp and faceValue are projected; inventory membership is not.
    */
   gamepieces: Record<
     string,
-    { typeId: string; properties: Record<string, unknown> }
+    {
+      typeId: string;
+      properties: Record<string, unknown>;
+      faceUp?: boolean;
+      faceValue?: number | string;
+    }
   >;
   /**
    * Ordered player ID list used by `all()` and `any()` quantifiers.

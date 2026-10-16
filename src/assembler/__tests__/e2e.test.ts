@@ -263,7 +263,7 @@ describe("Compiler e2e — Liar's Dice challenge resolution", () => {
       const cup = live!.state.players[playerId].inventories.playerCup;
       const pieceIds = "pieceIds" in cup ? cup.pieceIds : [];
       expect(pieceIds).toHaveLength(5);
-      pieceIds.forEach((id, i) => { live!.state.gamepieces[id].properties.face = playerFaces[i]; });
+      pieceIds.forEach((id, i) => { live!.state.gamepieces[id].faceValue = playerFaces[i]; });
     }
 
     await controller.processAction({ playerId: "alice", value: bidQuantity });
@@ -296,6 +296,21 @@ describe("Compiler e2e — Liar's Dice challenge resolution", () => {
     expect(state.gameProperties.roundLoser).toBe("alice");
     expect(cupSize(state, "alice")).toBe(4);
     expect(cupSize(state, "bob")).toBe(5);
+  });
+
+  it("rolls every dealt die to a face in 1..6 during setup", async () => {
+    const controller = new GameController(assembleModule(loadSpec("liars-dice.yaml"), "liars-dice"), {});
+    await controller.init("ld-roll", ["alice", "bob"]);
+
+    const state = controller.getState();
+    for (const playerId of ["alice", "bob"]) {
+      const cup = state.players[playerId].inventories.playerCup;
+      const pieceIds = "pieceIds" in cup ? cup.pieceIds : [];
+      expect(pieceIds).toHaveLength(5);
+      for (const id of pieceIds) {
+        expect([1, 2, 3, 4, 5, 6]).toContain(state.gamepieces[id].faceValue);
+      }
+    }
   });
 });
 

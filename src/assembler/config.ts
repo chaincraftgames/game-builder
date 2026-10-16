@@ -87,7 +87,10 @@ function assembleGamepieceTypes(spec: ModularGameSpec): Record<string, Gamepiece
         properties,
         ...(t.hasFaceState ? { hasFaceState: t.hasFaceState } : {}),
         ...(t.exhaustible ? { exhaustible: t.exhaustible } : {}),
-        ...(t.faceCount !== undefined ? { faceCount: t.faceCount } : {}),
+        ...(t.faces !== undefined ? { faces: t.faces } : {}),
+        ...(t.faceCount !== undefined
+          ? { faces: Array.from({ length: t.faceCount }, (_, i) => i + 1) }
+          : {}),
         ...(t.orientationCount !== 1 ? { orientationCount: t.orientationCount } : {}),
         ...(t.inventorySlots?.length ? { inventorySlots: t.inventorySlots.map((s) => s.id) } : {}),
       };

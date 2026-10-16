@@ -29,7 +29,12 @@ export function sessionToEvalContext(
 
   const gamepieces: EvalContext["gamepieces"] = {};
   for (const [id, gp] of Object.entries(session.state.gamepieces)) {
-    gamepieces[id] = { typeId: gp.typeId, properties: gp.properties };
+    gamepieces[id] = {
+      typeId: gp.typeId,
+      properties: gp.properties,
+      faceUp: gp.faceUp,
+      faceValue: gp.faceValue,
+    };
   }
 
   return {
