@@ -188,14 +188,14 @@ actions:
         - effect: message
           to: all
           template: >-
-            {{actor.name}} bids {{input.quantity}} dice showing
-            {{input.faceValue}}s.
+            {{state.game.property.currentBidder}} bids {{input.quantity}}
+            dice showing {{input.faceValue}}s.
 
     - id: challenge
       label: Challenge
       description: >-
         Call out the current bid as a lie. Reveals all dice to all players,
-        resolves the round, then waits for a player to start the next round.
+        resolves the round, and announces which player loses a die.
       preconditions: "game.property.currentBidQuantity != 0"
       steps:
         - effectRef: revealAllDice
@@ -206,10 +206,10 @@ actions:
         - effect: message
           to: all
           template: >-
-            {{actor.name}} challenges the bid of
-            {{state.game.property.currentBidQuantity}}
-            {{state.game.property.currentBidFace}}s — all dice are now
-            revealed. Type "start next round" when you're ready to continue.
+            The bid of {{state.game.property.currentBidQuantity}}
+            {{state.game.property.currentBidFace}}s by
+            {{state.game.property.currentBidder}} was challenged —
+            {{state.game.property.roundLoser}} loses a die.
 
     - id: startNextRound
       label: Start Next Round
@@ -234,10 +234,6 @@ flow:
     winConditions:
       - rule: condition
         condition: "not player.property.eliminated"
-        onVictory:
-          - effect: message
-            to: all
-            template: "{{game.winners[0]}} wins Liar's Dice — the last player with dice remaining!"
     children:
       - kind: loop              # game loop — runs until one player remains
         endCondition: "count(players, not player.property.eliminated) <= 1"
