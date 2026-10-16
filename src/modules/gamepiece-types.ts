@@ -50,7 +50,10 @@
  *     orientationCount: 4
  *   - id: standardDie
  *     category: dice
- *     faceCount: 6
+ *     faceCount: 6            # shorthand for faces 1..6
+ *   - id: fudgeDie
+ *     category: dice
+ *     faces: [-1, -1, 0, 0, 1, 1]   # any other numbering, symbols, or weighting
  *   - id: playerBoard
  *     category: board
  *     description: Each player's personal play area
@@ -469,8 +472,9 @@ export const GamepieceTypeSchema = z
       .min(2)
       .optional()
       .describe(
-        "Number of numeric faces (1–faceCount) on pieces of this type. " +
-          "Shorthand for 'faces: [1, 2, ..., faceCount]'; mutually exclusive with 'faces'. " +
+        "Shorthand for 'faces: [1, 2, ..., faceCount]' — faces numbered 1 to N, one apart. " +
+          "For any other numbering (starting at 0, negative, stepped, non-linear) or for " +
+          "symbols, use 'faces' instead. Mutually exclusive with 'faces'. " +
           "Examples: 6 for a standard d6, 10 for a d10, 20 for a d20. " +
           "Dice (category: 'dice') require either faceCount or faces. " +
           "The face currently showing is readable in expressions as 'piece.faceValue'.",
@@ -480,9 +484,12 @@ export const GamepieceTypeSchema = z
       .min(2)
       .optional()
       .describe(
-        "Ordered table of the values a piece of this type can show. Use for symbol dice " +
-          "(e.g. ['skull', 'brain', 'brain', 'footprint']) or non-sequential numbers. " +
-          "A roll picks one entry uniformly, so repeated entries weight that face. " +
+        "Ordered table of the values a piece of this type can show; use it for anything " +
+          "faceCount can't express. Entries may be numbers or strings: symbol dice " +
+          "(['skull', 'brain', 'brain', 'footprint']), numbers from 0 or negative " +
+          "([-2, -1, 0, 1, 2, 3]), or stepped / non-linear numbers ([2, 4, 6, 8]). " +
+          "A roll picks one entry uniformly, so repeated entries weight that face " +
+          "([-1, -1, 0, 0, 1, 1]). " +
           "Mutually exclusive with 'faceCount'. The face showing is readable in " +
           "expressions as 'piece.faceValue'.",
       ),
