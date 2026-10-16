@@ -141,6 +141,8 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * - `piece.id`                    — the candidate piece's id
  * - `piece.property.<id>`         — the candidate piece's property
  * - `piece.typeId`                — the candidate piece's type ID
+ * - `piece.faceValue`             — the face the piece is showing (pieces with a face table)
+ * - `piece.faceUp`                — whether the piece is face-up
  * - `input.<id>`                  — an earlier input's answer
  *
  * ## Built-in functions
@@ -162,7 +164,7 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  *   `if(actor.property.shielded, 0, game.property.damage)`
  *
  * Aggregators nest. Total sixes across every player's cup:
- * `sum(players, count(player.inventory.cup, piece.property.face == 6))`
+ * `sum(players, count(player.inventory.cup, piece.faceValue == 6))`
  *
  * ## Computed identifiers
  *
@@ -203,7 +205,7 @@ export const ConditionExpressionSchema = z.string().describe(
     "Variants &&/||/= are normalised automatically. " +
     "Paths: game.property.<id>, actor.id, actor.property.<id>, " +
     "player.id / player.property.<id> (player-filter context or inside an aggregator over players), " +
-    "piece.id / piece.property.<id> / piece.typeId (gamepiece-filter context or inside an aggregator over an inventory), " +
+    "piece.id / piece.property.<id> / piece.typeId / piece.faceValue / piece.faceUp (gamepiece-filter context or inside an aggregator over an inventory), " +
     "input.<id> (input validation and selection filters only). " +
     "Inventories (game.inventory.<id>, actor.inventory.<id>, player.inventory.<id>) are collections: " +
     "use them only inside aggregators, never with a '.count' suffix. " +

@@ -469,11 +469,22 @@ export const GamepieceTypeSchema = z
       .min(2)
       .optional()
       .describe(
-        "Number of faces on this die. Required for category: 'dice'. " +
-          "The engine uses this to generate roll outcomes (1–faceCount). " +
+        "Number of numeric faces (1–faceCount) on pieces of this type. " +
+          "Shorthand for 'faces: [1, 2, ..., faceCount]'; mutually exclusive with 'faces'. " +
           "Examples: 6 for a standard d6, 10 for a d10, 20 for a d20. " +
-          "For custom-symbol dice (e.g., King of Tokyo), faceCount still defines the range; " +
-          "face symbols are defined as catalog properties.",
+          "Dice (category: 'dice') require either faceCount or faces. " +
+          "The face currently showing is readable in expressions as 'piece.faceValue'.",
+      ),
+    faces: z
+      .array(z.union([z.number(), z.string()]))
+      .min(2)
+      .optional()
+      .describe(
+        "Ordered table of the values a piece of this type can show. Use for symbol dice " +
+          "(e.g. ['skull', 'brain', 'brain', 'footprint']) or non-sequential numbers. " +
+          "A roll picks one entry uniformly, so repeated entries weight that face. " +
+          "Mutually exclusive with 'faceCount'. The face showing is readable in " +
+          "expressions as 'piece.faceValue'.",
       ),
     orientationCount: z
       .number()

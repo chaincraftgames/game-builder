@@ -11,6 +11,7 @@
  *   2. ResolveRefs        — cross-module forward reference resolution
  *   3. DuplicateIds       — uniqueness of IDs within each module and flow tree
  *   4. FlowIntegrity      — loop termination and flow structural rules
+ *   5. FaceTables         — dice face table presence and faceCount/faces exclusivity
  *
  * Usage:
  *   import { validate } from "@chaincraft/gamedef/validator";
@@ -20,10 +21,11 @@
 
 import { ModularGameSpecSchema } from "#gamedef/index.js";
 import type { ModularGameSpec } from "#gamedef/index.js";
-import type { SpecValidator } from "./types.js";
-import { ResolveRefsValidator } from "./validators/resolve-refs.js";
-import { DuplicateIdsValidator } from "./validators/duplicate-ids.js";
-import { FlowIntegrityValidator } from "./validators/flow-integrity.js";
+import type { SpecValidator } from "#gamedef/validator/types.js";
+import { ResolveRefsValidator } from "#gamedef/validator/validators/resolve-refs.js";
+import { DuplicateIdsValidator } from "#gamedef/validator/validators/duplicate-ids.js";
+import { FlowIntegrityValidator } from "#gamedef/validator/validators/flow-integrity.js";
+import { FaceTablesValidator } from "#gamedef/validator/validators/face-tables.js";
 
 // Re-export types so consumers only need one import path.
 export type { ValidationError, ValidationResult, SpecValidator } from "./types.js";
@@ -37,6 +39,7 @@ const VALIDATORS: SpecValidator[] = [
   new ResolveRefsValidator(),
   new DuplicateIdsValidator(),
   new FlowIntegrityValidator(),
+  new FaceTablesValidator(),
 ];
 
 /**

@@ -48,18 +48,7 @@ gamepieceTypes:
     - id: die
       category: dice
       description: A six-sided die kept hidden under each player's cup.
-      properties:
-        - id: face
-          label: Face
-          type:
-            kind: number
-            min: 1
-            max: 6
-          mutable: true
-          visibility: always
-          description: >-
-            The face currently showing. The playerCup inventory's owner
-            visibility controls who can see dice inside it.
+      faceCount: 6
 
 inventories:
   types:
@@ -136,7 +125,7 @@ effects:
       value:
         expr: >-
           if(sum(players, count(player.inventory.playerCup,
-          piece.property.face == game.property.currentBidFace)) >=
+          piece.faceValue == game.property.currentBidFace)) >=
           game.property.currentBidQuantity, actor.id, game.property.currentBidder)
 
     - id: eliminateDie
