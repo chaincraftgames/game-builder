@@ -314,3 +314,194 @@ describe("Compiler e2e — Liar's Dice challenge resolution", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Liar's Dice — full 3-player game on the real seeded RNG. The script fixes
+// each round's loser and raise chain; bids are derived from the dice that
+// were actually rolled.
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — Liar's Dice full game", () => {
+  const SEATS = ["alice", "bob", "carol"];
+  type Bid = [quantity: number, face: number];
+  type Raise = "quantity" | "face";
+
+  interface Round {
+    raises: Raise[]; // how each bid after the opening one outbids its predecessor
+    loser: string; // must be the final bidder or the challenger
+    countAboveBid?: true; // challenger loses with count > bid instead of count == bid
+  }
+
+  // Alice outlasts bob and carol. Carol is eliminated mid-game (round 10, last seat, so the
+  // next round wraps to alice), then bob ends the game in round 13.
+  const ROUNDS: Round[] = [
+    { raises: [], loser: "bob" },
+    { raises: ["quantity"], loser: "carol" },
+    { raises: ["face", "quantity"], loser: "carol", countAboveBid: true },
+    { raises: [], loser: "alice" },
+    { raises: ["face"], loser: "bob" },
+    { raises: ["quantity", "face"], loser: "bob", countAboveBid: true },
+    { raises: [], loser: "carol" },
+    { raises: ["face"], loser: "alice" },
+    { raises: ["quantity"], loser: "carol" },
+    { raises: [], loser: "carol" },
+    { raises: ["quantity", "face"], loser: "alice" },
+    { raises: ["face"], loser: "bob" },
+    { raises: [], loser: "bob" },
+  ];
+
+  const range = (low: number, high: number) =>
+    Array.from({ length: Math.max(high - low + 1, 0) }, (_, i) => low + i);
+
+  const cupIds = (state: GameState, playerId: string) => {
+    const cup = state.players[playerId].inventories.playerCup;
+    return "pieceIds" in cup ? cup.pieceIds : [];
+  };
+
+  // First live seat clockwise from `from`, starting at `from` itself when inclusive.
+  const liveSeatFrom = (from: string, alive: string[], inclusive: boolean) => {
+    const start = SEATS.indexOf(from) + (inclusive ? 0 : 1);
+    for (let k = 0; k < SEATS.length; k++) {
+      const seat = SEATS[(start + k) % SEATS.length];
+      if (alive.includes(seat)) return seat;
+    }
+    throw new Error("no live seats");
+  };
+
+  const faceCounts = (state: GameState) => {
+    const counts = new Map<number, number>();
+    for (const seat of SEATS) {
+      for (const id of cupIds(state, seat)) {
+        const face = state.gamepieces[id].faceValue as number;
+        counts.set(face, (counts.get(face) ?? 0) + 1);
+      }
+    }
+    return counts;
+  };
+
+  // Final bid sets the outcome against the real dice; earlier bids are stepped down from it.
+  function planBids(counts: Map<number, number>, round: Round, bidderLoses: boolean): Bid[] | undefined {
+    for (const [face, n] of counts) {
+      const quantity = bidderLoses ? n + 1 : round.countAboveBid ? n - 1 : n;
+      if (quantity < 1) continue;
+      const bids: Bid[] = [[quantity, face]];
+      for (const raise of [...round.raises].reverse()) {
+        const [q, f] = bids[0];
+        if (raise === "quantity" ? q <= 1 : f <= 1) break;
+        bids.unshift(raise === "quantity" ? [q - 1, f] : [q, f - 1]);
+      }
+      if (bids.length === round.raises.length + 1) return bids;
+    }
+    return undefined;
+  }
+
+  it("plays 3 players through bids, raises and challenges until one survivor wins", async () => {
+    const controller = new GameController(assembleModule(loadSpec("liars-dice.yaml"), "liars-dice"), {
+      events: {
+        onMessage: (msg) => messages.push(msg.content),
+        onComplete: (o) => { outcome = o; },
+      },
+    });
+    const messages: string[] = [];
+    let outcome: unknown = undefined;
+    await controller.init("ld-full-3p", SEATS);
+
+    const dice: Record<string, number> = { alice: 5, bob: 5, carol: 5 };
+    let alive = [...SEATS];
+    let starter = liveSeatFrom("alice", alive, true);
+
+    for (const [i, round] of ROUNDS.entries()) {
+      try {
+        const messagesBefore = messages.length;
+        const roundStart = controller.getState();
+        const counts = faceCounts(roundStart);
+        expect([...counts.values()].reduce((a, b) => a + b, 0)).toBe(alive.reduce((n, p) => n + dice[p], 0));
+
+        // Seat order after the starter (live seats only) fixes who bids last and who challenges.
+        const bidderCount = round.raises.length + 1;
+        const bidders: string[] = [];
+        for (let b = 0, seat = starter; b < bidderCount; b++, seat = liveSeatFrom(seat, alive, false)) {
+          bidders.push(seat);
+        }
+        const finalBidder = bidders[bidders.length - 1];
+        const challenger = liveSeatFrom(finalBidder, alive, false);
+        if (round.loser !== finalBidder && round.loser !== challenger) {
+          throw new Error(`script loser ${round.loser} is neither bidder ${finalBidder} nor challenger ${challenger}`);
+        }
+        const bids = planBids(counts, round, round.loser === finalBidder);
+        if (!bids) throw new Error("no rolled face lets the script build this bid chain");
+
+        let prev: Bid = [0, 0];
+        for (const [j, [quantity, face]] of bids.entries()) {
+          const actor = bidders[j];
+          expect(controller.currentPrompt?.awaiting).toBe(actor);
+          if (j > 0) {
+            const choice = controller.currentPrompt!.input.type;
+            expect(choice.kind).toBe("action-select");
+            expect(choice.kind === "action-select" ? choice.actions : []).toEqual(["makeBid", "challenge"]);
+            await controller.processAction({ playerId: actor, value: { kind: "act", actionId: "makeBid" } });
+          }
+
+          const quantityPrompt = controller.promptFor(actor)!;
+          expect(quantityPrompt.input.id).toBe("quantity");
+          // Same quantity is only legal while a higher face remains.
+          expect(quantityPrompt.options).toEqual(range(prev[1] === 6 ? prev[0] + 1 : Math.max(prev[0], 1), 30));
+          await controller.processAction({ playerId: actor, value: quantity });
+
+          const facePrompt = controller.promptFor(actor)!;
+          expect(facePrompt.input.id).toBe("faceValue");
+          expect(facePrompt.options).toEqual(quantity > prev[0] ? range(1, 6) : range(prev[1] + 1, 6));
+          await controller.processAction({ playerId: actor, value: face });
+
+          prev = [quantity, face];
+        }
+
+        expect(controller.currentPrompt?.awaiting).toBe(challenger);
+        const standing = controller.getState().gameProperties;
+        expect(standing.currentBidQuantity).toBe(prev[0]);
+        expect(standing.currentBidFace).toBe(prev[1]);
+        expect(standing.currentBidder).toBe(finalBidder);
+
+        // Independent recount of the rule: the challenger loses when the count meets the bid.
+        const actualCount = counts.get(prev[1]) ?? 0;
+        expect(actualCount >= prev[0] ? challenger : finalBidder).toBe(round.loser);
+
+        await controller.processAction({ playerId: challenger, value: { kind: "act", actionId: "challenge" } });
+
+        dice[round.loser] -= 1;
+        alive = SEATS.filter((p) => dice[p] > 0);
+        const afterChallenge = controller.getState();
+        expect(messages.slice(messagesBefore)).toEqual([
+          ...bids.map(([q, f], j) => `${bidders[j]} bids ${q} dice showing ${f}s.`),
+          `The bid of ${prev[0]} ${prev[1]}s by ${finalBidder} was challenged — ${round.loser} loses a die.`,
+        ]);
+        expect(afterChallenge.gameProperties.roundLoser).toBe(round.loser);
+        for (const seat of SEATS) {
+          expect(cupIds(afterChallenge, seat)).toHaveLength(dice[seat]);
+          expect(Boolean(afterChallenge.players[seat].properties.eliminated)).toBe(dice[seat] === 0);
+        }
+
+        if (i < ROUNDS.length - 1) {
+          // startNextRound runs without input, so the next round is already open and the
+          // loser (or the next live seat when the loser was just eliminated) is prompted.
+          expect(controller.isComplete).toBe(false);
+          expect(afterChallenge.gameProperties.currentBidQuantity).toBe(0);
+          expect(afterChallenge.gameProperties.currentBidFace).toBe(0);
+          expect(afterChallenge.gameProperties.currentBidder).toBe("");
+          expect(afterChallenge.gameProperties.challengeMade).toBe(false);
+          starter = liveSeatFrom(round.loser, alive, true);
+          expect(controller.pendingPrompts.size).toBe(1);
+          expect(controller.currentPrompt?.awaiting).toBe(starter);
+          expect(controller.currentPrompt?.input.id).toBe("quantity");
+        }
+      } catch (err) {
+        (err as Error).message = `round ${i + 1}: ${(err as Error).message}`;
+        throw err;
+      }
+    }
+
+    expect(dice).toEqual({ alice: 2, bob: 0, carol: 0 });
+    expect(controller.isComplete).toBe(true);
+    expect(outcome).toMatchObject({ reason: "win-conditions", winnerIds: ["alice"] });
+  });
+});
+
