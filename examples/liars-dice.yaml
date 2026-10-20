@@ -42,6 +42,15 @@ state:
           resolveChallenge; used by eliminateDie to remove the correct die.
           Kept between rounds: the loser (or the next seat if eliminated)
           starts the next round. Empty before the first challenge = seat 1.
+      - id: actualCount
+        type:
+          kind: number
+          min: 0
+          max: 30
+        default: 0
+        description: >-
+          How many dice in play showed the bid face when the bid was
+          challenged. Set by the challenge; announced with the result.
 
 gamepieceTypes:
   types:
@@ -119,6 +128,14 @@ effects:
       path: game.property.challengeMade
       value: true
 
+    - id: countBidFace
+      effect: set-state
+      path: game.property.actualCount
+      value:
+        expr: >-
+          sum(players, count(player.inventory.playerCup,
+          piece.faceValue == game.property.currentBidFace))
+
     - id: resolveChallenge
       effect: set-state
       path: game.property.roundLoser
@@ -161,6 +178,8 @@ actions:
             kind: number
             min: 1
             max: 30
+          validation: "input.quantity <= sum(players, count(player.inventory.playerCup))"
+          validationMessage: Bid no more dice than are in play.
         - input: faceValue
           label: Face Value
           type:
@@ -194,14 +213,13 @@ actions:
     - id: challenge
       label: Challenge
       description: >-
-        Call out the current bid as a lie. Reveals all dice to all players,
-        resolves the round, and announces which player loses a die.
+        Call out the current bid as a lie. Counts the dice showing the bid
+        face, resolves the round and announces the result; every cup in play
+        is then revealed for the review step.
       preconditions: "game.property.currentBidQuantity != 0"
       steps:
-        - effectRef: revealAllDice
+        - effectRef: countBidFace
         - effectRef: resolveChallenge
-        - effectRef: eliminateDie
-        - effectRef: checkElimination
         - effectRef: setChallengeMade
         - effect: message
           to: all
@@ -209,20 +227,23 @@ actions:
             The bid of {{state.game.property.currentBidQuantity}}
             {{state.game.property.currentBidFace}}s by
             {{state.game.property.currentBidder}} was challenged —
+            actual count {{state.game.property.actualCount}} —
             {{state.game.property.roundLoser}} loses a die.
 
     - id: startNextRound
       label: Start Next Round
       description: >-
-        Hide the dice, roll for the next round, and reset the bid. Use
-        this after reviewing the results of a challenge.
+        End the review step: the round's loser gives up one die. Every cup
+        is then hidden and re-rolled for the next round.
       steps:
-        - effectRef: hideAllDice
-        - effectRef: rollAllDice
-        - effectRef: resetBid
-        - effectRef: resetBidFace
-        - effectRef: resetBidder
-        - effectRef: resetChallengeMade
+        - input: ready
+          label: Ready for the next round
+          type:
+            kind: boolean
+          validation: "input.ready == true"
+          validationMessage: Confirm to start the next round.
+        - effectRef: eliminateDie
+        - effectRef: checkElimination
 
 flow:
   root:
@@ -230,17 +251,27 @@ flow:
     hooks:
       onEnter:
         - effectRef: dealDice        # once at game start — dice stay in cups all game
-        - effectRef: rollAllDice    # initial roll before the first round
     winConditions:
       - rule: condition
         condition: "not player.property.eliminated"
     children:
       - kind: loop              # game loop — runs until one player remains
         endCondition: "count(players, not player.property.eliminated) <= 1"
+        hooks:
+          onEnter:                # every round, before any bid; no actor, so every cup
+            - effectRef: hideAllDice
+            - effectRef: rollAllDice
+            - effectRef: resetBid
+            - effectRef: resetBidFace
+            - effectRef: resetBidder
+            - effectRef: resetChallengeMade
         children:
           - kind: loop          # bidding loop — players bid until someone challenges
             endCondition: "game.property.challengeMade == true"
             checkAfter: "turn"
+            hooks:
+              onComplete:       # after the challenge; no actor, so every cup in play
+                - effectRef: revealAllDice
             children:
               - kind: turn
                 actor: all-players
@@ -255,7 +286,7 @@ flow:
                       ref: makeBid
                     - kind: action
                       ref: challenge
-          - kind: turn          # review turn — the round loser (or next live seat) starts the next round
+          - kind: turn          # review step — every cup is face up; the round's loser confirms to continue
             actor: { player: { stateRef: game.property.roundLoser } }
             grammar:
               kind: action
