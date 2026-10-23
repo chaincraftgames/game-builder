@@ -1,0 +1,1000 @@
+// ---------------------------------------------------------------------------
+// Assembler — High Card slice-0 integration test
+//
+// Loads gamedef/examples/high-card.yaml through gamedef's validate(), then
+// runs the assembler and checks the produced GameConfig + initial GameState
+// against expectations. Per the 2026-07-28 decision, this does NOT diff
+// against chaincraft-runtime's hand-written fixture directly — the fixture
+// pre-seeds `deck` and includes stand-in properties (winner, roundWinner's
+// mechanic wiring) that belong to features not yet in the runtime
+// (chaincraft:dominant-gamepiece mechanic, winConditions). This test instead asserts the
+// assembler's actual contract: config shape + all catalog pieces sitting in
+// `game:unassigned`, declared inventories empty, properties at declared
+// defaults.
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { join, dirname } from 'path';
+import { load } from 'js-yaml';
+import { validate } from '@chaincraft/gamedef/validator';
+import { GameController } from '@chaincraft/runtime';
+import {
+  assembleConfig, assembleInitialState, assembleSession,
+  buildExecutorRegistry, assembleEffectDefs, assembleActions,
+  assembleFlow, assembleModule, walkEffectBody,
+  UNASSIGNED_INVENTORY_ID,
+} from '../index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function loadHighCardSpec() {
+  const raw = load(
+    readFileSync(
+      join(__dirname, '../../../../gamedef/examples/high-card.yaml'),
+      'utf-8',
+    ),
+  );
+  const result = validate(raw);
+  if (!result.valid) {
+    throw new Error(`high-card.yaml failed validation: ${JSON.stringify(result.errors, null, 2)}`);
+  }
+  return result.spec;
+}
+
+describe('assembleConfig — High Card', () => {
+  const spec = loadHighCardSpec();
+  const config = assembleConfig(spec);
+
+  it('assembles playerCount from metadata', () => {
+    expect(config.playerCount).toEqual({ min: 2, max: 2 });
+  });
+
+  it('assembles inventories with scope/structure/visibility/accepts', () => {
+    expect(config.inventories.deck).toEqual({
+      structure: 'stack',
+      scope: 'game',
+      visibility: 'never',
+      countVisibility: 'always',
+      accepts: ['card'],
+    });
+    expect(config.inventories.hand).toEqual({
+      structure: 'none',
+      scope: 'player',
+      visibility: 'owner',
+      countVisibility: 'always',
+      accepts: ['card'],
+    });
+    expect(config.inventories.table).toEqual({
+      structure: 'none',
+      scope: 'game',
+      visibility: 'always',
+      countVisibility: 'always',
+      accepts: ['card'],
+    });
+    expect(config.inventories.discard).toEqual({
+      structure: 'none',
+      scope: 'game',
+      visibility: 'always',
+      countVisibility: 'always',
+      accepts: ['card'],
+    });
+  });
+
+  it('assembles gamepieceTypes with property configs', () => {
+    expect(config.gamepieceTypes.card).toEqual({
+      category: 'card',
+      properties: {
+        value: { mutable: false, visibility: 'revealed', min: 1, max: 6 },
+      },
+    });
+  });
+
+  it('assembles game properties (roundWinner only — no winner; that is a winConditions feature gap)', () => {
+    expect(config.gameProperties).toEqual({
+      roundWinner: { mutable: true },
+    });
+  });
+
+  it('assembles player properties (plus the reserved eliminated flag)', () => {
+    expect(config.playerProperties).toEqual({
+      score: { mutable: true, min: 0, max: 3 },
+      eliminated: { mutable: true },
+    });
+  });
+});
+
+describe('assembleInitialState — High Card', () => {
+  const spec = loadHighCardSpec();
+  const config = assembleConfig(spec);
+  const players = ['alice', 'bob'];
+  const state = assembleInitialState(spec, config, players);
+
+  it('instantiates 6 cards with values 1-6, sequentially numbered', () => {
+    const ids = Object.keys(state.gamepieces).sort();
+    expect(ids).toEqual(['card1', 'card2', 'card3', 'card4', 'card5', 'card6']);
+    for (let value = 1; value <= 6; value++) {
+      const piece = state.gamepieces[`card${value}`];
+      expect(piece).toEqual({
+        typeId: 'card',
+        ownerId: '',
+        properties: { value },
+        faceUp: false,
+        exhausted: false,
+        visibleTo: null,
+      });
+    }
+  });
+
+  it('places all pieces in game:unassigned, not the declared inventories', () => {
+    const unassigned = state.gameInventories[UNASSIGNED_INVENTORY_ID];
+    expect('pieceIds' in unassigned && unassigned.pieceIds.slice().sort()).toEqual(
+      ['card1', 'card2', 'card3', 'card4', 'card5', 'card6'],
+    );
+  });
+
+  it('initializes declared game inventories empty', () => {
+    expect(state.gameInventories.deck).toEqual({ structure: 'stack', pieceIds: [] });
+    expect(state.gameInventories.table).toEqual({ structure: 'none', pieceIds: [] });
+    expect(state.gameInventories.discard).toEqual({ structure: 'none', pieceIds: [] });
+  });
+
+  it('initializes game properties at their declared defaults', () => {
+    expect(state.gameProperties).toEqual({ roundWinner: '' });
+  });
+
+  it('initializes each player with default properties and empty hand', () => {
+    for (const pid of players) {
+      expect(state.players[pid].properties).toEqual({ score: 0, eliminated: false });
+      expect(state.players[pid].inventories.hand).toEqual({ structure: 'none', pieceIds: [] });
+    }
+  });
+
+  it('gives each player an independent hand inventory instance', () => {
+    const aliceHand = state.players.alice.inventories.hand;
+    const bobHand = state.players.bob.inventories.hand;
+    expect(aliceHand).not.toBe(bobHand);
+  });
+});
+
+describe('assembleSession — High Card', () => {
+  const spec = loadHighCardSpec();
+
+  it('produces a session with correct gameId/specId/players', () => {
+    const { createSession } = assembleSession(spec, 'high-card');
+    const session = createSession('g1', ['alice', 'bob']);
+    expect(session.gameId).toBe('g1');
+    expect(session.specId).toBe('high-card');
+    expect(session.players).toEqual(['alice', 'bob']);
+    expect(session.outbox).toEqual([]);
+    expect(session._inventoryCache.size).toBe(0);
+  });
+
+  it('uses the fixed seed deterministically (seedSource: fixed)', () => {
+    const { createSession } = assembleSession(spec, 'high-card');
+    const s1 = createSession('g1', ['alice', 'bob']);
+    const s2 = createSession('g2', ['alice', 'bob']); // different gameId, same fixed seed
+    expect(s1.rng.nextFloat()).toBe(s2.rng.nextFloat());
+  });
+
+  it('config is shared (not re-derived) across createSession calls', () => {
+    const factory = assembleSession(spec, 'high-card');
+    const s1 = factory.createSession('g1', ['alice']);
+    expect(s1.config).toBe(factory.config);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Effects + Actions assembler
+// ---------------------------------------------------------------------------
+
+describe('buildExecutorRegistry — High Card', () => {
+  const spec = loadHighCardSpec();
+  // Build effectDefs from all assembler phases so flow-inline kinds are included
+  const effectDefs = assembleEffectDefs(spec);
+  const specId = 'high-card';
+  assembleActions(spec, effectDefs);
+  assembleFlow(spec, specId, effectDefs);
+  const executors = buildExecutorRegistry(effectDefs);
+
+  it('registers an executor for each distinct effect kind in effectDefs', () => {
+    // Named effects use: move, shuffle, distribute, message, set-state
+    const expectedKinds = ['move', 'shuffle', 'distribute', 'message', 'set-state'];
+    for (const kind of expectedKinds) {
+      expect(executors[kind]).toBeDefined();
+      expect(executors[kind].kind).toBe('effect-executor');
+    }
+  });
+
+  it('each executor has an execute function', () => {
+    for (const reg of Object.values(executors)) {
+      if (reg.kind === 'effect-executor') {
+        expect(typeof reg.execute).toBe('function');
+      }
+    }
+  });
+});
+
+describe('assembleEffectDefs — High Card', () => {
+  const spec = loadHighCardSpec();
+  const defs = assembleEffectDefs(spec);
+
+  it('creates an entry for each named effect in the effects module', () => {
+    // high-card.yaml defines: fillDeck, shuffleDeck, dealCards, announceStart,
+    // awardTrick, announceTrick, clearTable, resetRoundWinner
+    const expectedIds = [
+      'fillDeck', 'shuffleDeck', 'dealCards', 'announceStart',
+      'awardTrick', 'announceTrick', 'clearTable', 'resetRoundWinner',
+    ];
+    expect(Object.keys(defs).sort()).toEqual(expectedIds.sort());
+  });
+
+  it('strips the id field from each effect def', () => {
+    for (const def of Object.values(defs)) {
+      expect(def).not.toHaveProperty('id');
+    }
+  });
+
+  it('preserves the kind on each def', () => {
+    expect(defs.fillDeck.kind).toBe('move');
+    expect(defs.shuffleDeck.kind).toBe('shuffle');
+    expect(defs.dealCards.kind).toBe('distribute');
+    expect(defs.announceStart.kind).toBe('message');
+    expect(defs.awardTrick.kind).toBe('set-state');
+    expect(defs.announceTrick.kind).toBe('message');
+    expect(defs.clearTable.kind).toBe('move');
+    expect(defs.resetRoundWinner.kind).toBe('set-state');
+  });
+
+  it('walks nested structures (fillDeck from/to)', () => {
+    expect(defs.fillDeck).toEqual({
+      kind: 'move',
+      from: { inventory: 'game:unassigned', select: 'all', ofType: 'card' },
+      to: { inventory: 'deck' },
+    });
+  });
+
+  it('walks distribute effect with count and scope', () => {
+    expect(defs.dealCards).toEqual({
+      kind: 'distribute',
+      from: { inventory: 'deck', select: 'top' },
+      to: { inventory: 'hand' },
+      count: 3,
+      style: 'round-robin',
+    });
+  });
+
+  it('walks set-state with delta value and stateRef target', () => {
+    expect(defs.awardTrick).toEqual({
+      kind: 'set-state',
+      path: 'player.property.score',
+      value: { delta: 1 },
+      target: { kind: 'stateRef', path: 'game.property.roundWinner' },
+    });
+  });
+});
+
+describe('assembleActions — High Card', () => {
+  const spec = loadHighCardSpec();
+  const effectDefs: Record<string, Record<string, unknown>> = {};
+  const actions = assembleActions(spec, effectDefs);
+
+  it('creates a playCard action', () => {
+    expect(actions.playCard).toBeDefined();
+    expect(actions.playCard.id).toBe('playCard');
+    expect(actions.playCard.label).toBe('Play a Card');
+    expect(actions.playCard.description).toBe('Play one card from your hand to the table.');
+  });
+
+  it('maps the gamepiece-select input correctly', () => {
+    const inputs = actions.playCard.segments[0].inputs;
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].id).toBe('card');
+    expect(inputs[0].label).toBe('Choose a card to play');
+    expect(inputs[0].type).toEqual({
+      kind: 'gamepiece-select',
+      inventory: 'hand',
+      ofType: 'card',
+      fromPlayer: 'self',
+    });
+  });
+
+  it('normalizes inline effects to { ref } entries', () => {
+    expect(actions.playCard.segments).toHaveLength(1);
+    const effects = actions.playCard.segments[0].effects;
+    expect(effects).toHaveLength(1);
+    expect(effects[0]).toHaveProperty('ref');
+  });
+
+  it('adds inline action effects to the effectDefs accumulator', () => {
+    const refId = (actions.playCard.segments[0].effects[0] as { ref: string }).ref;
+    expect(effectDefs[refId]).toBeDefined();
+    expect(effectDefs[refId].kind).toBe('move');
+    expect(effectDefs[refId]).toEqual({
+      kind: 'move',
+      from: { inventory: 'hand', select: { id: { param: 'card' } } },
+      to: { inventory: 'table' },
+    });
+  });
+});
+
+describe("assembleActions — input dependencies", () => {
+  const ownerInput = { input: "owner", type: { kind: "player-select", excludeSelf: true } };
+  const targetInput = {
+    input: "target",
+    type: { kind: "gamepiece-select", inventory: "field", fromPlayer: { param: "owner" } },
+  };
+  // Every action needs an effect step (gamedef enforces it); add one when a fixture has none.
+  const specWithSteps = (steps: unknown[]) =>
+    ({
+      actions: {
+        actions: [
+          {
+            id: "attack",
+            label: "Attack",
+            steps: steps.some((s) => !("input" in (s as object)))
+              ? steps
+              : [...steps, { effectRef: "done" }],
+          },
+        ],
+      },
+    }) as unknown as Parameters<typeof assembleActions>[0];
+
+  it("emits dependsOn for a fromPlayer param on an earlier input", () => {
+    const actions = assembleActions(specWithSteps([ownerInput, targetInput]), {});
+    expect(actions.attack.segments[0].inputs[0].dependsOn).toBeUndefined();
+    expect(actions.attack.segments[0].inputs[1].dependsOn).toEqual(["owner"]);
+  });
+
+  it("rejects a reference to a later input", () => {
+    expect(() => assembleActions(specWithSteps([targetInput, ownerInput]), {})).toThrow(
+      /input "target" references "owner", which is not an earlier input/,
+    );
+  });
+
+  it("rejects a reference to an unknown input", () => {
+    expect(() => assembleActions(specWithSteps([targetInput]), {})).toThrow(
+      /input "target" references "owner", which is not an earlier input/,
+    );
+  });
+
+  it("splits steps into inputs and effects, indexing inline effects among effect steps", () => {
+    const effectDefs: Record<string, Record<string, unknown>> = {};
+    const actions = assembleActions(
+      specWithSteps([
+        ownerInput,
+        { effectRef: "announce" },
+        { effect: "shuffle", inventory: "deck" },
+      ]),
+      effectDefs,
+    );
+    expect(actions.attack.segments).toHaveLength(1);
+    expect(actions.attack.segments[0].inputs.map((i) => i.id)).toEqual(["owner"]);
+    expect(actions.attack.segments[0].effects).toEqual([
+      { ref: "announce" },
+      { ref: "attack._effect_1" },
+    ]);
+    expect(effectDefs["attack._effect_1"]).toEqual({ kind: "shuffle", inventory: "deck" });
+  });
+
+  it("starts a new segment at an input that follows an effect, numbering effects across segments", () => {
+    const effectDefs: Record<string, Record<string, unknown>> = {};
+    const actions = assembleActions(
+      specWithSteps([
+        ownerInput,
+        { effect: "shuffle", inventory: "deck" },
+        targetInput,
+        { effectRef: "announce" },
+        { effect: "shuffle", inventory: "field" },
+      ]),
+      effectDefs,
+    );
+    const { segments } = actions.attack;
+    expect(segments).toHaveLength(2);
+    expect(segments[0].inputs.map((i) => i.id)).toEqual(["owner"]);
+    expect(segments[0].effects).toEqual([{ ref: "attack._effect_0" }]);
+    expect(segments[1].inputs.map((i) => i.id)).toEqual(["target"]);
+    expect(segments[1].effects).toEqual([{ ref: "announce" }, { ref: "attack._effect_2" }]);
+    expect(effectDefs["attack._effect_0"]).toEqual({ kind: "shuffle", inventory: "deck" });
+    expect(effectDefs["attack._effect_2"]).toEqual({ kind: "shuffle", inventory: "field" });
+  });
+
+  it("allows an input to reference an input from an earlier segment", () => {
+    const actions = assembleActions(
+      specWithSteps([ownerInput, { effectRef: "announce" }, targetInput, { effectRef: "done" }]),
+      {},
+    );
+    expect(actions.attack.segments[1].inputs[0].dependsOn).toEqual(["owner"]);
+  });
+
+  it("rejects a forward reference across segments", () => {
+    expect(() =>
+      assembleActions(
+        specWithSteps([targetInput, { effectRef: "announce" }, ownerInput, { effectRef: "done" }]),
+        {},
+      ),
+    ).toThrow(/input "target" references "owner", which is not an earlier input/);
+  });
+
+  it("does not require a finite option list for an input read only by a later segment", () => {
+    const name = { input: "name", type: { kind: "string" } };
+    const check = {
+      input: "check",
+      type: { kind: "number", min: 1, max: 6 },
+      validation: "input.name != \"\"",
+    };
+    expect(() =>
+      assembleActions(
+        specWithSteps([name, { effectRef: "announce" }, check, { effectRef: "done" }]),
+        {},
+      ),
+    ).not.toThrow();
+  });
+
+  it("gives an effect-first action an input-less first segment", () => {
+    const actions = assembleActions(
+      specWithSteps([{ effectRef: "announce" }, ownerInput, { effectRef: "done" }]),
+      {},
+    );
+    const { segments } = actions.attack;
+    expect(segments).toHaveLength(2);
+    expect(segments[0].inputs).toEqual([]);
+    expect(segments[0].effects).toEqual([{ ref: "announce" }]);
+    expect(segments[1].inputs.map((i) => i.id)).toEqual(["owner"]);
+  });
+
+  it("rejects a trailing input with no effect after it", () => {
+    expect(() =>
+      assembleActions(specWithSteps([{ effectRef: "announce" }, ownerInput]), {}),
+    ).toThrow(/input "owner" has no effect step after it; nothing can use its answer/);
+  });
+
+  const die = (id: string, extra: Record<string, unknown> = {}) => ({
+    input: id,
+    type: { kind: "number", min: 1, max: 6 },
+    ...extra,
+  });
+
+  it("collects input references from filters into dependsOn", () => {
+    const budget = { input: "budget", type: { kind: "number", min: 1, max: 10 } };
+    const card = {
+      input: "card",
+      type: { kind: "gamepiece-select", inventory: "hand", filter: "piece.property.cost <= input.budget" },
+    };
+    const actions = assembleActions(specWithSteps([budget, card]), {});
+    expect(actions.attack.segments[0].inputs[1].dependsOn).toEqual(["budget"]);
+    expect(actions.attack.segments[0].inputs[1].validate).toEqual(expect.any(Function));
+    expect(actions.attack.segments[0].inputs[1].type).not.toHaveProperty("filter");
+  });
+
+  it("compiles validation, keeping a self-reference out of dependsOn", () => {
+    const actions = assembleActions(
+      specWithSteps([die("roll", { validation: "input.roll > 2", validationMessage: "Too low" })]),
+      {},
+    );
+    const [roll] = actions.attack.segments[0].inputs;
+    expect(roll.validate).toEqual(expect.any(Function));
+    expect(roll.validationMessage).toBe("Too low");
+    expect(roll.dependsOn).toBeUndefined();
+  });
+
+  it("rejects a filter that reads its own input", () => {
+    const card = {
+      input: "card",
+      type: { kind: "gamepiece-select", inventory: "hand", filter: "input.card != \"\"" },
+    };
+    expect(() => assembleActions(specWithSteps([card]), {})).toThrow(
+      /input "card" references "card", which is not an earlier input/,
+    );
+  });
+
+  it("rejects a number input whose min exceeds its max", () => {
+    const bad = { input: "n", type: { kind: "number", min: 6, max: 1 } };
+    expect(() => assembleActions(specWithSteps([bad]), {})).toThrow(
+      /input "n" has min 6 greater than max 1/,
+    );
+  });
+
+  it("rejects validation on selection inputs, pointing at filter", () => {
+    const attacker = { input: "attacker", type: { kind: "gamepiece-select", inventory: "field" } };
+    const defender = {
+      input: "defender",
+      type: { kind: "gamepiece-select", inventory: "field" },
+      validation: "input.defender != input.attacker",
+    };
+    expect(() => assembleActions(specWithSteps([attacker, defender]), {})).toThrow(
+      /input "defender" is a gamepiece-select; use 'filter' instead of 'validation'/,
+    );
+    expect(() => assembleActions(specWithSteps([{ ...ownerInput, validation: "true" }]), {})).toThrow(
+      /input "owner" is a player-select; use 'filter' instead of 'validation'/,
+    );
+  });
+
+  it("rejects more than MAX_PLAYER_INPUTS player-supplied inputs, not counting auto inputs", () => {
+    const auto = { input: "attacker", type: { kind: "effect-originator" } };
+    const four = [die("a"), die("b"), die("c"), die("d")];
+    expect(() => assembleActions(specWithSteps([auto, ...four]), {})).not.toThrow();
+    expect(() => assembleActions(specWithSteps([...four, die("e")]), {})).toThrow(
+      /has 5 player-supplied inputs; at most 4 are allowed/,
+    );
+  });
+
+  it("rejects a later input reading an input that has no finite option list", () => {
+    const amount = { input: "amount", type: { kind: "number", min: 1, max: 100 } };
+    const name = { input: "name", type: { kind: "string" } };
+    expect(() =>
+      assembleActions(specWithSteps([amount, die("x", { validation: "input.x < input.amount" })]), {}),
+    ).toThrow(/input "amount" is read by a later input but has no finite option list/);
+    expect(() =>
+      assembleActions(specWithSteps([name, die("x", { validation: "input.name != \"\"" })]), {}),
+    ).toThrow(/input "name" is read by a later input but has no finite option list/);
+  });
+
+  it("rejects dependent inputs whose combinations exceed MAX_LOOKAHEAD_COMBINATIONS", () => {
+    const thirty = (id: string, extra: Record<string, unknown> = {}) => ({
+      input: id,
+      type: { kind: "number", min: 1, max: 30 },
+      ...extra,
+    });
+    expect(() =>
+      assembleActions(specWithSteps([thirty("a"), thirty("b", { validation: "input.b > input.a" })]), {}),
+    ).toThrow(/dependent inputs allow 900 answer combinations; at most 500 are allowed/);
+  });
+});
+
+describe("assembleActions — Liar's Dice bid validation", () => {
+  const raw = load(
+    readFileSync(join(__dirname, "../../../../gamedef/examples/liars-dice.yaml"), "utf-8"),
+  );
+  const result = validate(raw);
+  if (!result.valid) throw new Error(JSON.stringify(result.errors));
+  const mod = assembleModule(result.spec, "liars-dice");
+  const [quantity, faceValue] = mod.actions.makeBid.segments[0].inputs;
+  const session = mod.createSession("g", ["p1", "p2"]);
+  session.state.gameProperties.currentBidQuantity = 5;
+  session.state.gameProperties.currentBidFace = 6;
+
+  it("records that faceValue depends on quantity", () => {
+    expect(quantity.dependsOn).toBeUndefined();
+    expect(faceValue.dependsOn).toEqual(["quantity"]);
+    expect(faceValue.validationMessage).toBe(
+      "Bid a higher quantity, or the same quantity with a higher face value.",
+    );
+  });
+
+  it("accepts only bids above the current 5 x sixes", () => {
+    const legal = (q: number, f: number) => faceValue.validate!(session, "p1", { quantity: q, faceValue: f });
+    expect(legal(6, 1)).toBe(true);
+    expect(legal(5, 6)).toBe(false);
+    expect(legal(4, 6)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Flow + assembleModule + e2e
+// ---------------------------------------------------------------------------
+
+describe('assembleFlow — High Card', () => {
+  const spec = loadHighCardSpec();
+  const effectDefs: Record<string, Record<string, unknown>> = {};
+  const flow = assembleFlow(spec, 'high-card', effectDefs);
+
+  it('produces a game root node with the specId as id', () => {
+    expect(flow.kind).toBe('game');
+    expect(flow.id).toBe('high-card');
+  });
+
+  it('game root has onEnter hooks as refs', () => {
+    const onEnter = flow.hooks?.onEnter ?? [];
+    expect(onEnter).toHaveLength(4);
+    expect(onEnter[0]).toEqual({ ref: 'fillDeck' });
+    expect(onEnter[1]).toEqual({ ref: 'shuffleDeck' });
+    expect(onEnter[2]).toEqual({ ref: 'dealCards' });
+    expect(onEnter[3]).toEqual({ ref: 'announceStart' });
+  });
+
+  it('has a loop child with count 3', () => {
+    expect(flow.children).toHaveLength(1);
+    const loop = flow.children[0];
+    expect(loop.kind).toBe('loop');
+    if (loop.kind === 'loop') {
+      expect(loop.id).toBe('tricks');
+      expect(loop.count).toBe(3);
+    }
+  });
+
+  it('loop contains a round-robin turn', () => {
+    const loop = flow.children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    const turn = loop.children[0];
+    expect(turn.kind).toBe('turn');
+    if (turn.kind === 'turn') {
+      expect(turn.id).toBe('playTrick');
+      expect(turn.ordering).toEqual({ kind: 'round-robin' });
+      expect(turn.grammar).toEqual({ kind: 'action', ref: 'playCard' });
+    }
+  });
+
+  it('turn onComplete hooks include chaincraft:dominant-gamepiece:resolve ref', () => {
+    const loop = flow.children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    const turn = loop.children[0];
+    if (turn.kind !== 'turn') throw new Error('expected turn');
+    const onComplete = turn.hooks?.onComplete ?? [];
+    expect(onComplete[0]).toEqual({ ref: 'chaincraft:dominant-gamepiece:resolve' });
+    expect(onComplete[1]).toEqual({ ref: 'awardTrick' });
+    expect(onComplete[4]).toEqual({ ref: 'resetRoundWinner' });
+  });
+});
+
+describe('assembleFlow — loop endCondition', () => {
+  /** High Card with the tricks loop's `count` replaced by `patch`. */
+  function highCardWithLoop(patch: Record<string, unknown>) {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: Record<string, unknown>[] };
+    const { count: _count, ...loop } = root.children[0];
+    root.children[0] = { ...loop, ...patch };
+    return spec;
+  }
+
+  function assembleLoop(patch: Record<string, unknown>) {
+    const spec = highCardWithLoop(patch);
+    const loop = assembleFlow(spec, 'high-card', {}).children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    const session = assembleSession(spec, 'high-card').createSession('g1', ['alice', 'bob']);
+    return { loop, session };
+  }
+
+  it('compiles an iteration-checked endCondition into a predicate over live session state', () => {
+    const { loop, session } = assembleLoop({
+      endCondition: 'any(players, player.property.score >= 2)',
+    });
+    expect(loop.count).toBeUndefined();
+    expect(loop.checkAfter).toBeUndefined();
+    expect(loop.endCondition!(session)).toBe(false);
+    session.state.players.bob.properties.score = 2;
+    expect(loop.endCondition!(session)).toBe(true);
+  });
+
+  it('checkAfter: turn passes through and binds the finishing player as actor', () => {
+    const { loop, session } = assembleLoop({
+      endCondition: 'actor.property.score >= 2',
+      checkAfter: 'turn',
+      finalRound: true,
+    });
+    expect(loop.checkAfter).toBe('turn');
+    expect(loop.finalRound).toBe(true);
+    session.state.players.bob.properties.score = 2;
+    expect(loop.endCondition!(session, 'alice')).toBe(false);
+    expect(loop.endCondition!(session, 'bob')).toBe(true);
+  });
+
+  it('rejects count together with endCondition', () => {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: Record<string, unknown>[] };
+    root.children[0] = { ...root.children[0], endCondition: 'true' };
+    expect(() => assembleFlow(spec, 'high-card', {})).toThrow("both 'count' and 'endCondition'");
+  });
+
+  it('rejects until-pass (not yet supported)', () => {
+    expect(() => assembleLoop({ endCondition: 'until-pass' })).toThrow("'until-pass' is not yet supported");
+  });
+
+  it('rejects actor paths in an iteration-checked endCondition', () => {
+    expect(() => assembleLoop({ endCondition: 'actor.property.score >= 2' })).toThrow(
+      'only bound with checkAfter: turn',
+    );
+  });
+
+  it('rejects finalRound without checkAfter: turn', () => {
+    expect(() =>
+      assembleLoop({ endCondition: 'any(players, player.property.score >= 2)', finalRound: true }),
+    ).toThrow('finalRound requires checkAfter: turn');
+  });
+
+  it('count(players, ...) over the reserved eliminated flag', () => {
+    const { loop, session } = assembleLoop({
+      endCondition: 'count(players, not player.property.eliminated) <= 1',
+    });
+    expect(loop.endCondition!(session)).toBe(false);
+    session.state.players.bob.properties.eliminated = true;
+    expect(loop.endCondition!(session)).toBe(true);
+  });
+});
+
+describe('assembleFlow — turn ordering', () => {
+  /** High Card with the playTrick turn's actor/turnOrder replaced by `patch`. */
+  function assembleTurn(patch: Record<string, unknown>) {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: { children: Record<string, unknown>[] }[] };
+    const { actor: _a, turnOrder: _t, ...turn } = root.children[0].children[0];
+    root.children[0].children[0] = { ...turn, ...patch };
+    const loop = assembleFlow(spec, 'high-card', {}).children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    const node = loop.children[0];
+    if (node.kind !== 'turn') throw new Error('expected turn');
+    return node.ordering;
+  }
+
+  const seat = { kind: 'seat', direction: 'clockwise' };
+
+  it('all-players with no turnOrder is round-robin from seat 1', () => {
+    expect(assembleTurn({ actor: 'all-players' })).toEqual({ kind: 'round-robin' });
+  });
+
+  it('startingPlayer: first is round-robin from seat 1', () => {
+    expect(assembleTurn({ actor: 'all-players', turnOrder: { ...seat, startingPlayer: 'first' } }))
+      .toEqual({ kind: 'round-robin' });
+  });
+
+  it('startingPlayer { stateRef } maps to round-robin start', () => {
+    expect(assembleTurn({
+      actor: 'all-players',
+      turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner' } },
+    })).toEqual({ kind: 'round-robin', start: { kind: 'state-ref', path: 'game.property.roundWinner' } });
+  });
+
+  it('actor { player: { stateRef } } maps to single', () => {
+    expect(assembleTurn({ actor: { player: { stateRef: 'game.property.roundWinner' } } }))
+      .toEqual({ kind: 'single', actor: { kind: 'state-ref', path: 'game.property.roundWinner' } });
+  });
+
+  it('rejects actor { player } combined with turnOrder', () => {
+    expect(() => assembleTurn({
+      actor: { player: { stateRef: 'game.property.roundWinner' } },
+      turnOrder: seat,
+    })).toThrow('turnOrder is not allowed');
+  });
+
+  it.each([
+    ['actor { roles }', { actor: { roles: ['dealer'] } }],
+    ['actor { where }', { actor: { where: 'not player.property.eliminated' } }],
+    ['actor { player: first }', { actor: { player: 'first' } }],
+    ['actor { player: random }', { actor: { player: 'random' } }],
+    ['ranked turnOrder', { actor: 'all-players', turnOrder: { kind: 'ranked', by: { playerProperty: 'score' }, order: 'ascending' } }],
+    ['explicit turnOrder', { actor: 'all-players', turnOrder: { kind: 'explicit', players: ['alice', 'bob'] } }],
+    ['counter-clockwise', { actor: 'all-players', turnOrder: { kind: 'seat', direction: 'counter-clockwise' } }],
+    ['startingPlayer random', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: 'random' } }],
+    ['startingPlayer { role }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { role: 'dealer' } } }],
+    ['startingPlayer { where }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { where: 'player.property.score > 0' } } }],
+    ['startingPlayer { highest }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { highest: { playerProperty: 'score' } } } }],
+    ['startingPlayer { lowest }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { lowest: { playerProperty: 'score' } } } }],
+    ['selector offset', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner', offset: 1 } } }],
+  ])('rejects unsupported %s', (_name, patch) => {
+    expect(() => assembleTurn(patch)).toThrow('is not yet supported');
+  });
+
+  it("Liar's Dice: loser starts the bidding round and takes the review turn", () => {
+    const raw = load(readFileSync(join(__dirname, '../../../../gamedef/examples/liars-dice.yaml'), 'utf-8'));
+    const result = validate(raw);
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const gameLoop = assembleFlow(result.spec, 'liars-dice', {}).children[0];
+    if (gameLoop.kind !== 'loop') throw new Error('expected loop');
+    const [biddingLoop, review] = gameLoop.children;
+    if (biddingLoop.kind !== 'loop' || review.kind !== 'turn') throw new Error('unexpected shape');
+    const bidding = biddingLoop.children[0];
+    if (bidding.kind !== 'turn') throw new Error('expected turn');
+    const loser = { kind: 'state-ref', path: 'game.property.roundLoser' };
+    expect(bidding.ordering).toEqual({ kind: 'round-robin', start: loser });
+    expect(review.ordering).toEqual({ kind: 'single', actor: loser });
+  });
+
+  it("Liar's Dice: anonymous flow nodes get unique generated ids", () => {
+    const raw = load(readFileSync(join(__dirname, '../../../../gamedef/examples/liars-dice.yaml'), 'utf-8'));
+    const result = validate(raw);
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const gameLoop = assembleFlow(result.spec, 'liars-dice', {}).children[0];
+    if (gameLoop.kind !== 'loop') throw new Error('expected loop');
+    const [biddingLoop, review] = gameLoop.children;
+    if (biddingLoop.kind !== 'loop') throw new Error('expected loop');
+    expect([gameLoop.id, biddingLoop.id, biddingLoop.children[0].id, review.id]).toEqual([
+      'loop-1',
+      'loop-2',
+      'turn-1',
+      'turn-2',
+    ]);
+  });
+
+  it('generated ids skip ids the spec already uses', () => {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: Array<Record<string, unknown> & { children: Record<string, unknown>[] }> };
+    root.children[0].id = 'turn-1';
+    delete root.children[0].children[0].id;
+    const loop = assembleFlow(spec, 'high-card', {}).children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    expect(loop.id).toBe('turn-1');
+    expect(loop.children[0].id).toBe('turn-2');
+  });
+});
+
+describe('assembleFlow — condition win conditions', () => {
+  it('binds player.* to each evaluated player', () => {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { winConditions?: unknown[] };
+    root.winConditions = [{ rule: 'condition', condition: 'not player.property.eliminated' }];
+    const game = assembleFlow(spec, 'high-card', {});
+    const session = assembleSession(spec, 'high-card').createSession('g1', ['alice', 'bob']);
+    session.state.players.alice.properties.eliminated = true;
+
+    const wc = game.winConditions![0];
+    if (wc.rule !== 'condition') throw new Error('expected condition rule');
+    expect(wc.condition(session, 'alice')).toBe(false);
+    expect(wc.condition(session, 'bob')).toBe(true);
+  });
+
+  it('rejects actor paths (no actor exists at game end)', () => {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { winConditions?: unknown[] };
+    root.winConditions = [{ rule: 'condition', condition: 'actor.property.score >= 2' }];
+    expect(() => assembleFlow(spec, 'high-card', {})).toThrow("references 'actor'");
+  });
+});
+
+describe('assembleModule — High Card', () => {
+  const spec = loadHighCardSpec();
+  const mod = assembleModule(spec, 'high-card');
+
+  it('produces a CompiledGameModule with correct specId and metadata', () => {
+    expect(mod.specId).toBe('high-card');
+    expect(mod.metadata.name).toBe('High Card');
+    expect(mod.metadata.playerCount).toEqual({ min: 2, max: 2 });
+  });
+
+  it('registers the dominant-gamepiece executor', () => {
+    expect(mod.effects['chaincraft:dominant-gamepiece']).toBeDefined();
+    expect(mod.effects['chaincraft:dominant-gamepiece'].kind).toBe('effect-executor');
+  });
+
+  it('effectDefs contains the dominant-gamepiece resolve ref', () => {
+    expect(mod.effectDefs['chaincraft:dominant-gamepiece:resolve']).toBeDefined();
+    expect(mod.effectDefs['chaincraft:dominant-gamepiece:resolve'].kind).toBe('chaincraft:dominant-gamepiece');
+  });
+
+  it('effectDefs contains all named effects from the spec', () => {
+    const expectedIds = [
+      'fillDeck', 'shuffleDeck', 'dealCards', 'announceStart',
+      'awardTrick', 'announceTrick', 'clearTable', 'resetRoundWinner',
+    ];
+    for (const id of expectedIds) {
+      expect(mod.effectDefs[id]).toBeDefined();
+    }
+  });
+
+  it('actions map contains playCard', () => {
+    expect(mod.actions.playCard).toBeDefined();
+    expect(mod.actions.playCard.segments[0].inputs).toHaveLength(1);
+  });
+
+  it('passes link/validate (no unresolved refs)', () => {
+    // If assembleModule doesn't throw, link/validate passed
+    expect(() => assembleModule(spec, 'high-card')).not.toThrow();
+  });
+});
+
+describe('assembled High Card — e2e setup', () => {
+  it('starts a game session and fires onEnter hooks (cards dealt)', async () => {
+    const spec = loadHighCardSpec();
+    const mod = assembleModule(spec, 'high-card');
+
+    const messages: string[] = [];
+    const controller = new GameController(mod, {
+      events: {
+        onMessage: (msg) => messages.push(msg.template),
+      },
+    });
+
+    await controller.init('game1', ['alice', 'bob']);
+    const state = controller.getState();
+
+    // fillDeck + shuffleDeck + dealCards should have moved 3 cards to each hand
+    const aliceHand = state.players.alice.inventories.hand;
+    const bobHand = state.players.bob.inventories.hand;
+    const aliceCount = 'pieceIds' in aliceHand ? aliceHand.pieceIds.length : 0;
+    const bobCount = 'pieceIds' in bobHand ? bobHand.pieceIds.length : 0;
+
+    expect(aliceCount).toBe(3);
+    expect(bobCount).toBe(3);
+
+    // announceStart message should have fired (onMessage receives the rendered text)
+    expect(messages.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// walkEffectBody — { expr } compilation
+// ---------------------------------------------------------------------------
+
+describe('walkEffectBody — { expr } compilation', () => {
+  it('compiles { expr: string } value to a CompiledValueFn', () => {
+    const body = walkEffectBody({
+      kind: 'set-state',
+      target: 'game',
+      property: 'score',
+      value: { expr: 'game.property.score + 1' },
+    } as never);
+    expect(typeof (body.value as Record<string, unknown>).expr).toBe('function');
+  });
+
+  it('compiled { expr } evaluates correctly against a mock session', () => {
+    const body = walkEffectBody({
+      kind: 'set-state',
+      target: 'game',
+      property: 'score',
+      value: { expr: 'game.property.score + 1' },
+    } as never);
+
+    const mockSession = {
+      players: ['alice'],
+      state: {
+        gameProperties: { score: 5 },
+        gameInventories: {},
+        players: { alice: { properties: {}, inventories: {} } },
+        gamepieces: {},
+      },
+    } as never;
+    const mockCtx = { actorId: 'alice', actionInputs: {}, effectDef: {} } as never;
+
+    const exprFn = (body.value as Record<string, unknown>).expr as (s: never, c: never) => unknown;
+    expect(exprFn(mockSession, mockCtx)).toBe(6);
+  });
+
+  it('compiled { expr } resolves source piece property', () => {
+    const body = walkEffectBody({
+      kind: 'set-state',
+      target: 'game',
+      property: 'lastAttack',
+      value: { expr: 'source.property.attack' },
+    } as never);
+
+    const mockSession = {
+      players: [],
+      state: {
+        gameProperties: {},
+        gameInventories: {},
+        players: {},
+        gamepieces: { 'sword-1': { typeId: 'weapon', properties: { attack: 7 } } },
+      },
+    } as never;
+    const mockCtx = { actorId: null, actionInputs: {}, effectDef: {}, sourcePieceId: 'sword-1' } as never;
+
+    const exprFn = (body.value as Record<string, unknown>).expr as (s: never, c: never) => unknown;
+    expect(exprFn(mockSession, mockCtx)).toBe(7);
+  });
+
+  it('passthrough: non-expr value fields are unchanged', () => {
+    const body = walkEffectBody({
+      kind: 'set-state',
+      target: 'game',
+      property: 'score',
+      value: 42,
+    } as never);
+    expect(body.value).toBe(42);
+  });
+
+  it('compiles a matching player-target condition into a per-player filter', () => {
+    const body = walkEffectBody({
+      kind: 'set-state',
+      path: 'player.property.eliminated',
+      value: true,
+      target: { kind: 'matching', condition: 'count(player.inventory.hand) == 0' },
+    } as never);
+    const target = body.target as { kind: string; condition: (s: never, p: string) => boolean };
+    expect(target.kind).toBe('matching');
+
+    const mockSession = {
+      players: ['alice', 'bob'],
+      state: {
+        gameProperties: {},
+        gameInventories: {},
+        players: {
+          alice: { properties: {}, inventories: { hand: { structure: 'none', pieceIds: ['c1'] } } },
+          bob: { properties: {}, inventories: { hand: { structure: 'none', pieceIds: [] } } },
+        },
+        gamepieces: {},
+      },
+    } as never;
+    expect(target.condition(mockSession, 'alice')).toBe(false);
+    expect(target.condition(mockSession, 'bob')).toBe(true);
+  });
+});
