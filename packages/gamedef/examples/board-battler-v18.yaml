@@ -533,8 +533,9 @@ effects:
 
     # -------------------------------------------------------------------
     # FREEZE, THE CLEAR. Unchanged from board-battler.yaml: fires once per
-    # round at the turn node's onComplete, sweeps BOTH fields (no player
-    # qualifier needed or resolvable from a hook), thawing every creature.
+    # round at the turn node's onComplete, sweeps BOTH fields (a hook has no
+    # actor, so the selector names its players with player: { kind: all }),
+    # thawing every creature.
     # board-battler.yaml's own asymmetric-freeze finding (frozen by the last
     # player to act in a round never bites) is unchanged and not fixed here;
     # Card 418 did not ask for it and the flow-restructuring path that would
@@ -690,7 +691,7 @@ actions:
         - effect: update
           source: { param: attacker }
           pieces:
-            player: { param: defenderOwner }
+            player: { kind: param, inputId: defenderOwner }
             inventory: field
             select: { id: { param: defender } }
           property: defense
@@ -708,7 +709,7 @@ actions:
         # unlike the hook effects in item 1/2 above).
         - effect: move
           from:
-            player: { param: defenderOwner }
+            player: { kind: param, inputId: defenderOwner }
             inventory: field
             select: all
             ofType: creature
@@ -783,14 +784,14 @@ actions:
           to: { inventory: discard }
         - effect: update
           pieces:
-            player: { param: victimOwner }
+            player: { kind: param, inputId: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozen
           value: true
         - effect: update
           pieces:
-            player: { param: victimOwner }
+            player: { kind: param, inputId: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozenRounds

@@ -1,6 +1,7 @@
 {
   "name": "@chaincraft/gamedef",
   "version": "0.1.0",
+  "private": true,
   "description": "ChainCraft modular game spec — Zod schemas, TypeScript types, and validator",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,9 +26,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testTimeout=30000",
-    "test:spec": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/spec --testTimeout=30000",
-    "test:validator": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/validator --testTimeout=30000",
+    "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --testTimeout=30000",
+    "test:spec": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/spec --testTimeout=30000",
+    "test:validator": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/validator --testTimeout=30000",
     "clean": "rm -rf dist"
   },
   "keywords": [

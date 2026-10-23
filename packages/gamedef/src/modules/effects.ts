@@ -87,6 +87,128 @@ import { InventoryPlacementSchema } from "#gamedef/modules/inventories.js";
 import { ConditionExpressionSchema, IdentifierSchema, keyedUnion } from "#gamedef/modules/common.js";
 
 // ---------------------------------------------------------------------------
+// Player target (who a player-scoped effect or selector applies to)
+//
+// By default, player-scoped effects target the acting player. Use a target
+// to apply effects to other players: a chosen opponent, all players, all
+// players except the actor, or players matching a condition.
+//
+// Contexts with no actor (flow hooks) must name their players explicitly.
+// ---------------------------------------------------------------------------
+
+const ActorTargetSchema = z
+  .object({ kind: z.literal("actor") })
+  .describe("The acting player (default when target is omitted). Requires an actor — not available in flow hooks.");
+
+const AllTargetSchema = z
+  .object({ kind: z.literal("all") })
+  .describe("Every player in the game.");
+
+const AllOtherTargetSchema = z
+  .object({ kind: z.literal("all-other") })
+  .describe("All players except the actor. Requires an actor — not available in flow hooks.");
+
+const ParamTargetSchema = z
+  .object({
+    kind: z.literal("param"),
+    inputId: z
+      .string()
+      .describe(
+        "Action input ID whose value is the target player ID. " +
+          "Forward reference to an input declared on the enclosing action.",
+      ),
+  })
+  .describe(
+    "A specific player resolved from an action input (e.g., 'choose a target'). " +
+      "The input value must be a valid player ID.",
+  );
+
+const StateRefTargetSchema = z
+  .object({
+    kind: z.literal("stateRef"),
+    path: z
+      .string()
+      .describe(
+        "Dot-path to a string state property whose value is the target player ID. " +
+          "Format: 'game.property.<id>'. Resolved at runtime.",
+      ),
+  })
+  .describe(
+    "A player identified by a state property value (e.g., game.property.roundLoser).",
+  );
+
+const MatchingTargetSchema = z
+  .object({
+    kind: z.literal("matching"),
+    condition: ConditionExpressionSchema.describe(
+      "An infix expression evaluated per candidate player. " +
+        "Available paths: 'player.property.<id>' (stored and computed state properties), " +
+        "'count(player.inventory.<id>)' (total piece count in a player-scoped inventory). " +
+        "Example: 'player.property.roundsWon >= 3' or " +
+        "'count(player.inventory.hand) > 0 and not player.property.eliminated'.",
+    ),
+  })
+  .describe(
+    "All players satisfying an infix condition expression evaluated against each player's state.",
+  );
+
+/**
+ * @example Target a player chosen by the actor
+ * ```yaml
+ * target: { kind: param, inputId: targetPlayer }
+ * ```
+ * @example Target all other players
+ * ```yaml
+ * target: { kind: all-other }
+ * ```
+ * @example Target players with >= 1 building (via computed property)
+ * ```yaml
+ * target:
+ *   kind: matching
+ *   condition: "player.property.buildingCount > 0"
+ * ```
+ * @example Target players whose score exceeds 10
+ * ```yaml
+ * target:
+ *   kind: matching
+ *   condition: "player.property.score >= 10"
+ * ```
+ * @example Compound condition — score > 5 AND at least one resource
+ * ```yaml
+ * target:
+ *   kind: matching
+ *   condition: "player.property.score > 5 and count(player.inventory.resources) > 0"
+ * ```
+ */
+export const PlayerTargetSchema = z
+  .discriminatedUnion("kind", [
+    ActorTargetSchema,
+    AllTargetSchema,
+    AllOtherTargetSchema,
+    ParamTargetSchema,
+    StateRefTargetSchema,
+    MatchingTargetSchema,
+  ])
+  .describe(
+    "Who a player-scoped effect applies to. Defaults to 'actor' when omitted. " +
+      "Use to target other players, all players, or players matching a condition.",
+  );
+
+/**
+ * Subset of PlayerTargetSchema that always resolves to exactly one player.
+ * Used where a single player is required (e.g., a move destination).
+ */
+export const SinglePlayerTargetSchema = z
+  .discriminatedUnion("kind", [
+    ActorTargetSchema,
+    ParamTargetSchema,
+    StateRefTargetSchema,
+  ])
+  .describe(
+    "Exactly one player: the actor, a player chosen via an action input, or a player named by a state property.",
+  );
+
+// ---------------------------------------------------------------------------
 // Gamepiece selector (shared across move, flip, update, roll, orient)
 // ---------------------------------------------------------------------------
 
@@ -99,41 +221,20 @@ import { ConditionExpressionSchema, IdentifierSchema, keyedUnion } from "#gamede
  * { inventory: diceTray, select: random, count: 2 }
  * { inventory: game:unassigned, select: { id: whiteKing } }
  * { inventory: playerHand, select: { id: { param: chosenCard } } }
- * { player: { stateRef: game.property.roundLoser }, inventory: playerCup, select: top }
- * { player: { param: targetPlayer }, inventory: playerHand, select: top }
+ * { player: { kind: stateRef, path: game.property.roundLoser }, inventory: playerCup, select: top }
+ * { player: { kind: param, inputId: targetPlayer }, inventory: playerHand, select: top }
+ * { player: { kind: all }, inventory: playerCup, select: all }   # every player's cup — required in flow hooks
  * ```
  */
 export const GamepieceSelectorSchema = z
   .object({
-    player: z
-      .union([
-        z.object({
-          stateRef: z
-            .string()
-            .describe(
-              "Dot-path to a string state property whose value is the target player ID at runtime. " +
-                "Format: 'game.property.<id>'. The engine resolves the player instance dynamically. " +
-                "Use when the target player is determined by game state rather than fixed context " +
-                "(e.g., game.property.roundLoser, game.property.currentBidder).",
-            ),
-        }),
-        z.object({
-          param: z
-            .string()
-            .describe(
-              "Reference to an action input whose value is the target player ID. " +
-                "Use when the player was selected via a player-select input on the action.",
-            ),
-        }),
-      ])
+    player: PlayerTargetSchema
       .optional()
       .describe(
-        "Dynamic player targeting. When present, overrides the default acting-player context " +
-          "and selects pieces from the named player's instance of the inventory. " +
-          "Use { stateRef } for state-driven targeting (e.g., roundLoser). " +
-          "Use { param } for action-input-driven targeting (e.g., chosen opponent). " +
-          "Omit to use the default context (acting player for player-scoped inventories, " +
-          "game context for game-scoped inventories).",
+        "Whose instance of a player-scoped inventory to select from. Ignored for game-scoped inventories. " +
+          "Omit to use the acting player — an error in flow hooks (onEnter/onComplete), which have no actor, " +
+          "so hook effects must name their players, e.g. { kind: all }. " +
+          "With several players, 'select' and 'count' apply to each player's inventory separately.",
       ),
     inventory: z
       .string()
@@ -190,7 +291,7 @@ export const GamepieceSelectorSchema = z
   })
   .describe(
     "Identifies which pieces an effect operates on — which inventory and how to pick from it. " +
-      "Use 'player' with 'stateRef' for state-driven targeting or { param } for action-input targeting.",
+      "For player-scoped inventories, 'player' names whose inventory (see PlayerTarget).",
   );
 
 // ---------------------------------------------------------------------------
@@ -207,34 +308,15 @@ export const GamepieceSelectorSchema = z
  * { inventory: battleGrid, at: { kind: grid-cell, row: 1, col: "e" } } # grid cell
  * { inventory: board, at: { kind: graph-node, nodeId: "C3" } }    # graph node
  * { inventory: battleGrid, at: { param: targetCell } }          # position from action input
- * { player: { param: targetPlayer }, inventory: playerHand }    # opponent's inventory
+ * { player: { kind: param, inputId: targetPlayer }, inventory: playerHand }    # opponent's inventory
  * ```
  */
 export const InventoryTargetSchema = z
   .object({
-    player: z
-      .union([
-        z.object({
-          stateRef: z
-            .string()
-            .describe(
-              "Dot-path to a string state property whose value is the target player ID.",
-            ),
-        }),
-        z.object({
-          param: z
-            .string()
-            .describe(
-              "Reference to an action input whose value is the target player ID.",
-            ),
-        }),
-      ])
-      .optional()
-      .describe(
-        "Dynamic player targeting for the destination inventory. " +
-          "When present, overrides the default acting-player context. " +
-          "Use { stateRef } for state-driven targeting or { param } for action-input targeting.",
-      ),
+    player: SinglePlayerTargetSchema.optional().describe(
+      "Whose instance of a player-scoped destination inventory receives the pieces. " +
+        "Exactly one player. Omit to use the acting player — an error in flow hooks, which have no actor.",
+    ),
     inventory: z
       .string()
       .describe(
@@ -1367,100 +1449,6 @@ export const GenerateImageEffectSchema = z
       "Mirrors game-builder's generateImageWithDescription (mode 'described') and generateImageDirect " +
       "(mode 'direct'), with `imageType` selecting the preset config. No-op in engines without " +
       "image support — text-only play is unaffected.",
-  );
-
-// ---------------------------------------------------------------------------
-// Player target (who a player-scoped effect applies to)
-//
-// By default, player-scoped effects target the acting player. Use a target
-// to apply effects to other players: a chosen opponent, all players, all
-// players except the actor, or players matching a condition.
-// ---------------------------------------------------------------------------
-
-/**
- * @example Target a player chosen by the actor
- * ```yaml
- * target: { kind: param, inputId: targetPlayer }
- * ```
- * @example Target all other players
- * ```yaml
- * target: { kind: all-other }
- * ```
- * @example Target players with >= 1 building (via computed property)
- * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.buildingCount > 0"
- * ```
- * @example Target players whose score exceeds 10
- * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.score >= 10"
- * ```
- * @example Compound condition — score > 5 AND at least one resource
- * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.score > 5 and count(player.inventory.resources) > 0"
- * ```
- */
-export const PlayerTargetSchema = z
-  .discriminatedUnion("kind", [
-    z
-      .object({ kind: z.literal("actor") })
-      .describe("The acting player (default when target is omitted)."),
-    z
-      .object({ kind: z.literal("all") })
-      .describe("Every player in the game."),
-    z
-      .object({ kind: z.literal("all-other") })
-      .describe("All players except the actor."),
-    z
-      .object({
-        kind: z.literal("param"),
-        inputId: z
-          .string()
-          .describe(
-            "Action input ID whose value is the target player ID. " +
-              "Forward reference to an input declared on the enclosing action.",
-          ),
-      })
-      .describe(
-        "A specific player resolved from an action input (e.g., 'choose a target'). " +
-          "The input value must be a valid player ID.",
-      ),
-    z
-      .object({
-        kind: z.literal("stateRef"),
-        path: z
-          .string()
-          .describe(
-            "Dot-path to a string state property whose value is the target player ID. " +
-              "Format: 'game.property.<id>'. Resolved at runtime.",
-          ),
-      })
-      .describe(
-        "A player identified by a state property value (e.g., game.property.roundLoser).",
-      ),
-    z
-      .object({
-        kind: z.literal("matching"),
-        condition: ConditionExpressionSchema.describe(
-          "An infix expression evaluated per candidate player. " +
-            "Available paths: 'player.property.<id>' (stored and computed state properties), " +
-            "'count(player.inventory.<id>)' (total piece count in a player-scoped inventory). " +
-            "Example: 'player.property.roundsWon >= 3' or " +
-            "'count(player.inventory.hand) > 0 and not player.property.eliminated'.",
-        ),
-      })
-      .describe(
-        "All players satisfying an infix condition expression evaluated against each player's state.",
-      ),
-  ])
-  .describe(
-    "Who a player-scoped effect applies to. Defaults to 'actor' when omitted. " +
-      "Use to target other players, all players, or players matching a condition.",
   );
 
 // ---------------------------------------------------------------------------

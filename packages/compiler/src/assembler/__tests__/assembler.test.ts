@@ -82,6 +82,16 @@ describe('assembleConfig — High Card', () => {
     });
   });
 
+  it('adds the reserved game:unassigned inventory, hidden from all players', () => {
+    expect(config.inventories['game:unassigned']).toEqual({
+      structure: 'none',
+      scope: 'game',
+      visibility: 'never',
+      countVisibility: 'never',
+      accepts: ['card'],
+    });
+  });
+
   it('assembles gamepieceTypes with property configs', () => {
     expect(config.gamepieceTypes.card).toEqual({
       category: 'card',
@@ -996,5 +1006,19 @@ describe('walkEffectBody — { expr } compilation', () => {
     } as never;
     expect(target.condition(mockSession, 'alice')).toBe(false);
     expect(target.condition(mockSession, 'bob')).toBe(true);
+  });
+
+  it('compiles a matching player condition on a gamepiece selector', () => {
+    const body = walkEffectBody({
+      effect: 'hide',
+      pieces: {
+        player: { kind: 'matching', condition: 'count(player.inventory.hand) == 0' },
+        inventory: 'hand',
+        select: 'all',
+      },
+    } as never);
+    const player = (body.pieces as { player: { kind: string; condition: unknown } }).player;
+    expect(player.kind).toBe('matching');
+    expect(typeof player.condition).toBe('function');
   });
 });

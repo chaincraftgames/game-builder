@@ -113,7 +113,7 @@ describe("Passives — lifesteal and thorns (board-battler)", () => {
       effectDef: {
         kind: "update",
         pieces: {
-          player: { param: "defenderOwner" },
+          player: { kind: "param", inputId: "defenderOwner" },
           inventory: "field",
           select: { id: { param: "defender" } },
         },
@@ -250,7 +250,7 @@ describe("Passives — trigger context and source piece", () => {
       effectDef: {
         kind: "update",
         pieces: {
-          player: { param: "defenderOwner" },
+          player: { kind: "param", inputId: "defenderOwner" },
           inventory: "field",
           select: { id: { param: "defender" } },
         },
@@ -280,7 +280,7 @@ describe("Passives — trigger context and source piece", () => {
       effectDef: {
         kind: "update",
         pieces: {
-          player: { param: "defenderOwner" },
+          player: { kind: "param", inputId: "defenderOwner" },
           inventory: "field",
           select: { id: { param: "defender" } },
         },

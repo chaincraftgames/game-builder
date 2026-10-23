@@ -350,7 +350,7 @@ export const ActionStepSchema = keyedUnion({
  *     type: { kind: gamepiece-select, inventory: playerHand, fromPlayer: { param: target } }
  *     label: Choose card to steal
  *   - effect: move
- *     from: { player: { param: target }, inventory: playerHand, select: { id: { param: card } } }
+ *     from: { player: { kind: param, inputId: target }, inventory: playerHand, select: { id: { param: card } } }
  *     to: { inventory: playerHand }
  * ```
  * @example Liar's Dice bid — player inputs, inline { param } effects

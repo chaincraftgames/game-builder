@@ -251,6 +251,7 @@ effects:
     - id: revealArsenals
       effect: reveal
       pieces:
+        player: { kind: all }
         inventory: arsenal
         select: all
       to: all
@@ -260,6 +261,7 @@ effects:
       inputs:
         - name: arsenals
           pieces:
+            player: { kind: all }
             inventory: arsenal
             select: all
           properties:

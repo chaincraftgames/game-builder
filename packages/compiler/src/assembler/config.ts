@@ -10,6 +10,7 @@
 import type { ModularGameSpec, PropertyType, StatePropertySchema } from '@chaincraft/gamedef';
 import { z } from 'zod';
 import { ELIMINATED_PROPERTY } from '@chaincraft/runtime';
+import type { GamepiecePropertyConfig } from '@chaincraft/runtime';
 import type {
   GameConfig,
   GamepieceTypeConfig,
@@ -17,7 +18,7 @@ import type {
   PropertyConfig,
   RefType,
 } from './types.js';
-import { GamepiecePropertyConfig } from "node_modules/@chaincraft/runtime/dist/types.js";
+import { UNASSIGNED_INVENTORY_ID } from './types.js';
 
 type StateProperty = z.infer<typeof StatePropertySchema>;
 
@@ -122,6 +123,17 @@ function assembleInventories(spec: ModularGameSpec): Record<string, InventoryCon
   );
 }
 
+/** Reserved pool: hidden from every player, including its count. */
+function assembleUnassignedInventory(spec: ModularGameSpec): InventoryConfig {
+  return {
+    structure: 'none',
+    scope: 'game',
+    visibility: 'never',
+    countVisibility: 'never',
+    accepts: (spec.gamepieceTypes?.types ?? []).map((t) => t.id),
+  };
+}
+
 /**
  * Assemble the immutable GameConfig from a validated ModularGameSpec.
  */
@@ -130,7 +142,10 @@ export function assembleConfig(spec: ModularGameSpec): GameConfig {
     throw new Error('assembleConfig: spec.metadata is required');
   }
   return {
-    inventories: assembleInventories(spec),
+    inventories: {
+      ...assembleInventories(spec),
+      [UNASSIGNED_INVENTORY_ID]: assembleUnassignedInventory(spec),
+    },
     gamepieceTypes: assembleGamepieceTypes(spec),
     gameProperties: assembleGameProperties(spec),
     playerProperties: assemblePlayerProperties(spec),

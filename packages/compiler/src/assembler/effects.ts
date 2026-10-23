@@ -154,6 +154,8 @@ function walkSelector(value: unknown): unknown {
   for (const [k, v] of Object.entries(sel)) {
     if (k === "filter" && typeof v === "string") {
       result[k] = compilePieceFilter(v);
+    } else if (k === "player" && isMatchingTarget(v)) {
+      result[k] = { kind: "matching", condition: compilePlayerFilter(v.condition) };
     } else {
       result[k] = walkValue(v);
     }

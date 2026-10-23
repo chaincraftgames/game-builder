@@ -8,7 +8,7 @@
 const path = require('path');
 
 const ROOT = __dirname;
-const RUNTIME_DIST = path.resolve(ROOT, '../chaincraft-runtime/dist');
+const RUNTIME_DIST = path.resolve(ROOT, '../../../chaincraft-runtime/dist');
 const GAMEDEF_DIST = path.resolve(ROOT, '../gamedef/dist');
 
 module.exports = (request, options) => {

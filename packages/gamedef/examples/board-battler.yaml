@@ -222,7 +222,7 @@ effects:
     # -----------------------------------------------------------------------
     - id: thawAll
       effect: update
-      pieces: { inventory: field, select: all }
+      pieces: { player: { kind: all }, inventory: field, select: all }
       property: frozen
       value: false
 
@@ -367,7 +367,7 @@ actions:
         - effect: update
           source: { param: attacker }
           pieces:
-            player: { param: defenderOwner }
+            player: { kind: param, inputId: defenderOwner }
             inventory: field
             select: { id: { param: defender } }
           property: defense
@@ -428,7 +428,7 @@ actions:
           to: { inventory: discard }
         - effect: update
           pieces:
-            player: { param: victimOwner }
+            player: { kind: param, inputId: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozen

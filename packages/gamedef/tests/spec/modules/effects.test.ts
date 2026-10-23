@@ -372,6 +372,60 @@ describe("EffectsModuleSchema — select by id", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Selector / move-destination player targets
+// ---------------------------------------------------------------------------
+
+describe("EffectsModuleSchema — selector player target", () => {
+  const roll = (player: unknown) => ({
+    effects: [{ id: "r", effect: "roll", pieces: { player, inventory: "cup", select: "all" } }],
+  });
+
+  it.each([
+    [{ kind: "all" }],
+    [{ kind: "actor" }],
+    [{ kind: "all-other" }],
+    [{ kind: "param", inputId: "target" }],
+    [{ kind: "stateRef", path: "game.property.roundLoser" }],
+    [{ kind: "matching", condition: "not player.property.eliminated" }],
+  ])("accepts selector player %j", (player) => {
+    ok(roll(player));
+  });
+
+  it("rejects the old { stateRef } / { param } shorthand on a selector", () => {
+    fail(roll({ stateRef: "game.property.roundLoser" }));
+    fail(roll({ param: "target" }));
+  });
+
+  it("accepts a single-player move destination", () => {
+    ok({
+      effects: [
+        {
+          id: "m",
+          effect: "move",
+          from: { inventory: "deck", select: "top" },
+          to: { player: { kind: "param", inputId: "target" }, inventory: "hand" },
+        },
+      ],
+    });
+  });
+
+  it("rejects a multi-player move destination", () => {
+    for (const player of [{ kind: "all" }, { kind: "all-other" }, { kind: "matching", condition: "true" }]) {
+      fail({
+        effects: [
+          {
+            id: "m",
+            effect: "move",
+            from: { inventory: "deck", select: "top" },
+            to: { player, inventory: "hand" },
+          },
+        ],
+      });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Rejections
 // ---------------------------------------------------------------------------
 

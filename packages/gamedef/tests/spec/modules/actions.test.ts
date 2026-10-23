@@ -469,7 +469,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
             },
             {
               effect: "move",
-              from: { player: { param: "target" }, inventory: "playerHand", select: { id: { param: "card" } } },
+              from: { player: { kind: "param", inputId: "target" }, inventory: "playerHand", select: { id: { param: "card" } } },
               to: { inventory: "playerHand" },
             },
           ],
@@ -658,7 +658,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
             {
               effect: "move",
               from: { inventory: "playerHand", select: "top" },
-              to: { player: { param: "recipient" }, inventory: "playerHand" },
+              to: { player: { kind: "param", inputId: "recipient" }, inventory: "playerHand" },
             },
           ],
         },
@@ -675,7 +675,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
             {
               effect: "move",
               from: { inventory: "penaltyPool", select: "top" },
-              to: { player: { stateRef: "game.property.roundLoser" }, inventory: "playerHand" },
+              to: { player: { kind: "stateRef", path: "game.property.roundLoser" }, inventory: "playerHand" },
             },
           ],
         },

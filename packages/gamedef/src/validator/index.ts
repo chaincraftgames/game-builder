@@ -12,6 +12,7 @@
  *   3. DuplicateIds       — uniqueness of IDs within each module and flow tree
  *   4. FlowIntegrity      — loop termination and flow structural rules
  *   5. FaceTables         — dice face table presence and faceCount/faces exclusivity
+ *   6. ActorContext       — effects in actor-less flow hooks must name their players
  *
  * Usage:
  *   import { validate } from "@chaincraft/gamedef/validator";
@@ -26,6 +27,7 @@ import { ResolveRefsValidator } from "#gamedef/validator/validators/resolve-refs
 import { DuplicateIdsValidator } from "#gamedef/validator/validators/duplicate-ids.js";
 import { FlowIntegrityValidator } from "#gamedef/validator/validators/flow-integrity.js";
 import { FaceTablesValidator } from "#gamedef/validator/validators/face-tables.js";
+import { ActorContextValidator } from "#gamedef/validator/validators/actor-context.js";
 
 // Re-export types so consumers only need one import path.
 export type { ValidationError, ValidationResult, SpecValidator } from "./types.js";
@@ -40,6 +42,7 @@ const VALIDATORS: SpecValidator[] = [
   new DuplicateIdsValidator(),
   new FlowIntegrityValidator(),
   new FaceTablesValidator(),
+  new ActorContextValidator(),
 ];
 
 /**

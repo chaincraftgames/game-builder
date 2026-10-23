@@ -87,12 +87,14 @@ effects:
     - id: rollAllDice
       effect: roll
       pieces:
+        player: { kind: all }
         inventory: playerCup
         select: all
 
     - id: revealAllDice
       effect: reveal
       pieces:
+        player: { kind: all }
         inventory: playerCup
         select: all
       to: all
@@ -100,6 +102,7 @@ effects:
     - id: hideAllDice
       effect: hide
       pieces:
+        player: { kind: all }
         inventory: playerCup
         select: all
 
@@ -148,8 +151,7 @@ effects:
     - id: eliminateDie
       effect: move
       from:
-        player:
-          stateRef: game.property.roundLoser
+        player: { kind: stateRef, path: game.property.roundLoser }
         inventory: playerCup
         select: random
         count: 1
@@ -258,7 +260,7 @@ flow:
       - kind: loop              # game loop — runs until one player remains
         endCondition: "count(players, not player.property.eliminated) <= 1"
         hooks:
-          onEnter:                # every round, before any bid; no actor, so every cup
+          onEnter:                # every round, before any bid; no actor, so effects name their players
             - effectRef: hideAllDice
             - effectRef: rollAllDice
             - effectRef: resetBid
@@ -270,7 +272,7 @@ flow:
             endCondition: "game.property.challengeMade == true"
             checkAfter: "turn"
             hooks:
-              onComplete:       # after the challenge; no actor, so every cup in play
+              onComplete:       # after the challenge; no actor, so effects name their players
                 - effectRef: revealAllDice
             children:
               - kind: turn
