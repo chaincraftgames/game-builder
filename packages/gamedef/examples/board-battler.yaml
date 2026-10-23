@@ -1,0 +1,541 @@
+# ---------------------------------------------------------------------------
+# BOARD BATTLER, the second acceptance test: freeze, lifesteal, thorns.
+#
+# Written for Eric against gamedef 7c1c7b1, compiler 4269cdc, runtime 9e61cbe.
+# Companion to passive-battler.yaml in this folder, which is unchanged. That
+# one had no board. This one does, because freeze is piece-level and there is
+# nothing to freeze without creatures standing on a field.
+#
+# SCOPE, MATCHING WHAT ERIC SAID HE WOULD BUILD, AND NOTHING ELSE:
+#   FREEZE     a property on the piece, a condition on the selector, and an
+#              end-of-turn clear.
+#   LIFESTEAL  fires on the holder's own action. His example.
+#   THORNS     fires when an opponent targets the holder. His other example.
+#
+# DELIBERATELY ABSENT, so their absence is not read as an oversight: no dots
+# and no burn of any kind, no poison, no bleed, no kindle. AND NO ARMOR,
+# which is the one worth explaining. ARMOR IS SECOND WAVE ON PURPOSE: it is
+# the only one of these that has to INTERCEPT A WRITE WHILE IT IS IN FLIGHT
+# rather than react after one, so it is the only one that needs the adjust
+# executor, and it drags in the clamping question (adjust moves the resulting
+# TOTAL rather than the size of the change, so an armor larger than the hit
+# heals its holder past where they started, and a floor at zero reduction
+# cannot be said at all). None of freeze, lifesteal or thorns needs any of
+# that. Keeping armor out keeps this spec pointed at what is being built.
+#
+# WHAT IS LIVE HERE AND WHAT IS NOT. The board, the combat and the freeze
+# property and its clear all RUN TODAY, verified by playing this file. The
+# two passives and freeze's own selector condition cannot run today, and each
+# says why in its own block, in the engine's vocabulary rather than in a
+# workaround. Strip every proposal block and this is still a playable game.
+# ---------------------------------------------------------------------------
+
+metadata:
+  name: "Board Battler"
+  description: >-
+    Two player board battler built as an acceptance test for freeze, lifesteal
+    and thorns. Creatures persist on a field, fight each other, and can strike
+    the opposing player directly.
+  playerCount:
+    min: 2
+    max: 2
+  rng:
+    seedSource: fixed # a constant seed: the deal is identical on every run
+
+state:
+  player:
+    properties:
+      - id: life
+        type:
+          kind: number
+          min: 0
+          max: 30
+        default: 30
+        description: >-
+          Reaching 0 does not end the match today. See THE MISSING PIECES at
+          the foot of this file.
+
+# ---------------------------------------------------------------------------
+# GAMEPIECE TYPES
+#
+# `frozen` is the whole of freeze's data half, and it is REAL: it is written,
+# it persists on the piece, and it is cleared. What it cannot yet do is stop
+# anything, because the place that decision belongs is a selector condition
+# and that is the crash described on the attack action below.
+# ---------------------------------------------------------------------------
+gamepieceTypes:
+  types:
+    - id: creature
+      category: card
+      description: A creature. Stands on the field until something removes it.
+      properties:
+        - id: power
+          label: Power
+          type: { kind: number, min: 0, max: 20 }
+          mutable: true
+          visibility: always
+        - id: defense
+          label: Defense
+          type: { kind: number, min: 0, max: 20 }
+          mutable: true
+          visibility: always
+        - id: frozen
+          label: Frozen
+          type: { kind: boolean }
+          mutable: true
+          source: runtime
+          visibility: always
+          default: false
+      # The two binding sites for this game's passives. Declared in the
+      # schema's own shape. Nothing reads them today (see the passives block).
+      passiveSlots:
+        - id: onDealDamage
+          description: Fires when this creature's controller deals damage.
+          enabledIn: [field]
+          faceFilter: any
+          exhaustedFilter: any
+        - id: onTargeted
+          description: Fires when an opponent targets this creature.
+          enabledIn: [field]
+          faceFilter: any
+          exhaustedFilter: any
+    - id: spell
+      category: card
+      description: Fires once and goes to the discard.
+
+inventories:
+  types:
+    - id: library
+      label: Library
+      scope: { kind: game }
+      accepts: [creature, spell]
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: >-
+        Shared staging pile, shuffled at setup and emptied into the two sides.
+        It exists because shuffle resolves a player-scoped inventory through
+        the acting player and setup has no acting player.
+    - id: deck
+      label: Deck
+      scope: { kind: player }
+      accepts: [creature, spell]
+      visibility: never
+      countVisibility: always
+      structure: stack
+    - id: hand
+      label: Hand
+      scope: { kind: player }
+      accepts: [creature, spell]
+      visibility: owner
+    - id: field
+      label: Field
+      scope: { kind: player }
+      accepts: [creature]
+      visibility: always
+      description: Where creatures stand. They persist here across rounds.
+    - id: discard
+      label: Discard
+      scope: { kind: game }
+      accepts: [creature, spell]
+      visibility: always
+
+effects:
+  effects:
+    - id: fillLibrary
+      effect: move
+      from: { inventory: "game:unassigned", select: all }
+      to: { inventory: library }
+
+    - id: shuffleLibrary
+      effect: shuffle
+      inventory: library
+
+    - id: dealHands
+      effect: distribute
+      from: { inventory: library, select: top }
+      to: { inventory: hand }
+      count: 2
+
+    - id: dealDecks
+      effect: distribute
+      from: { inventory: library, select: top }
+      to: { inventory: deck }
+      count: 2
+
+    - id: announceStart
+      effect: message
+      to: all
+      template: >-
+        Both sides start at 30 life. Play creatures, attack with them, and
+        bring the other side down.
+
+    # -----------------------------------------------------------------------
+    # FREEZE, THE CLEAR. THIS ONE RUNS TODAY, AND THAT IS WORTH KNOWING
+    # BEFORE THE WHERE CLAUSE IS BUILT.
+    #
+    # Eric proposed a `where` clause on set-state for this, because nothing
+    # today can iterate matching pieces. For THIS clear specifically the
+    # clause turns out not to be needed, because the write is idempotent:
+    # setting frozen to false on a creature that is already thawed is a
+    # harmless no-op, so sweeping EVERY creature does exactly what sweeping
+    # only the frozen ones would do. Verified live: this hook thaws every
+    # creature on BOTH fields, and a creature frozen during a round is still
+    # frozen while the opponent takes their turn and is thawed after.
+    #
+    # HIS SHAPE, WRITTEN OUT SO IT IS ON THE RECORD, AS A PROPOSAL. It does
+    # not exist today and is not enabled:
+    #
+    #     - id: thawFrozen                    # PROPOSAL, no `where` exists
+    #       kind: set-state
+    #       path: gamepiece.property.frozen
+    #       where: "piece.property.frozen == true"
+    #       value: false
+    #
+    # WHERE THE CLAUSE REALLY BECOMES LOAD BEARING, if it is worth his time:
+    # not here, but the moment the write is NOT idempotent, that is, when the
+    # value written depends on what it is replacing, or when writing to an
+    # unaffected piece would itself be a change. A thaw is the easy case.
+    #
+    # TWO HONEST NOTES ON THIS HOOK. First, `set-state` cannot reach a piece
+    # property at all today (its path root must be game or player), which is
+    # why the live version below is an `update`. Second, this is an END OF
+    # ROUND clear rather than end of each player's turn: a turn node covers
+    # every player, and its hooks fire once for the node with no acting
+    # player bound, so there is no per-player turn boundary to hang it on.
+    #
+    # AND THAT SECOND NOTE HAS A CONSEQUENCE WORTH HAVING BEFORE THE WORK
+    # STARTS, because it decides whether freeze does anything at all. With
+    # only an end-of-round boundary available, FREEZE IS ASYMMETRIC, and both
+    # halves are verified live in this file:
+    #   cast by the FIRST player to act in a round, the flag survives across
+    #   the opponent's whole turn and clears after, which is exactly the
+    #   behaviour freeze wants;
+    #   cast by the LAST player to act in a round, the turn node completes
+    #   immediately afterwards, the thaw runs, and the flag is gone before
+    #   its victim is ever asked to act. It never bites. Not because the
+    #   write failed, but because there was no turn boundary between the
+    #   freeze and the clear.
+    # A real per-player end-of-turn hook fixes this and nothing else does; a
+    # `where` clause does not, since the problem is WHEN the clear runs
+    # rather than WHICH pieces it touches.
+    # -----------------------------------------------------------------------
+    - id: thawAll
+      effect: update
+      pieces: { inventory: field, select: all }
+      property: frozen
+      value: false
+
+  # -------------------------------------------------------------------------
+  # THE TWO PASSIVES. PROPOSAL, SHAPE ONLY, NEITHER RUNS.
+  #
+  # Both are written in the schema's own passive vocabulary and both are
+  # bound to catalog cards through passiveBindings below, which is the shape
+  # a card-carried ability wants. Nothing here executes, for one blunt
+  # reason: THE COMPILER READS NO PASSIVE DECLARATION OF ANY KIND. A grep for
+  # "passive" across the whole compiler source returns nothing, and neither
+  # passiveSlots nor passiveBindings nor effects.passives is ever walked. The
+  # runtime's own EffectBus, which already carries before/after state-write
+  # signals and already logs "state-write adjusted by passive", is never even
+  # constructed on a compiled session. So this is not a matter of a missing
+  # executor for these two: they need the declaration read, the bus built,
+  # and subscriptions registered, which is the expression engine Eric said
+  # comes first.
+  # -------------------------------------------------------------------------
+  passives:
+    # LIFESTEAL, his own example, fires on the holder's own action.
+    # WHAT IT SHOULD DO: when this creature's controller deals damage, that
+    # player heals.
+    # ONE THING IT CANNOT SAY, and it is worth him knowing before he builds
+    # it: "heal THAT AMOUNT" is not expressible, because a passive sees the
+    # resulting total and not the size of the change. His own example heals a
+    # flat 1 for exactly this reason, and this one heals a flat 2. If a
+    # passive could read the delta, this becomes real lifesteal in one edit.
+    - id: lifesteal
+      trigger:
+        kind: state-write
+        scope: actor # the holder is the one CAUSING the write
+        path: player.property.life
+        direction: decrease
+      enabledIn: [field]
+      effects:
+        - effect: set-state
+          path: player.property.life
+          value: { delta: 2 }
+
+    # THORNS, his other example, fires when an opponent targets the holder.
+    # FLAT 2, DELIBERATELY NOT STACKING: a stack would add a variable that
+    # has nothing to do with what is being built.
+    #
+    # TWO THINGS TO FLAG, both found by reading the bus rather than guessing.
+    # (1) THE TRIGGER PATH IS A PIECE PROPERTY, and `update` really does emit
+    # a state-write for it, with path "gamepiece.property.defense" and the
+    # PIECE id as targetId. But matchesTrigger decides scope "target" by
+    # comparing the subscription's ownerId, a PLAYER, against that targetId,
+    # a PIECE. Those can never be equal, so a piece-scoped defensive passive
+    # cannot match under today's rule. Whatever the fix is, ownership
+    # resolution for piece events is part of this work.
+    # (2) IT DAMAGES THE ATTACKING PLAYER, NOT THE ATTACKING CREATURE, which
+    # is what his own thorns example does with target: trigger-actor. Hitting
+    # the creature that attacked would need a reference to the TRIGGERING
+    # PIECE, and no such reference exists in the passive vocabulary today.
+    - id: thorns
+      trigger:
+        kind: state-write
+        scope: target # the holder is the one RECEIVING the write
+        path: gamepiece.property.defense
+        direction: decrease
+      enabledIn: [field]
+      effects:
+        - effect: set-state
+          path: player.property.life
+          value: { delta: -2 }
+
+actions:
+  actions:
+    - id: playCreature
+      label: Play a creature
+      description: Put a creature from your hand onto your field.
+      steps:
+        - input: card
+          label: Choose a creature
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: creature
+            fromPlayer: self
+        - effect: move
+          from: { inventory: hand, select: { id: { param: card } } }
+          to: { inventory: field }
+
+    # -----------------------------------------------------------------------
+    # ATTACK A CREATURE. THE COMBAT ITSELF RUNS TODAY: both pieces really do
+    # take the other's power, read off the other piece rather than hardcoded,
+    # through `update` with a `source` piece reference.
+    #
+    # FREEZE'S OWN CONDITION BELONGS ON THE ATTACKER INPUT, AND IT CANNOT GO
+    # THERE TODAY. A `filter` on a gamepiece-select input is not merely
+    # ignored: it is A HARD RUNTIME CRASH THAT PASSES BOTH GATES. The schema
+    # documents filter as an infix string, the compiler passes the input type
+    # through untouched, and the runtime CALLS IT AS A FUNCTION. Verified by
+    # running it: validate returns valid, compile returns OK, and the moment
+    # a player reaches this input the session dies with
+    #     TypeError: type.filter is not a function
+    # This is the single most load-bearing gap for freeze, because "a frozen
+    # creature cannot be selected to attack" IS a selector condition and has
+    # nowhere else to live. It is left out rather than written, because a
+    # spec that crashes mid-match teaches less than one that runs and says
+    # what is missing.
+    #
+    # THE ONE LINE THIS ACTION WANTS, once a filter is compiled:
+    #
+    #       type:
+    #         kind: gamepiece-select
+    #         inventory: field
+    #         ofType: creature
+    #         fromPlayer: self
+    #         filter: "piece.property.frozen == false"     # PROPOSAL
+    #
+    # UNTIL THEN FREEZE IS VISIBLE BUT TOOTHLESS: the flag is set, it shows
+    # on the piece, it clears at end of round, and it stops nothing. A human
+    # referee can enforce it by eye, which is what the surface's manual layer
+    # is for, but the engine does not.
+    # -----------------------------------------------------------------------
+    - id: attackCreature
+      label: Attack a creature
+      description: Your creature and theirs each take the other's power.
+      steps:
+        - input: attacker
+          label: Choose your attacker
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: self
+        - input: defenderOwner
+          label: Choose whose creature to attack
+          type:
+            kind: player-select
+            excludeSelf: true
+        - input: defender
+          label: Choose the creature to attack
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: { param: defenderOwner }
+        - effect: update
+          source: { param: attacker }
+          pieces:
+            player: { param: defenderOwner }
+            inventory: field
+            select: { id: { param: defender } }
+          property: defense
+          value: { delta: { var: "source.property.power", negate: true } }
+        - effect: update
+          source: { param: defender }
+          pieces: { inventory: field, select: { id: { param: attacker } } }
+          property: defense
+          value: { delta: { var: "source.property.power", negate: true } }
+
+    - id: attackPlayer
+      label: Attack the opposing player
+      description: Your creature strikes the other player directly.
+      steps:
+        - input: attacker
+          label: Choose your attacker
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: self
+        - effect: set-state
+          path: player.property.life
+          target: { kind: all-other }
+          source: { param: attacker }
+          value: { delta: { var: "source.property.power", negate: true } }
+
+    # -----------------------------------------------------------------------
+    # CAST FREEZE. The write half of freeze, and it runs today.
+    # A frozen creature is marked on the board and stays marked while the
+    # opponent takes their turn, then thaws at the end of the round.
+    # -----------------------------------------------------------------------
+    - id: castFreeze
+      label: Cast a freeze
+      description: Freeze one of the opposing player's creatures.
+      steps:
+        - input: card
+          label: Choose a freeze card
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: spell
+            fromPlayer: self
+        - input: victimOwner
+          label: Choose whose creature to freeze
+          type:
+            kind: player-select
+            excludeSelf: true
+        - input: victim
+          label: Choose the creature to freeze
+          type:
+            kind: gamepiece-select
+            inventory: field
+            ofType: creature
+            fromPlayer: { param: victimOwner }
+        - effect: move
+          from: { inventory: hand, select: { id: { param: card } } }
+          to: { inventory: discard }
+        - effect: update
+          pieces:
+            player: { param: victimOwner }
+            inventory: field
+            select: { id: { param: victim } }
+          property: frozen
+          value: true
+
+flow:
+  root:
+    kind: game
+    label: Board Battler
+    hooks:
+      onEnter:
+        - effectRef: fillLibrary
+        - effectRef: shuffleLibrary
+        - effectRef: dealHands
+        - effectRef: dealDecks
+        - effectRef: announceStart
+    winConditions:
+      - rule: ranking
+        property: player.property.life
+        order: highest
+        onVictory:
+          - effect: message
+            to: all
+            template: "{{game.winners[0]}} wins with the most life remaining."
+    children:
+      - kind: loop
+        id: rounds
+        label: Rounds
+        count: 3
+        children:
+          - kind: turn
+            id: main
+            label: Take your turn
+            actor: all-players
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: choice
+              passable: true
+              options:
+                - { kind: action, ref: playCreature }
+                - { kind: action, ref: attackCreature }
+                - { kind: action, ref: attackPlayer }
+                - { kind: action, ref: castFreeze }
+            hooks:
+              onComplete:
+                - effectRef: thawAll
+
+catalog:
+  entries:
+    - id: ironOak
+      typeId: creature
+      properties: { power: 2, defense: 6 }
+    - id: swiftFang
+      typeId: creature
+      properties: { power: 4, defense: 2 }
+    - id: duskRaider
+      typeId: creature
+      properties: { power: 3, defense: 4 }
+    - id: stoneWarden
+      typeId: creature
+      properties: { power: 1, defense: 7 }
+    # LIFESTEAL carrier. The binding is the shape a card-carried ability
+    # wants and is read by nothing today.
+    - id: bloodHunter
+      typeId: creature
+      properties: { power: 3, defense: 3 }
+      passiveBindings: { onDealDamage: lifesteal }
+    # THORNS carrier, same story.
+    - id: thornBeast
+      typeId: creature
+      properties: { power: 2, defense: 5 }
+      passiveBindings: { onTargeted: thorns }
+    - id: frostBind
+      typeId: spell
+    - id: rimeSnare
+      typeId: spell
+
+# ---------------------------------------------------------------------------
+# THE MISSING PIECES, named in one place, in the engine's own terms.
+#
+# 1. NO DEATH CHECK. A creature whose defense reaches zero is never removed
+#    from the field, because there is no death, destroy or threshold concept
+#    anywhere in the runtime, and the effect-level piece selector has no
+#    filter field at all (only player, inventory, select, count, ofType), so
+#    no effect can even pick out "the pieces at zero". Deaths are human-run.
+#    The hook this would hang off ALREADY FIRES: `update` emits a state-write
+#    carrying path "gamepiece.property.defense", a direction and the piece
+#    id. Nothing subscribes and the bus is never built.
+#
+# 2. PRECONDITIONS ARE NEVER READ. The action assembler maps only id, label,
+#    description, inputs and effects; `preconditions` is not read anywhere in
+#    the compiler, and the runtime carries two TODOs saying precondition
+#    filtering is not applied. Verified by running it: an action carrying an
+#    impossible precondition was still offered and still executed. So nothing
+#    in this file gates an action. There is no cost, no energy and no
+#    once-per-turn here for exactly that reason, and a creature can attack
+#    every round from the moment it lands.
+#
+# 3. A FILTER ON A GAMEPIECE-SELECT INPUT CRASHES THE RUNTIME. Detailed on
+#    the attack action above. It matters most here because it is where
+#    freeze's own condition has to live.
+#
+# WHAT WOULD MAKE THIS FILE A REAL GAME, in the order it would help:
+# a filter that compiles, so freeze bites and legal targets can be
+# restricted; passive declarations read and subscribed, so lifesteal and
+# thorns fire; a death check, so combat has consequences; and preconditions
+# read, so anything at all can be gated.
+# ---------------------------------------------------------------------------

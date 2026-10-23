@@ -1,0 +1,520 @@
+metadata:
+  name: "Absurd Armaments"
+  playerCount:
+    min: 2
+    max: 2
+
+# A narrative, test-driven game built on REAL gamepieces. Each weapon a player invents
+# becomes a `weapon` piece carrying:
+#   - description : the authored free text (public after the arsenal reveal)
+#   - rps         : a HIDDEN Rock/Paper/Scissors class assigned ONCE at creation by an
+#                   LLM (classify effect), then frozen for the whole game
+#   - imageUrl    : generated artwork (generate-image effect; no-op in text-only engines)
+#
+# Clash resolution is fully DETERMINISTIC: the chaincraft:dominant-gamepiece mechanic compares the two
+# selected weapons by their hidden `rps` class (matrix rule) and writes the winner to
+# state. The LLM is used only for flavor — opening, arsenal reveal, clash narration, and
+# the victory ceremony. This split keeps the RPS rules unit-testable with no LLM mocking
+# and keeps each weapon's classification consistent every round it is played.
+
+gamepieceTypes:
+  types:
+    - id: weapon
+      category: token
+      description: >-
+        An absurd weapon authored by a player. Carries a hidden Rock/Paper/Scissors
+        classification used for deterministic clash resolution, plus generated artwork.
+      properties:
+        - id: description
+          label: Weapon
+          type:
+            kind: string
+          mutable: true
+          default: ""
+          visibility: owner
+          description: >-
+            The free-text weapon authored by the owning player. Hidden from the opponent
+            until the arsenal reveal, then public for the rest of the game.
+        - id: rps
+          label: Matchup Class
+          type:
+            kind: enum
+            values: [rock, paper, scissors]
+          mutable: true
+          default: rock
+          visibility: never
+          description: >-
+            Hidden Rock/Paper/Scissors classification assigned by classifyWeapon at
+            creation. Never shown to any player. Frozen for the game and read by the
+            chaincraft:dominant-gamepiece mechanic to resolve each clash deterministically.
+        - id: imageUrl
+          label: Artwork
+          type:
+            kind: string
+          mutable: true
+          default: ""
+          visibility: owner
+          description: >-
+            Reference to the generated weapon artwork. Populated by illustrateWeapon at
+            creation. Empty in engines without image generation — text play is unaffected.
+
+inventories:
+  types:
+    - id: forge
+      scope:
+        kind: player
+      accepts:
+        - weapon
+      visibility: owner
+      description: >-
+        Each player's workbench of blank weapons waiting to be authored. createWeapon
+        fills the top blank, classifies and illustrates it, then moves it to the arsenal.
+    - id: arsenal
+      scope:
+        kind: player
+      accepts:
+        - weapon
+      visibility: owner
+      description: >-
+        Each player's completed arsenal of three authored weapons. Revealed publicly at
+        the arsenal-reveal ceremony; the per-round secret is which weapon a player selects.
+    - id: arena
+      scope:
+        kind: game
+      accepts:
+        - weapon
+      visibility: never
+      countVisibility: always
+      description: >-
+        The battlefield. Both players secretly move their selected weapon here each round
+        (pieces hidden, count visible until both have committed). revealArena makes
+        them public for resolution; the dominant-gamepiece mechanic compares them and they return home.
+
+state:
+  game:
+    properties:
+      - id: currentRound
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: >-
+          The current battle round number. Written automatically by the battle
+          loop's writeIterationTo binding — no manual set-state needed.
+      - id: roundsToWin
+        type:
+          kind: number
+          min: 1
+        default: 2
+        description: >-
+          Number of rounds a player must win to claim the championship. Defaults to 2
+          (best of 3). Can be overridden at game start.
+      - id: roundWinner
+        type:
+          kind: string
+        default: ""
+        description: >-
+          Player ID of the winner of the most recently resolved clash. Empty string means
+          a tie (both weapons shared the same Rock/Paper/Scissors class). Written by the
+          chaincraft:dominant-gamepiece mechanic's resolve effect (the owner of the winning weapon);
+          read by resolveRound and updateScores.
+      - id: winningWeapon
+        type:
+          kind: string
+        default: ""
+        description: >-
+          Piece ID of the winning weapon from the most recently resolved clash. Empty on a
+          tie. Written by the chaincraft:dominant-gamepiece mechanic alongside roundWinner; the player
+          winner is simply this weapon's owner. Read by resolveRound so the narration can
+          name and describe the victorious weapon.
+      - id: gameWinner
+        type:
+          kind: string
+        default: ""
+        description: >-
+          Player ID of the overall game champion. Empty string while the game is in
+          progress. Set by updateScores when a player reaches roundsToWin victories. The
+          battle loop's endCondition checks this field.
+          NOTE: This property is retained for the battle loop endCondition. Winner
+          announcement uses game.winners (populated by the engine via winConditions.onVictory).
+      - id: includeReversal
+        type:
+          kind: boolean
+        default: false
+        description: >-
+          Set true by rollReversal before each clash (25% probability). When true, the
+          narration builds a fake-out moment of dramatic tension before revealing the real
+          (already-determined) outcome. Reset to false after each round.
+  player:
+    properties:
+      - id: roundsWon
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: >-
+          Cumulative clashes this player has won. Incremented by updateScores when
+          roundWinner matches this player. The game ends when this reaches roundsToWin.
+
+effects:
+  effects:
+    # ---------------------------------------------------------------------------
+    # Setup
+    # ---------------------------------------------------------------------------
+
+    - id: dealBlankWeapons
+      effect: distribute
+      from:
+        inventory: "game:unassigned"
+        select: top
+        ofType: weapon
+      to:
+        scope: all-players
+        inventory: forge
+      count: 3
+
+    # ---------------------------------------------------------------------------
+    # Weapon creation (one weapon per createWeapon submission)
+    # The forge's TOP piece is always the blank currently being authored, because
+    # stowWeapon immediately moves each finished weapon to the arsenal.
+    # ---------------------------------------------------------------------------
+
+    - id: setWeaponDescription
+      effect: update
+      pieces:
+        inventory: forge
+        select: top
+      property: description
+      value:
+        param: weaponDescription
+
+    - id: classifyWeapon
+      effect: custom
+      description: >-
+        Read the top piece in the forge inventory's description property. Using
+        the following archetypes, assign exactly one of rock, paper, or scissors
+        to its rps property: heavy / blunt / overpowering -> rock; enveloping /
+        clever / trapping / control -> paper; cutting / precise / fast /
+        piercing -> scissors. Judge by how the weapon would actually behave, not
+        by its literal material. Each weapon should have a distinct RPS class; no
+        two weapons in the same arsenal can share the same class, so pick the value 
+        that most closely aligns and has not been used yet in this arsenal. 
+
+    - id: illustrateWeapon
+      effect: generate-gamepiece-image
+      pieces:
+        inventory: forge
+        select: top
+      imageType: token
+      mode: described
+      source: description
+      target: imageUrl
+
+    - id: stowWeapon
+      effect: move
+      from:
+        inventory: forge
+        select: top
+      to:
+        inventory: arsenal
+
+    - id: confirmWeapon
+      effect: message
+      to: actor
+      template: >-
+        Your weapon "{{input.weaponDescription}}" has been forged and added to your
+        arsenal. The crowd gasps at your audacity.
+      visibility: private
+
+    # ---------------------------------------------------------------------------
+    # Ceremonies (LLM flavor)
+    # ---------------------------------------------------------------------------
+
+    - id: generateOpening
+      effect: llm-effect
+      prompt:
+        rules:
+          - "Use obnoxious game-show announcer style — think a pro-wrestling hype man
+            crossed with an infomercial host"
+          - "Welcome both players by name with theatrical ceremony"
+          - "Include at least one groan-worthy pun in the opening line"
+          - "Set the tone: this is a battle of wit and absurdity, not skill"
+        computation: >-
+          Create a boisterous opening announcement welcoming both players to the Absurd
+          Armaments arena and building excitement for the weapon creation phase. 2-4 sentences.
+      outputs:
+        - field: openingAnnouncement
+          message:
+            to: all
+            visibility: public
+
+    - id: revealArsenals
+      effect: reveal
+      pieces:
+        inventory: arsenal
+        select: all
+      to: all
+
+    - id: generateArsenalReveal
+      effect: llm-effect
+      inputs:
+        - name: arsenals
+          pieces:
+            inventory: arsenal
+            select: all
+          properties:
+            - description
+      prompt:
+        rules:
+          - "Reveal both players' complete arsenals to the arena (public broadcast)"
+          - "Use bombastic sports-commentator energy with dramatic pauses implied by em-dashes"
+          - "Weave a groan-worthy pun or absurd observation into each weapon's reveal"
+          - "Never disclose any weapon's Rock/Paper/Scissors class — you are not even given
+            it; only the weapons in {{arsenals}} and their descriptions"
+          - "Build anticipation for the first clash"
+        computation: >-
+          Both players have finalized their arsenals of three weapons each, now revealed in
+          {{arsenals}}. Generate a dramatic public reveal announcing every weapon by name
+          with colorful commentary, ending with a teaser for round one.
+      outputs:
+        - field: arsenalReveal
+          message:
+            to: all
+            visibility: public
+
+    # ---------------------------------------------------------------------------
+    # Clash resolution
+    #   Order each round: revealArena -> rollReversal -> dominant-gamepiece resolve (writes
+    #   roundWinner) -> resolveRound (narrate) -> updateScores -> conceal/return.
+    # ---------------------------------------------------------------------------
+
+    - id: revealArena
+      effect: reveal
+      pieces:
+        inventory: arena
+        select: all
+      to: all
+
+    - id: rollReversal
+      effect: set-random
+      path: game.property.includeReversal
+      source:
+        kind: options
+        options:
+          - value: true
+            weight: 0.25
+          - value: false
+            weight: 0.75
+
+    - id: resolveRound
+      effect: llm-effect
+      inputs:
+        - name: roundWinner
+          state: game.property.roundWinner
+        - name: winningWeapon
+          state: game.property.winningWeapon
+        - name: includeReversal
+          state: game.property.includeReversal
+        - name: arenaWeapons
+          pieces:
+            inventory: arena
+            select: all
+          properties:
+            - description
+      prompt:
+        rules:
+          - "The winner has ALREADY been decided deterministically — read it from
+            {{roundWinner}}. An empty value means a tie. Never contradict it"
+          - "The winning weapon is identified by {{winningWeapon}} — give it the spotlight by
+            name; an empty value means a tie"
+          - "Narrate the clash between the two weapons in {{arenaWeapons}}, naming both"
+          - "If {{includeReversal}} is true, write 1-2 sentences of fake-out tension before
+            the real outcome lands — the crowd thinks one player won, then the truth hits"
+          - "Over-the-top announcer energy; 2-4 sentences"
+        computation: >-
+          The two selected weapons are in {{arenaWeapons}} and the dominant-gamepiece mechanic has already
+          set {{roundWinner}} (the winning player) and {{winningWeapon}} (the victorious
+          weapon piece). Narrate the clash dramatically, consistent with that result
+          (empty = tie), giving the winning weapon top billing. Put the narration in
+          roundNarrative.
+      outputs:
+        - field: roundNarrative
+          message:
+            to: all
+            visibility: public
+
+    - id: updateScores
+      effect: custom
+      description: >-
+        If game.property.roundWinner is not empty, find the player whose ID matches
+        game.property.roundWinner and increment their player.property.roundsWon by 1. If
+        that player's roundsWon now equals game.property.roundsToWin, set
+        game.property.gameWinner to game.property.roundWinner. If roundWinner is empty
+        (tie), make no score changes.
+
+    - id: concealArena
+      effect: hide
+      pieces:
+        inventory: arena
+        select: all
+
+    - id: returnWeapons
+      effect: custom
+      description: >-
+        Move every weapon currently in the arena back to its owning player's arsenal
+        inventory, so each player's arsenal is whole again for the next round.
+
+    - id: resetRoundWinner
+      effect: set-state
+      path: game.property.roundWinner
+      value: ""
+
+    - id: resetWinningWeapon
+      effect: set-state
+      path: game.property.winningWeapon
+      value: ""
+
+    - id: resetReversal
+      effect: set-state
+      path: game.property.includeReversal
+      value: false
+
+    # ---------------------------------------------------------------------------
+    # Victory ceremony (fired via winConditions.onVictory — game.winners populated
+    # by the engine with the winning player IDs before this effect executes)
+    # ---------------------------------------------------------------------------
+
+    - id: announceVictory
+      effect: llm-effect
+      inputs:
+        - name: winners
+          state: game.winners           # engine-populated array of winning player IDs
+      prompt:
+        rules:
+          - "Crown the champion with full game-show ceremony — confetti implied"
+          - "Recap the final score and winning weapon that clinched it"
+          - "Console the loser with a backhanded compliment"
+          - "End with a bombastic sign-off catchphrase"
+        computation: >-
+          The battle is over and {{winners}} holds the winning player ID(s). Generate a
+          glorious victory announcement celebrating the winner, recapping their performance,
+          and bidding farewell to the arena audience.
+      outputs:
+        - field: victoryAnnouncement
+          message:
+            to: all
+            visibility: public
+
+actions:
+  actions:
+    - id: createWeapon
+      label: Create Weapon
+      description: >-
+        Forge one absurd weapon for your arsenal. Each player creates exactly three weapons
+        during the creation phase. The more ridiculous, the better — its hidden combat class
+        is judged from your description.
+      steps:
+        - input: weaponDescription
+          label: Weapon Description
+          type:
+            kind: string
+          validation: input.weaponDescription != ""
+          validationMessage: >-
+            Describe your weapon. Be creative — "stale toast", "existential dread",
+            and "sentient spatula" are all valid weapons.
+        - effectRef: setWeaponDescription
+        - effectRef: classifyWeapon
+        - effectRef: illustrateWeapon
+        - effectRef: stowWeapon
+        - effectRef: confirmWeapon
+
+    - id: selectWeapon
+      label: Select Weapon
+      description: >-
+        Secretly send one weapon from your arsenal into the arena for this round's clash.
+        Both players choose simultaneously; the picks stay hidden until both have committed,
+        then are revealed together for resolution.
+      steps:
+        - input: weapon
+          type: { kind: gamepiece-select, inventory: arsenal, count: 1 }
+        - effect: move
+          from:
+            inventory: arsenal
+            select: { id: { param: weapon } }
+          to:
+            inventory: arena
+
+flow:
+  root:
+    kind: game
+    hooks:
+      onEnter:
+        - effectRef: dealBlankWeapons   # 3 blank weapons into each player's forge
+        - effectRef: generateOpening
+    winConditions:
+      - rule: condition
+        condition: "player.property.roundsWon >= game.property.roundsToWin"
+        onVictory:
+          - effectRef: announceVictory
+    children:
+      - kind: simultaneous       # weapon creation — both players build arsenals concurrently
+          # Completes when both players finish their repeat-3 grammar.
+          # onComplete: reveal arsenals, then a dramatic public reveal ceremony.
+        id: weaponCreation
+        label: Weapon Creation
+        actor: all-players
+        grammar:
+          kind: repeat
+          count: 3
+          body:
+            kind: action
+            ref: createWeapon
+        hooks:
+          onComplete:
+            - effectRef: revealArsenals
+            - effectRef: generateArsenalReveal
+
+      - kind: loop               # battle loop — clashes continue until someone wins
+        id: battle
+        label: Battle
+        endCondition: "game.property.gameWinner != ''"
+        writeIterationTo: game.property.currentRound
+        children:
+          - kind: simultaneous   # weapon selection — both players pick secretly, simultaneously
+            id: weaponSelection
+            label: Weapon Selection
+            actor: all-players
+            grammar:
+              kind: action
+              ref: selectWeapon
+            hooks:
+              onComplete:
+                - effectRef: revealArena
+                - effectRef: rollReversal
+                - effectRef: "chaincraft:dominant-gamepiece:resolve"   # writes game.property.roundWinner
+                - effectRef: resolveRound
+                - effectRef: updateScores
+                - effectRef: concealArena
+                - effectRef: returnWeapons
+                - effectRef: resetRoundWinner
+                - effectRef: resetWinningWeapon
+                - effectRef: resetReversal
+
+mechanics:
+  - kind: chaincraft:dominant-gamepiece
+    label: Weapon Clash
+    evaluationInventory: arena
+    winnerToState: game.property.roundWinner
+    winningPieceToState: game.property.winningWeapon
+    rules:
+      - kind: matrix
+        property: rps
+        beats:
+          rock: [scissors]
+          paper: [rock]
+          scissors: [paper]
+
+catalog:
+  entries:
+    - typeId: weapon
+      quantity: 6          # 3 blank weapons per player, authored at runtime

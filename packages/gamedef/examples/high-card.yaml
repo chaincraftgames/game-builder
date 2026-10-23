@@ -1,0 +1,257 @@
+# ---------------------------------------------------------------------------
+# High Card — slice-0 compiler test game.
+#
+# The smallest spec that exercises the full pipeline: setup hooks, a fixed
+# round loop, forced-action turns, a player input, piece movement, the
+# chaincraft:dominant-gamepiece mechanic, a state-driven score update, and a declarative
+# win condition. Deliberately ZERO custom effects.
+#
+# Rules: 6 cards (values 1-6) are shuffled and dealt, 3 to each of 2
+# players. Three tricks; each trick, both players must play one card from
+# hand to the shared table. The higher card wins the trick (values are
+# unique, so no ties) and its owner scores a point. Most tricks wins.
+#
+# The hand-written runtime module this spec must compile to lives at
+# chaincraft-runtime/src/host/fixtures/high-card.ts — keep the two in
+# lockstep.
+# ---------------------------------------------------------------------------
+
+metadata:
+  name: "High Card"
+  playerCount:
+    min: 2
+    max: 2
+  rng:
+    seedSource: fixed # deterministic shuffles for compiler/e2e testing
+
+state:
+  game:
+    properties:
+      - id: roundWinner
+        type:
+          kind: string
+        default: ""
+        description: >-
+          Player ID of the winner of the current trick. Written by the
+          chaincraft:dominant-gamepiece mechanic's resolve effect (the owner of the
+          highest card on the table); read by awardTrick and announceTrick,
+          then reset for the next trick. Card values are unique so a trick
+          can never tie.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 3
+        default: 0
+        description: Number of tricks this player has won.
+
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A numbered card. Higher wins the trick.
+      properties:
+        - id: value
+          label: Value
+          type:
+            kind: number
+            min: 1
+            max: 6
+          mutable: false
+          visibility: revealed
+
+inventories:
+  types:
+    - id: deck
+      label: Deck
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: The face-down draw deck.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: owner
+      description: Each player's hidden hand.
+    - id: table
+      label: Table
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      description: >-
+        Cards played to the current trick, face up. The dominant-gamepiece mechanic
+        evaluates this inventory to find the trick winner.
+    - id: discard
+      label: Discard
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      description: Cards from completed tricks.
+
+effects:
+  effects:
+    - id: fillDeck
+      effect: move
+      from:
+        inventory: "game:unassigned"
+        select: all
+        ofType: card
+      to:
+        inventory: deck
+
+    - id: shuffleDeck
+      effect: shuffle
+      inventory: deck
+
+    - id: dealCards
+      effect: distribute
+      from:
+        inventory: deck
+        select: top
+      to:
+        scope: all-players
+        inventory: hand
+      count: 3
+
+    - id: announceStart
+      effect: message
+      to: all
+      template: "Cards dealt. Highest card takes the trick — most tricks wins!"
+
+    - id: awardTrick
+      effect: set-state
+      path: player.property.score
+      value:
+        delta: 1
+      target:
+        kind: stateRef
+        path: game.property.roundWinner
+
+    - id: announceTrick
+      effect: message
+      to: all
+      template: "{{state.game.property.roundWinner}} takes the trick!"
+
+    - id: clearTable
+      effect: move
+      from:
+        inventory: table
+        select: all
+        ofType: card
+      to:
+        inventory: discard
+
+    - id: resetRoundWinner
+      effect: set-state
+      path: game.property.roundWinner
+      value: ""
+
+actions:
+  actions:
+    - id: playCard
+      label: Play a Card
+      description: Play one card from your hand to the table.
+      steps:
+        - input: card
+          label: Choose a card to play
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            fromPlayer: self
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: table
+
+flow:
+  root:
+    kind: game
+    label: High Card
+    hooks:
+      onEnter:
+        - effectRef: fillDeck
+        - effectRef: shuffleDeck
+        - effectRef: dealCards
+        - effectRef: announceStart
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+        onVictory:
+          - effect: message
+            to: all
+            template: "The winner is {{game.winners[0]}}!"
+    children:
+      - kind: loop
+        id: tricks
+        label: Tricks
+        count: 3
+        children:
+          - kind: turn
+            id: playTrick
+            label: Play a card
+            actor: all-players
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            # Forced play — the only decision is which card, so a bare
+            # action node, not a single-option choice.
+            grammar:
+              kind: action
+              ref: playCard
+            hooks:
+              onComplete:
+                - effectRef: "chaincraft:dominant-gamepiece:resolve" # writes game.property.roundWinner
+                - effectRef: awardTrick
+                - effectRef: announceTrick
+                - effectRef: clearTable
+                - effectRef: resetRoundWinner
+
+mechanics:
+  - kind: chaincraft:dominant-gamepiece
+    label: Trick Resolution
+    evaluationInventory: table
+    winnerToState: game.property.roundWinner
+    rules:
+      - kind: comparison
+        property: value
+        direction: highest
+
+catalog:
+  entries:
+    - id: card1
+      typeId: card
+      properties: { value: 1 }
+    - id: card2
+      typeId: card
+      properties: { value: 2 }
+    - id: card3
+      typeId: card
+      properties: { value: 3 }
+    - id: card4
+      typeId: card
+      properties: { value: 4 }
+    - id: card5
+      typeId: card
+      properties: { value: 5 }
+    - id: card6
+      typeId: card
+      properties: { value: 6 }

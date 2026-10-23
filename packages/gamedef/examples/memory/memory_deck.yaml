@@ -1,0 +1,263 @@
+components:
+
+# Card properties
+  - type: property_set
+    id: card_properties
+    properties:
+      key:
+        type: 
+          enum:
+            - A
+            - B
+            - C
+            - D
+            - E
+            - F
+            - G
+            - H
+            - I
+            - J
+            - K
+            - L
+            - M
+            - N
+            - O
+            - P
+        required: true
+
+# Card images
+  - type: image
+    id: card_back_image
+    properties:
+      uri: card_back.png
+      context: back_side
+
+  - type: image
+    id: card_A_image
+    properties:
+      uri: card_A.png
+      context: front_side
+
+  - type: image
+    id: card_B_image
+    properties:
+      uri: card_B.png
+      context: front_side
+
+  - type: image
+    id: card_C_image
+    properties:
+      uri: card_C.png
+      context: front_side
+
+  - type: image
+    id: card_D_image
+    properties:
+      uri: card_D.png
+      context: front_side
+
+  - type: image
+    id: card_E_image
+    properties:
+      uri: card_E.png
+      context: front_side
+
+  - type: image
+    id: card_F_image
+    properties:
+      uri: card_F.png
+      context: front_side
+
+  - type: image
+    id: card_G_image
+    properties:
+      uri: card_G.png
+      context: front_side
+
+  - type: image
+    id: card_H_image
+    properties:
+      uri: card_H.png
+      context: front_side
+
+  - type: image
+    id: card_I_image
+    properties:
+      uri: card_I.png
+      context: front_side
+
+  - type: image
+    id: card_J_image
+    properties:
+      uri: card_J.png
+      context: front_side
+
+  - type: image
+    id: card_K_image
+    properties:
+      uri: card_K.png
+      context: front_side
+
+  - type: image
+    id: card_L_image
+    properties:
+      uri: card_L.png
+      context: front_side
+
+  - type: image
+    id: card_M_image
+    properties:
+      uri: card_M.png
+      context: front_side
+
+  - type: image
+    id: card_N_image
+    properties:
+      uri: card_N.png
+      context: front_side
+
+  - type: image
+    id: card_O_image
+    properties:
+      uri: card_O.png
+      context: front_side
+
+  - type: image
+    id: card_P_image
+    properties:
+      uri: card_P.png
+      context: front_side
+
+  - type: card_instances
+    id: card_A_instances
+    properties:
+      key: A
+      image: card_A.png
+      count: 2
+
+  - type: card_instances
+    id: card_B_instances
+    properties:
+      key: B
+      image: card_B.png
+      count: 2
+
+  - type: card_instances
+    id: card_C_instances
+    properties:
+      key: C
+      image: card_C.png
+      count: 2
+
+  - type: card_instances
+    id: card_D_instances
+    properties:
+      key: D
+      image: card_D.png
+      count: 2
+
+  - type: card_instances
+    id: card_E_instances
+    properties:
+      key: E
+      image: card_E.png
+      count: 2
+
+  - type: card_instances
+    id: card_F_instances
+    properties:
+      key: F
+      image: card_F.png
+      count: 2
+
+  - type: card_instances
+    id: card_G_instances
+    properties:
+      key: G
+      image: card_G.png
+      count: 2
+
+  - type: card_instances
+    id: card_H_instances
+    properties:
+      key: H
+      image: card_H.png
+      count: 2
+
+  - type: card_instances
+    id: card_I_instances
+    properties:
+      key: I
+      image: card_I.png
+      count: 2
+
+  - type: card_instances
+    id: card_J_instances
+    properties:
+      key: J
+      image: card_J.png
+      count: 2
+  
+  - type: card_instances
+    id: card_K_instances
+    properties:
+      key: K
+      image: card_K.png
+      count: 2
+
+  - type: card_instances
+    id: card_L_instances
+    properties:
+      key: L
+      image: card_L.png
+      count: 2
+
+  - type: card_instances
+    id: card_M_instances
+    properties:
+      key: M
+      image: card_M.png
+      count: 2
+
+  - type: card_instances
+    id: card_N_instances
+    properties:
+      key: N
+      image: card_N.png
+      count: 2
+  
+  - type: card_instances
+    id: card_O_instances
+    properties:
+      key: O
+      image: card_O.png
+      count: 2
+
+  - type: card_instances
+    id: card_P_instances
+    properties:
+      key: P
+      image: card_P.png
+      count: 2
+      
+decks:
+  - id: memory_deck
+    $components:
+      - { $component_ref: card_properties }
+      - { $component_ref: card_back_image }
+      - { $component_ref: card_A_instances }
+      - { $component_ref: card_B_instances }
+      - { $component_ref: card_C_instances }
+      - { $component_ref: card_D_instances }
+      - { $component_ref: card_E_instances }
+      - { $component_ref: card_F_instances }
+      - { $component_ref: card_G_instances }
+      - { $component_ref: card_H_instances }
+      - { $component_ref: card_I_instances }
+      - { $component_ref: card_J_instances }
+      - { $component_ref: card_K_instances }
+      - { $component_ref: card_L_instances }
+      - { $component_ref: card_M_instances }
+      - { $component_ref: card_N_instances }
+      - { $component_ref: card_O_instances }
+      - { $component_ref: card_P_instances }

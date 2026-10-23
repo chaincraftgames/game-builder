@@ -1,0 +1,15 @@
+{
+  "preset": "ts-jest",
+  "extensionsToTreatAsEsm": [".ts"],
+  "testEnvironment": "node",
+  "testMatch": ["**/tests/**/*.test.ts"],
+  "transform": {
+    "^.+\\.tsx?$": ["ts-jest", { "useESM": true }]
+  },
+  "moduleNameMapper": {
+    "^#gamedef/(.+)\\.js$": "<rootDir>/src/$1.ts",
+    "^#gamedef/(.+)$": "<rootDir>/src/$1",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  },
+  "moduleFileExtensions": ["ts", "js"]
+}

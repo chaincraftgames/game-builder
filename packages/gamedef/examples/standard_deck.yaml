@@ -1,0 +1,296 @@
+standard_card:
+  id: standard_card
+  properties:
+    - name: suit
+      type: 
+        enum:
+          - spade
+          - heart
+          - diamond
+          - club
+      required: true
+    - name: rank
+      type: 
+        enum:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+          - 8
+          - 9
+          - 10
+          - J
+          - Q
+          - K
+      required: true
+  back:
+    image: card_back.png
+
+standard deck:
+  id: standard_deck
+  card_def: { $card_ref: standard_card }
+  cards:
+    - id: spades/1
+      properties:
+        suit: spade
+        rank: 1
+      image: spades/1.png
+    - id: spades/2
+      properties:
+        suit: spade
+        rank: 2
+      image: spades/2.png
+    - id: spades/3
+      properties:
+        suit: spade
+        rank: 3
+      image: spades/3.png
+    - id: spades/4
+      properties:
+        suit: spade
+        rank: 4
+      image: spades/4.png
+    - id: spades/5
+      properties:
+        suit: spade
+        rank: 5
+      image: spades/5.png
+    - id: spades/6
+      properties:
+        suit: spade
+        rank: 6
+      image: spades/6.png
+    - id: spades/7
+      properties:
+        suit: spade
+        rank: 7
+      image: spades/7.png
+    - id: spades/8
+      properties:
+        suit: spade
+        rank: 8
+      image: spades/8.png
+    - id: spades/9
+      properties:
+        suit: spade
+        rank: 9
+      image: spades/9.png
+    - id: spades/10
+      properties:
+        suit: spade
+        rank: 10
+      image: spades/10.png
+    - id: spades/J
+      properties:
+        suit: spade
+        rank: J
+      image: spades/J.png
+    - id: spades/Q
+      properties:
+        suit: spade
+        rank: Q
+      image: spades/Q.png
+    - id: spades/K
+      properties:
+        suit: spade
+        rank: K
+      image: spades/K.png
+    - id: hearts/1
+      properties:
+        suit: heart
+        rank: 1
+      image: hearts/1.png
+    - id: hearts/2
+      properties:
+        suit: heart
+        rank: 2
+      image: hearts/2.png
+    - id: hearts/3
+      properties:
+        suit: heart
+        rank: 3
+      image: hearts/3.png
+    - id: hearts/4
+      properties:
+        suit: heart
+        rank: 4
+      image: hearts/4.png
+    - id: hearts/5
+      properties:
+        suit: heart
+        rank: 5
+      image: hearts/5.png
+    - id: hearts/6
+      properties:
+        suit: heart
+        rank: 6
+      image: hearts/6.png
+    - id: hearts/7
+      properties:
+        suit: heart
+        rank: 7
+      image: hearts/7.png
+    - id: hearts/8
+      properties:
+        suit: heart
+        rank: 8
+      image: hearts/8.png
+    - id: hearts/9
+      properties:
+        suit: heart
+        rank: 9
+      image: hearts/9.png
+    - id: hearts/10
+      properties:
+        suit: heart
+        rank: 10
+      image: hearts/10.png
+    - id: hearts/J
+      properties:
+        suit: heart
+        rank: J
+      image: hearts/J.png
+    - id: hearts/Q
+      properties:
+        suit: heart
+        rank: Q
+      image: hearts/Q.png
+    - id: hearts/K
+      properties:
+        suit: heart
+        rank: K
+      image: hearts/K.png
+    - id: diamonds/1
+      properties:
+        suit: diamond
+        rank: 1
+      image: diamonds/1.png
+    - id: diamonds/2
+      properties:
+        suit: diamond
+        rank: 2
+      image: diamonds/2.png
+    - id: diamonds/3
+      properties:
+        suit: diamond
+        rank: 3
+      image: diamonds/3.png
+    - id: diamonds/4
+      properties:
+        suit: diamond
+        rank: 4
+      image: diamonds/4.png
+    - id: diamonds/5
+      properties:
+        suit: diamond
+        rank: 5
+      image: diamonds/5.png
+    - id: diamonds/6
+      properties:
+        suit: diamond
+        rank: 6
+      image: diamonds/6.png
+    - id: diamonds/7
+      properties:
+        suit: diamond
+        rank: 7
+      image: diamonds/7.png
+    - id: diamonds/8
+      properties:
+        suit: diamond
+        rank: 8
+      image: diamonds/8.png
+    - id: diamonds/9
+      properties:
+        suit: diamond
+        rank: 9
+      image: diamonds/9.png
+    - id: diamonds/10
+      properties:
+        suit: diamond
+        rank: 10
+      image: diamonds/10.png
+    - id: diamonds/J
+      properties:
+        suit: diamond
+        rank: J
+      image: diamonds/J.png
+    - id: diamonds/Q
+      properties:
+        suit: diamond
+        rank: Q
+      image: diamonds/Q.png
+    - id: diamonds/K
+      properties:
+        suit: diamond
+        rank: K
+      image: diamonds/K.png
+    - id: clubs/1
+      properties:
+        suit: club
+        rank: 1
+      image: clubs/1.png
+    - id: clubs/2
+      properties:
+        suit: club
+        rank: 2
+      image: clubs/2.png
+    - id: clubs/3
+      properties:
+        suit: club
+        rank: 3
+      image: clubs/3.png
+    - id: clubs/4
+      properties:
+        suit: club
+        rank: 4
+      image: clubs/4.png
+    - id: clubs/5
+      properties:
+        suit: club
+        rank: 5
+      image: clubs/5.png
+    - id: clubs/6
+      properties:
+        suit: club
+        rank: 6
+      image: clubs/6.png
+    - id: clubs/7
+      properties:
+        suit: club
+        rank: 7
+      image: clubs/7.png
+    - id: clubs/8
+      properties:
+        suit: club
+        rank: 8
+      image: clubs/8.png
+    - id: clubs/9
+      properties:
+        suit: club
+        rank: 9
+      image: clubs/9.png
+    - id: clubs/10
+      properties:
+        suit: club
+        rank: 10
+      image: clubs/10.png
+    - id: clubs/J
+      properties:
+        suit: club
+        rank: J
+      image: clubs/J.png
+    - id: clubs/Q
+      properties:
+        suit: club
+        rank: Q
+      image: clubs/Q.png
+    - id: clubs/K
+      properties:
+        suit: club
+        rank: K
+      image: clubs/K.png
+    

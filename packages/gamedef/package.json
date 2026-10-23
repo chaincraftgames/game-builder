@@ -1,0 +1,52 @@
+{
+  "name": "@chaincraft/gamedef",
+  "version": "0.1.0",
+  "description": "ChainCraft modular game spec — Zod schemas, TypeScript types, and validator",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./validator": {
+      "import": "./dist/validator/index.js",
+      "types": "./dist/validator/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "imports": {
+    "#gamedef/*": {
+      "default": "./dist/*"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testTimeout=30000",
+    "test:spec": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/spec --testTimeout=30000",
+    "test:validator": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/validator --testTimeout=30000",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "chaincraft",
+    "gamedef",
+    "game-spec",
+    "zod"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^4.2.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.7.0"
+  }
+}

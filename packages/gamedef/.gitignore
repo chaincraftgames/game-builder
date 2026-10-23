@@ -1,0 +1,4 @@
+chaincraft-validator/src/js/*
+node_modules/
+dist/
+*.tsbuildinfo

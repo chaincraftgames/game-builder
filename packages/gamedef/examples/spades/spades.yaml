@@ -1,0 +1,250 @@
+includes:
+  - ../examples/standard_deck.yaml
+
+functions:
+  - id: calculate_score
+    parameters:
+      bid: number
+      tricks_taken: object
+    return: number
+    code: |
+      if tricks_taken < bid then
+        return -10 * bid
+      else
+        return 10 * bid + (tricks_taken - bid)
+      end
+
+components:
+# Player role components
+  - type: inventory
+    id: hand
+    properties:
+      max_size: 13
+      min_size: 0
+
+  - type: inventory
+    id: player_tricks_taken
+    properties:
+      max_size: 13
+      min_size: 0
+
+  - type: property_set
+    id: player_properties
+    properties:
+      bid:
+        type: number
+
+# Team role components
+  - type: property_set
+    id: team_properties
+    properties:
+      bid:
+        type: number
+      score:
+        type: number
+        default_value: 0
+
+  - type: inventory
+    id: team_tricks_taken
+    properties:
+      max_size: 13
+      min_size: 0
+
+# Round components
+  - type: scoring
+    id: scoring
+    properties:
+      input_properties:
+        - name: tricks_taken
+          $mapped_property: { $component_ref: team_tricks_taken, $r_property_ref: count }
+        - name: bid
+          $mapped_property: { $component_ref: team_properties, $property_ref: bid }
+      $output_property: { $component_ref: team_properties, $property_ref: score }
+      $calculator: { $function_ref: calculate_score }
+
+# Game components
+  - type: property_set
+    id: config
+    properties:
+      player_count: 
+        type: number
+        default_value: 4
+      score_limit: 
+        type: number
+        default_value: 100
+      fixed_rounds: 
+        type: number
+        default_value: 13
+
+  - type: property_set
+    id: game_state
+    properties:
+      dominant_card: 
+        type: object
+        default_value: null
+
+  - type: inventory 
+    id: deal_inventory
+    properties:
+      max_size: 52
+      min_size: 0
+
+  - type: deck
+    id: deck
+    properties:
+      $deck: { $deck_ref: standard_deck}
+      $inventory: { $inventory_ref: deal_inventory }
+
+  - type: inventory 
+    id: played_cards
+    properties:
+      max_size: 4
+      min_size: 0
+
+  - type: team
+    id: team
+    properties:
+        $member_role: { $role_ref: player}
+        $team_role: { $role_ref: team} 
+        player_count:
+          min: 1
+          max: 2
+        aggregated_properties:
+          - $input: { $component_ref: player_properties, $property_ref: bid }
+            $output: { $component_ref: team_properties, $property_ref: bid }
+        aggregated_inventories:
+          - $input: { $inventory_ref: player_tricks_taken }
+            $output: { $inventory_ref: team_tricks_taken }
+
+  - type: mechanic
+    id: dominant-gamepiece
+    mechanic: dominant-gamepiece
+    properties:
+      $inventory: { $inventory_ref: played_cards }
+      dominant-gamepiece_properties:
+        - $property: { $component_ref: card_properties, $property_ref: suit }
+          value: spade
+        - $property: { $component_ref: card_properties, $property_ref: rank }
+          order: ascending
+      $dominant-gamepiece_output: { $component_ref: game_state, $property_ref: dominant-gamepiece_card }
+          
+  - type: mechanic
+    id: trick
+    mechanic: trick
+    properties:
+      $dominant-gamepiece_property: { $component_ref: game_state, $property_ref: dominant-gamepiece_card }
+      $played_inventory: { $inventory_ref: played_cards }
+      $tricks_taken_inventory: { $inventory_ref: player_tricks_taken }
+
+roles:
+  - id: player
+    min: 2
+    max: 4
+    $components:
+      - { $component_ref: hand }
+      - { $component_ref: player_tricks_taken }
+      - { $component_ref: player_properties }  
+      
+  - id: team
+    min: 2
+    max: 2
+    $components:
+      - { $component_ref: team_properties }
+      - { $component_ref: team_tricks_taken }
+
+actions:
+  - id: bid_on_tricks
+    action: player_prompt
+    properties:
+      prompt: "How many tricks will you take?"
+      $property: { $component_ref: player_properties, $property_ref: bid }
+
+  - id: reset_deck
+    action: move_between_inventories
+    properties:
+      $from_inventory: { $inventory_ref: team_tricks_taken }
+      $to_inventory: { $inventory_ref: deal_inventory }
+      count: all
+
+  - id: shuffle_deck
+    action: shuffle_inventory
+    properties:
+      $inventory: { $inventory_ref: deal_inventory }
+
+  - id: deal
+    action: move_between_inventories
+    properties:
+      $from_inventory: { $inventory_ref: deal_inventory }
+      $to_inventory: { $inventory_ref: hand }
+      count: 1
+
+  - id: play_card
+    action: move_between_inventories
+    properties:
+      $from_inventory: { $inventory_ref: hand }
+      $to_inventory: { $inventory_ref: played_cards }
+
+rounds:
+  - id: prepare_for_deal
+    $role:  { $role_ref: team }
+    $actions: 
+      - { $action_ref: reset_deck }
+          
+  - id: deal_round
+    $role:  { $role_ref: player }
+    $actions: 
+      - { $action_ref: deal }
+
+  - id: bidding_round
+    $role: { $role_ref: player }
+    $actions: 
+      - { $action_ref: bid_on_tricks }
+
+  - id: scoring_round
+    $role: { $role_ref: player }
+    $components:
+      - { $component_ref: scoring }
+      
+  - id: tricks_round
+    $role: { $role_ref: player }
+    $actions: 
+      - { $action_ref: play_card }
+
+game:
+  $components:
+    - { $component_ref: config }
+    - { $component_ref: game_state }
+    - { $component_ref: deck }
+    - { $component_ref: played_cards }
+    - { $component_ref: team }
+    - { $component_ref: deal_inventory }
+    - { $component_ref: dominant-gamepiece }
+    - { $component_ref: trick }
+   
+flow:
+  - repeat:
+    - repeat:
+      - $round: { $round_ref: prepare_for_deal }
+      end_condition: 
+        rounds_played: 1
+    - $action: { $action_ref: shuffle_deck }
+    - repeat:
+      - $round: { $round_ref: deal_round }
+      end_condition: 
+        rounds_played: 13
+    - $round: { $round_ref: bidding_round }
+    - repeat:
+      - $round: { $round_ref: tricks_round }
+      end_condition: 
+        rounds_played: 13
+    - $round: { $round_ref: scoring_round }
+    end_condition:
+      require_all: false
+      $score_limit: { $component_ref: config, $property_ref: score_limit }
+      $rounds_played: { $component_ref: config, $property_ref: fixed_rounds } 
+      
+
+  
+  
+ 
+

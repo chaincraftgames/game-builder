@@ -1,0 +1,704 @@
+# ---------------------------------------------------------------------------
+# PASSIVE BATTLER, an acceptance test for the passive layer.
+#
+# Written for Eric, against gamedef 7c1c7b1, compiler 4269cdc, runtime 9e61cbe.
+#
+# WHAT THIS FILE IS. A deliberately tiny two player battler whose ONLY reason
+# to exist is to exercise reactive passive effects: three of them, one per
+# class, covering both shapes Eric named.
+#
+#   ARMOR  (warrior, on the player role)  fires when ANOTHER player targets
+#          this player. Eric's shape two, his thorns example.
+#   BLEED  (carried by any player, on all three roles) fires on the afflicted
+#          player's OWN action. Eric's shape one, his lifesteal example.
+#   KINDLE (mage, on the player role)     fires when ANOTHER player targets
+#          this player, and is the only passive here that writes a property
+#          other than life. Eric's shape two.
+#
+# THE RULE THIS FILE FOLLOWS. Everything that CAN be legal in today's
+# vocabulary IS legal in today's vocabulary. The base game (deal, play a card,
+# damage the opponent, accumulate bleed, declare a winner) uses only shipped,
+# executing constructs and is expected to pass both gates and actually run.
+# Every block that cannot execute today is marked PROPOSAL, says why, and says
+# what capability it is waiting on. No proposal block is load bearing for the
+# base game: strip all three passives and the game still plays.
+#
+# WHAT IS DELIBERATELY ABSENT, so nothing here is mistaken for an omission:
+# no energy, no board slots, no mulligan, no freeze, and NO turn boundary or
+# clock driven effect of any kind. Every passive here is reactive. Nothing in
+# this file fires because time passed.
+#
+# BALANCE IS NOT A GOAL. Any seat may play any class's card out of one shared
+# catalog, which is how a two player match can exercise all three class
+# passives at once. This is a coverage game, not a designed one.
+# ---------------------------------------------------------------------------
+
+metadata:
+  name: "Passive Battler"
+  description: >-
+    Two player card battler built as an acceptance test for reactive passive
+    effects. Each side plays cards that damage the opponent; three class
+    passives (armor, bleed, kindle) modify or react to that damage.
+  playerCount:
+    min: 2
+    max: 2
+  rng:
+    seedSource: fixed # deterministic shuffles, so a failing run can be replayed
+
+# ---------------------------------------------------------------------------
+# PLAYERS AND ROLES
+#
+# The three classes are declared as roles because two of the three passives
+# belong to a player rather than to a card, which is the second binding site
+# Eric named ("a player role such as a character ability").
+#
+# FACT, NOT A COMPLAINT: nothing in the compiler reads spec.players at all
+# (grep for "roles" across chaincraft-compiler/src returns one hit, in flow
+# actor filtering), so neither the role definitions nor the passives hanging
+# off them reach the runtime today. There is also no mechanism in this spec
+# that assigns a class to a seat; assignment is written below as player-choice
+# because that is what it would be, and no flow phase presents that choice.
+# When the passive layer lands, seat-to-role assignment is the other half that
+# has to land with it.
+# ---------------------------------------------------------------------------
+players:
+  roles:
+    - id: warrior
+      description: >-
+        Soaks hits. Carries ARMOR, which reduces incoming damage before it
+        lands.
+      assignment:
+        method: player-choice
+        description: >-
+          Chosen with the player's deck, before the match. No flow phase
+          presents this choice today.
+      visibility:
+        type: public
+      passives:
+        # -------------------------------------------------------------------
+        # PROPOSAL, SHAPE ONLY. This is the schema's OWN armor-absorb example
+        # (gamedef/src/modules/effects.ts, PassiveEffectSchema doc block), so
+        # the syntax below is not invented. What it is waiting on is an
+        # executor: `adjust` is not one of the thirteen registered kinds
+        # (chaincraft-compiler/src/assembler/effects.ts), which is ISSUE 8.
+        # The compiler additionally reads no passive declaration of any kind,
+        # so this block is inert twice over.
+        #
+        # WHAT ARMOR IS MEANT TO DO: incoming damage to this player is reduced
+        # by 2 before it lands, and never below zero reduction.
+        #
+        # THE SEMANTIC GAP, AND IT IS A REAL QUESTION FOR ERIC. The runtime
+        # bus already carries adjust, and it adjusts the RESULTING TOTAL, not
+        # the amount of the change: StateWriteEvent.resolvedValue is the new
+        # life total, and ModifiablePendingEffect.adjust() moves that total
+        # (chaincraft-runtime/src/effects/effect-bus.ts, and set-state.ts
+        # already honours it and already logs "state-write adjusted by
+        # passive"). So `delta: 2` reads as "you end 2 higher than you would
+        # have", which equals "reduce the damage by 2" ONLY while the hit is
+        # 2 or larger. Against a 1 damage hit this armor would HEAL the player
+        # one point ABOVE where they started, and "reduce by 2, floored at
+        # zero reduction" cannot be expressed at all, because the passive
+        # never sees the size of the incoming change.
+        #
+        # ERIC: does `adjust` need an amount-aware or clamped form (something
+        # that can read and modify the DELTA rather than the total, and floor
+        # its own effect at zero), or does that belong in a different executor
+        # entirely? We have no preference between those two answers, only a
+        # need for one of them: armor is unbuildable today either way.
+        # -------------------------------------------------------------------
+        - id: armor
+          trigger:
+            kind: state-write
+            scope: target # fires when someone ELSE writes to this player's life
+            path: player.property.life
+            direction: decrease
+          effects:
+            - effect: adjust
+              adjustment:
+                delta: 2 # deliberately a literal; see KINDLE for the reference form
+
+        # -------------------------------------------------------------------
+        # BLEED, declared identically on all three roles. See the full comment
+        # block on the thief role below, which is the one place this passive
+        # is explained. It lives on every role because whoever a thief's card
+        # wounds has to carry the reaction, whatever class they happen to be.
+        # -------------------------------------------------------------------
+        - id: bleedWarrior
+          trigger:
+            kind: move
+            scope: actor
+            fromInventory: [hand]
+          effects:
+            - effect: set-state
+              path: player.property.life
+              value:
+                delta:
+                  var: player.property.bleed
+                  negate: true
+
+    - id: thief
+      description: >-
+        Wounds. Thief cards in the catalog add to their target's bleed stack
+        on top of their damage.
+      assignment:
+        method: player-choice
+        description: >-
+          Chosen with the player's deck, before the match. No flow phase
+          presents this choice today.
+      visibility:
+        type: public
+      passives:
+        # -------------------------------------------------------------------
+        # PROPOSAL, SHAPE ONLY, and this is the one place BLEED is explained.
+        #
+        # WHAT BLEED IS MEANT TO DO: bleed is a stacking numeric wound carried
+        # by a player. Whenever a player whose bleed is above zero takes an
+        # action, they lose that many life. It never fires on a clock. It
+        # decays never. The stack is grown ONLY by thief catalog cards, which
+        # deal their damage AND add 1 to their target's bleed; that half is
+        # ordinary set-state and is LIVE in the playCard action below, not a
+        # proposal. This block is only the reaction.
+        #
+        # WHY A MOVE TRIGGER AND NOT A STATE-WRITE TRIGGER. Eric's own
+        # lifesteal example, read literally, is a state-write trigger scoped
+        # to the actor:
+        #
+        #     trigger:
+        #       kind: state-write
+        #       scope: actor
+        #       path: player.property.life
+        #       direction: decrease
+        #
+        # Written that way, bleed's own effect writes player.property.life
+        # with the bleeding player as the actor, which matches bleed's own
+        # trigger, which fires bleed again, forever. So we shipped the move
+        # trigger instead: it fires when the holder plays a card out of hand,
+        # which is the same shape (the holder's own action, Eric's shape one)
+        # and cannot re-enter, because bleed's effect is a state-write and
+        # never a move.
+        #
+        # ERIC, TWO QUESTIONS, BOTH DIRECT: is there a re-entrancy guard we
+        # are missing, something that already stops a passive from re-firing
+        # inside its own effect? And if there is not, is a passive that writes
+        # the same property it watches genuinely unsafe today, that is, is the
+        # state-write form above a footgun that should be rejected, or one
+        # that should be made safe? We have written the version we believe is
+        # safe, but we would rather be told than guess.
+        #
+        # ONE MORE, SMALLER: this passive has no condition field, and it does
+        # not need one, because at bleed 0 the delta is 0 and the write is a
+        # harmless no-op. If passives ever grow a firing condition, "bleed
+        # above zero" is the natural one here.
+        #
+        # WHOSE PROPERTY DOES THE VALUE READ? Same question as KINDLE raises
+        # below. Here the holder is both actor and target of its own write, so
+        # player.property.bleed resolves to the holder either way, and bleed
+        # is not sensitive to the answer. Kindle is.
+        # -------------------------------------------------------------------
+        - id: bleedThief
+          trigger:
+            kind: move
+            scope: actor # fires on the holder's OWN play
+            fromInventory: [hand]
+          effects:
+            - effect: set-state
+              path: player.property.life
+              # target omitted, so the write lands on the acting player, which
+              # in this trigger is the bleeding holder.
+              value:
+                delta:
+                  var: player.property.bleed
+                  negate: true # bleed is stored positive, so negate to dock life
+
+    - id: mage
+      description: >-
+        Escalates. Carries KINDLE: being damaged raises spellPower, and
+        spellPower is added to every card this player plays.
+      assignment:
+        method: player-choice
+        description: >-
+          Chosen with the player's deck, before the match. No flow phase
+          presents this choice today.
+      visibility:
+        type: public
+      passives:
+        # -------------------------------------------------------------------
+        # PROPOSAL, SHAPE ONLY. Half of KINDLE.
+        #
+        # WHAT THIS HALF DOES: when another player damages this player,
+        # spellPower rises by 1. This is Eric's shape two (fires when another
+        # player targets the holder), and it is the only passive in this file
+        # that writes a property other than life.
+        #
+        # This half needs no adjust, only a plain set-state, so the ONLY thing
+        # standing between it and running is the compiler reading passive
+        # declarations at all.
+        # -------------------------------------------------------------------
+        - id: kindleGain
+          trigger:
+            kind: state-write
+            scope: target
+            path: player.property.life
+            direction: decrease
+          effects:
+            - effect: set-state
+              path: player.property.spellPower
+              value:
+                delta: 1
+
+        # -------------------------------------------------------------------
+        # PROPOSAL, SHAPE ONLY. The other half of KINDLE, and the sharpest
+        # question in this file.
+        #
+        # WHAT THIS HALF DOES: every card this player plays deals its own
+        # damage PLUS this player's spellPower.
+        #
+        # THE SHAPE IS THE SCHEMA'S OWN. This is berserker-rage from the
+        # PassiveEffectSchema doc block verbatim in structure: an actor-scoped
+        # state-write trigger with an adjust whose delta is a negated variable
+        # reference. Damage lowers the resulting life total, so dealing MORE
+        # damage means moving that total further down, which is why the
+        # reference is negated. Waiting on ISSUE 8 like armor.
+        #
+        # WHY IT IS EXPRESSED HERE AND NOT IN THE CARD'S OWN DAMAGE EFFECT.
+        # It cannot be expressed there. Three separate walls, all verified in
+        # source at these pins: PropertyValueSchema says in its own words that
+        # each value performs ONE operation, so "damage plus spellPower" is
+        # not one value; {expr}, which would do the arithmetic, is DEAD, the
+        # compiler passes it through uncompiled (the compileExpression call in
+        # chaincraft-compiler/src/assembler/effects.ts is commented out with a
+        # TODO) and the runtime resolver has no expr branch at all, so it
+        # would write the raw object into a numeric property with no error;
+        # and inside an effect VALUE the path player.property.<id> resolves to
+        # targetPlayerId ?? actorId, that is, THE PLAYER BEING HIT, with no
+        # actor.property.<id> root existing anywhere in resolve-value.ts. So a
+        # damage effect aimed at the opponent structurally cannot read the
+        # caster's own spellPower. The passive layer is the only place this
+        # rule can live.
+        #
+        # ERIC, THE QUESTION THAT DECIDES WHETHER THIS WORKS: inside a
+        # passive's own effects, whose properties does a var path read? The
+        # HOLDER of the passive, or the TARGET of the triggering event? Here
+        # the holder is the actor and the target is the victim, and this
+        # passive needs the HOLDER's spellPower. Under today's resolution rule
+        # it would read the victim's instead, which is silently wrong rather
+        # than loudly broken. If the answer is "the target", then passives
+        # need their own path root for the holder.
+        #
+        # DEGRADE FALLBACK, if the answer above makes the referenced form
+        # unbuildable: replace the adjustment with a flat literal,
+        #     adjustment: { delta: -1 }
+        # which reads as "every card this player plays deals 1 extra damage".
+        # That loses the escalation, which is the whole point of kindle, so it
+        # is a fallback and not the design.
+        # -------------------------------------------------------------------
+        - id: kindleStrike
+          trigger:
+            kind: state-write
+            scope: actor # fires when the holder damages someone
+            path: player.property.life
+            direction: decrease
+          effects:
+            - effect: adjust
+              adjustment:
+                delta:
+                  var: player.property.spellPower
+                  negate: true
+
+        - id: bleedMage
+          trigger:
+            kind: move
+            scope: actor
+            fromInventory: [hand]
+          effects:
+            - effect: set-state
+              path: player.property.life
+              value:
+                delta:
+                  var: player.property.bleed
+                  negate: true
+
+# ---------------------------------------------------------------------------
+# STATE
+#
+# Three numeric player properties, all real, all written by shipped effects
+# except spellPower, which only the (proposal) kindle passive writes and which
+# therefore sits at 0 for the whole match today. It is declared anyway so the
+# passive has somewhere to write the day it runs, and so a walkthrough can
+# show the column.
+# ---------------------------------------------------------------------------
+state:
+  player:
+    properties:
+      - id: life
+        type:
+          kind: number
+          min: 0
+          max: 20
+        default: 20
+        description: >-
+          Life total. Reaching 0 does not end the match today; see the ISSUE 9
+          block in the flow module below.
+      - id: bleed
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: >-
+          Stacking wound. Grown by thief cards (live). Docked from life by the
+          bleed passive (proposal). Never decays, and nothing on a clock ever
+          touches it.
+      - id: spellPower
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: >-
+          Raised by the kindle passive (proposal) when this player is damaged,
+          and added to this player's outgoing damage by the same passive.
+          Nothing shipped writes this today.
+
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: >-
+        An attack card. Its damage is the number that matters; bleed is 1 only
+        on thief cards and 0 everywhere else.
+      properties:
+        - id: damage
+          label: Damage
+          type:
+            kind: number
+            min: 0
+            max: 9
+          mutable: false
+          visibility: revealed
+        - id: bleed
+          label: Bleed
+          type:
+            kind: number
+            min: 0
+            max: 9
+          mutable: false
+          visibility: revealed
+        - id: className
+          label: Class
+          type:
+            kind: string
+          mutable: false
+          visibility: revealed
+
+# ---------------------------------------------------------------------------
+# INVENTORIES
+#
+# library is a game-scoped staging pile that exists for exactly one reason:
+# shuffle resolves a PLAYER-scoped inventory through the acting player
+# (chaincraft-runtime/src/effects/shuffle.ts) and setup has no acting player,
+# so the shuffle has to happen in a game-scoped pile BEFORE anything is dealt
+# out to the two sides. It is empty from the end of setup onward.
+# ---------------------------------------------------------------------------
+inventories:
+  types:
+    - id: library
+      label: Library
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: count-only
+      structure: stack
+      description: Shared staging pile, shuffled at setup, emptied into the two sides.
+    - id: deck
+      label: Deck
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: count-only
+      structure: stack
+      description: This side's own draw deck, dealt from the shared catalog at setup.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: owner
+      description: This side's hand.
+    - id: discard
+      label: Discard
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      description: Every card played by either side.
+
+effects:
+  effects:
+    - id: fillLibrary
+      effect: move
+      from:
+        inventory: "game:unassigned"
+        select: all
+        ofType: card
+      to:
+        inventory: library
+
+    - id: shuffleLibrary
+      effect: shuffle
+      inventory: library
+
+    - id: dealHands
+      effect: distribute
+      from:
+        inventory: library
+        select: top
+      to:
+        inventory: hand
+      count: 2
+
+    - id: dealDecks
+      effect: distribute
+      from:
+        inventory: library
+        select: top
+      to:
+        inventory: deck
+      count: 2
+
+    - id: announceStart
+      effect: message
+      to: all
+      template: >-
+        Both sides start at 20 life. Play a card to damage your opponent. Most
+        life remaining after three rounds wins.
+
+actions:
+  actions:
+    - id: playCard
+      label: Play a Card
+      description: >-
+        Play one card from your hand. It damages your opponent, adds its bleed
+        to them, and then you draw a replacement.
+      steps:
+        - input: card
+          label: Choose a card to play
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            fromPlayer: self
+        # ORDER MATTERS AND IS DELIBERATE. The card leaves hand FIRST, because
+        # that move is what the bleed passive watches; bleed should dock before
+        # the card's own damage resolves, so a player is punished for acting
+        # before their action lands.
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: discard
+
+        # -------------------------------------------------------------------
+        # ISSUE 8, NAMED HERE BECAUSE THIS IS WHERE THE CONFUSION WOULD LIVE.
+        #
+        # These two writes are NOT waiting on issue 8. A signed delta through
+        # set-state is shipped and executing today: `value: { delta: { var:
+        # ..., negate: true } }` resolves in chaincraft-runtime's
+        # resolve-value.ts and the write really lands. Damage and bleed
+        # accumulation both work in this file right now.
+        #
+        # What issue 8's `adjust` executor is actually needed for is the
+        # passive layer's ability to MODIFY one of these writes while it is in
+        # flight: armor reducing this damage before it lands, and kindle
+        # increasing it. The runtime already emits the before/after state-write
+        # events around this very set-state and already honours a cancel and an
+        # adjust from the bus; there is simply no `adjust` executor for a spec
+        # to reach that with, and no compiler path from a declaration to a
+        # subscription. So: the arithmetic below is live, the interception of
+        # it is issue 8.
+        # -------------------------------------------------------------------
+        - effect: set-state
+          path: player.property.life
+          target:
+            kind: all-other # exactly one opponent in a two player game
+          source:
+            param: card
+          value:
+            delta:
+              var: source.property.damage
+              negate: true
+
+        # A thief card carries bleed 1; every other card carries bleed 0, so
+        # this write is a no-op except when a thief card is played. That is
+        # why there is one action rather than a thief-only second action.
+        - effect: set-state
+          path: player.property.bleed
+          target:
+            kind: all-other
+          source:
+            param: card
+          value:
+            delta:
+              var: source.property.bleed
+
+        # Draw a replacement from this side's own deck. On the final round the
+        # deck is already empty and this is a verified safe no-op (move returns
+        # early on an empty selection, chaincraft-runtime/src/effects/move.ts).
+        - effect: move
+          from:
+            inventory: deck
+            select: top
+          to:
+            inventory: hand
+
+flow:
+  root:
+    kind: game
+    label: Passive Battler
+    hooks:
+      onEnter:
+        - effectRef: fillLibrary
+        - effectRef: shuffleLibrary
+        - effectRef: dealHands
+        - effectRef: dealDecks
+        - effectRef: announceStart
+
+    # -----------------------------------------------------------------------
+    # THE WIN CONDITION BELOW IS LIVE, NOT A PROPOSAL. Declared win conditions
+    # really are applied now: the compiler assembles rule `ranking` and rule
+    # `condition` (chaincraft-compiler/src/assembler/flow.ts), and the runtime
+    # evaluates them in advanceGame and reports outcome reason win-conditions
+    # (chaincraft-runtime/src/orchestration/flow-runner.ts). Highest life after
+    # three rounds wins, which is "whoever has life remaining" in a game where
+    # nobody is removed early.
+    #
+    # -----------------------------------------------------------------------
+    # ISSUE 9, PROPOSAL, MARKED AND DELIBERATELY NOT ENABLED.
+    #
+    # What we want: the match ends THE MOMENT either life hits zero, rather
+    # than running out the declared number of rounds and then ranking. This is
+    # the alternative mechanism to the win condition above, not an addition to
+    # it: Eric picks one, and if he picks this, the ranking rule above becomes
+    # the tiebreak for a match that goes the distance rather than the only
+    # answer.
+    #
+    # WHY IT CANNOT BE WRITTEN TODAY, verified rather than assumed. Win
+    # conditions are evaluated EXACTLY ONCE, on the game root, after every
+    # child has completed and after the root's onComplete hooks. There is no
+    # mid-flow evaluation anywhere. The obvious workaround, a loop
+    # endCondition reading life, is also dead at this pin: the flow assembler
+    # builds loop nodes from count, finalRound and writeIterationTo only, and
+    # never reads endCondition at all, so writing one is silently dropped.
+    #
+    # Eric said this may just be flow exit conditions set up properly, and
+    # that he is still thinking. Both shapes we can see are written out below
+    # so he can point at one. Neither is enabled.
+    #
+    # SHAPE A, the loop learns to stop. Nothing new in the vocabulary; the
+    # assembler simply reads a field the schema already documents.
+    #
+    #     - kind: loop
+    #       id: rounds
+    #       count: 3
+    #       endCondition:
+    #         any:
+    #           - player.property.life <= 0
+    #
+    # SHAPE B, the win condition learns when to look. A win condition declares
+    # the points at which it is evaluated, instead of being evaluated only at
+    # the end of the root.
+    #
+    #     winConditions:
+    #       - rule: condition
+    #         evaluateAt: after-each-turn      # proposed field, does not exist
+    #         condition:
+    #           all:
+    #             - player.property.life > 0
+    #         onVictory:
+    #           - kind: message
+    #             to: all
+    #             template: "{{game.winners[0]}} is the last one standing."
+    #
+    # WE HAVE NO PREFERENCE between A and B and are not asking for both. The
+    # shape matters, not the keywords: a battler needs SOME way to say "stop
+    # now, someone is dead", and today it has none.
+    # -----------------------------------------------------------------------
+    winConditions:
+      - rule: ranking
+        property: player.property.life
+        order: highest
+        onVictory:
+          - effect: message
+            to: all
+            template: "{{game.winners[0]}} wins with the most life remaining."
+
+    children:
+      - kind: loop
+        id: rounds
+        label: Rounds
+        count: 3
+        children:
+          - kind: turn
+            id: attack
+            label: Play a card
+            # round-robin ordering, so one seat completes its play and then
+            # the other does. Damage never lands simultaneously, which is what
+            # keeps the passive firing order readable.
+            actor: all-players
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: playCard
+
+# ---------------------------------------------------------------------------
+# CATALOG
+#
+# Eight named entries, so each is exactly one piece for the whole table. Four
+# reach each side at setup (2 to hand, 2 to deck). Two of the eight are thief
+# cards carrying bleed 1; the other six carry bleed 0.
+#
+# A catalog entry has no display-name field at this pin, so className carries
+# the human-readable label and the entry id carries the card's name in
+# readable form.
+# ---------------------------------------------------------------------------
+catalog:
+#
+# ENTRY ORDER IS LOAD-BEARING, and this is the only reason it is not
+# alphabetical or grouped by class. rng seedSource 'fixed' resolves to a
+# CONSTANT seed and ignores the game id entirely, so the shuffle is the same
+# permutation on every run and the deal is identical every time. This order
+# is the one that puts both thief cards in Player 2's opening hand, which is
+# what makes the bleed stack in PASSIVE_BATTLER_WALKTHROUGH_v1.md reproduce
+# exactly. Reordering these eight lines changes the deal and nothing else.
+  entries:
+    - id: serratedEdge
+      typeId: card
+      properties: { damage: 2, bleed: 1, className: thief }
+    - id: cleave
+      typeId: card
+      properties: { damage: 4, bleed: 0, className: warrior }
+    - id: hammerBlow
+      typeId: card
+      properties: { damage: 5, bleed: 0, className: warrior }
+    - id: ember
+      typeId: card
+      properties: { damage: 2, bleed: 0, className: mage }
+    - id: arcBolt
+      typeId: card
+      properties: { damage: 3, bleed: 0, className: mage }
+    - id: firestorm
+      typeId: card
+      properties: { damage: 4, bleed: 0, className: mage }
+    - id: shieldBash
+      typeId: card
+      properties: { damage: 3, bleed: 0, className: warrior }
+    - id: gutCut
+      typeId: card
+      properties: { damage: 3, bleed: 1, className: thief }

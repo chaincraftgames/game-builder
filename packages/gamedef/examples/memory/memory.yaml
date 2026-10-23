@@ -1,0 +1,188 @@
+includes:
+  - "/examples/memory/memory_deck.yaml"
+
+functions: 
+
+actions:
+  - id: flip_card
+    action: flip_card
+    properties:
+      face_up: true
+      $board: { $board_ref: memory_board }
+      $inventory: { $inventory_ref: flipped_cards }
+
+  - id: collect_cards
+    action: move_between_inventories
+    properties:
+      $from_inventory: { $inventory_ref: matched_cards }
+      $to_inventory: { $inventory_ref: player_matches }
+      count: 2
+
+  - id: return_to_board
+    action: move_between_inventories
+    properties:
+      $from_inventory: { $inventory_ref: flipped_cards }
+      $to_inventory: { $inventory_ref: board_inventory }
+      count: 2
+
+  - id: reset_cards
+    action: reset_cards
+    properties:
+      face_up: false
+      $inventory: { $inventory_ref: flipped_cards }
+
+  - id: repeat_flip_action
+    action: action_repeat
+    properties:
+      $actions: 
+        - { $action_ref: flip_card }
+      repeat_count: 2
+
+  - id: player_turn_action_sequence
+    action: action_sequence
+    properties:
+      $actions:
+        - { $action_ref: repeat_flip_action }
+        - { $action_ref: collect_cards }
+        - { $action_ref: reset_cards }
+        - { $action_ref: return_to_board }
+
+components:
+
+# Game components
+  - type: deck
+    id: memory_deck_component
+    properties:
+      $deck: { $deck_ref: memory_deck }
+      $inventory: { $inventory_ref: deal_inventory }
+
+  - type: board
+    id: memory_board_component
+    properties:
+      $board: { $board_ref: memory_board }
+
+  - type: inventory
+    id: deal_inventory
+    properties:
+      max_size: 36
+      min_size: 36
+
+  - type: inventory
+    id: board_inventory
+    properties:
+      max_size: 36
+      min_size: 0
+
+  - type: inventory
+    id: flipped_cards
+    properties:
+      max_size: 2
+      min_size: 0
+
+  - type: inventory
+    id: matched_cards
+    properties:
+      max_size: 2
+      min_size: 0
+
+  - id: match
+    type: mechanic
+    mechanic: match
+    properties:
+      $input_inventory: { $inventory_ref: flipped_cards }
+      $output_inventory: { $inventory_ref: matched_cards }
+      match_count: 2
+      # Additional properties specify whether the items must be in a line, etc. as 
+      # well as what properties must match for the items to be considered a match.  
+
+# Role components
+  - type: inventory
+    id: player_matches
+    properties:
+      max_size: 36
+      min_size: 0
+
+# State components
+  - type: transition
+    id: start_game_transition
+    properties:
+      $to_state: { $state_ref: player_turn }
+
+  - type: transition_trigger
+    id: start_game_trigger  
+    properties: 
+      $transition: { $transition_ref: start_game_transition } 
+      trigger:
+        $inventory_empty: { $inventory_ref: deal_inventory }
+
+  - type: transition
+    id: end_game_transition
+    properties:
+      $to_state: { $state_ref: end_game_state }
+
+  - type: transition_trigger
+    id: end_game_trigger
+    properties:
+      $transition: { $transition_ref: end_game_transition }
+      trigger:
+        $inventory_empty: { $inventory_ref: board_inventory }
+
+  - type: end_state
+    id: end_game
+    properties:
+      victory_condition: 
+        highest:
+          $property: { $component_ref: player_matches, $r_property_ref: count }
+
+  - type: action
+    id: player_turn_actions
+    properties:
+      $role: { $role_ref: player }
+      $action: { $action_ref: player_turn_action_sequence }
+
+  - type: allocator
+    id: memory_card_allocator
+    properties:
+      $from_inventory: { $inventory_ref: deal_inventory }
+      $to_board: { $board_ref: memory_board }
+      refill: false
+      type: 
+        grid: { row_count: 6, column_count: 6 }
+
+roles:
+  - id: player
+    $components:
+      - { $component_ref: player_matches }
+
+boards:
+  - id: memory_board
+    $components:
+
+states:
+  - id: game_setup
+    $components:
+      - { $component_ref: memory_card_allocator }
+      - { $component_ref: start_game_transition }
+      - { $component_ref: start_game_trigger }
+
+  - id: player_turn
+    $components:
+      - { $component_ref: player_turn_actions }
+      - { $component_ref: end_game_transition }
+      - { $component_ref: end_game_trigger }
+
+  - id: end_game_state
+    $components:
+      - { $component_ref: end_game }
+
+game:
+  id: memory
+  $components:
+    - { $component_ref: memory_deck_component }
+    - { $component_ref: memory_board_component }
+    - { $component_ref: deal_inventory }
+    - { $component_ref: board_inventory }
+    - { $component_ref: flipped_cards }
+    - { $component_ref: matched_cards }
+
+  
