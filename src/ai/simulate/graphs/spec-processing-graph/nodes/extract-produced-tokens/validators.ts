@@ -126,6 +126,35 @@ export async function validateProducedTokensFields(
         );
       }
     }
+
+    // Validate consumableIn if present
+    const { consumableIn, actionId } = config as any;
+    if (consumableIn) {
+      if (!consumableIn.phase) {
+        errors.push(`Token type '${tokenType}' has consumableIn but missing 'phase'`);
+      } else if (state.playerPhaseInstructions) {
+        const phaseNames = Object.keys(state.playerPhaseInstructions);
+        if (!phaseNames.includes(consumableIn.phase)) {
+          errors.push(
+            `Token type '${tokenType}' consumableIn.phase '${consumableIn.phase}' is not a valid player phase. ` +
+            `Available phases: ${phaseNames.join(', ')}`
+          );
+        }
+      }
+
+      if (!Array.isArray(consumableIn.actionField) || consumableIn.actionField.length === 0) {
+        errors.push(`Token type '${tokenType}' has consumableIn but missing or empty 'actionField'`);
+      } else if (Array.isArray(fields)) {
+        for (const af of consumableIn.actionField) {
+          if (!fields.includes(af)) {
+            errors.push(
+              `Token type '${tokenType}' consumableIn.actionField '${af}' is not in the token's fields. ` +
+              `Token fields: ${fields.join(', ')}`
+            );
+          }
+        }
+      }
+    }
   }
   
   return errors;

@@ -83,12 +83,19 @@ const specGraphCache = new GraphCache(
   parseInt(process.env.CHAINCRAFT_SPEC_GRAPH_CACHE_SIZE ?? "50"),
 );
 
+export interface ItemQuery {
+  tokenType: string;
+  actionId: string;
+  actionField: string[];
+}
+
 export interface RuntimePlayerState {
   illegalActionCount: number;
   privateMessage?: string;
   actionsAllowed?: boolean | null; // Optional, defaults to actionRequired
   actionRequired: boolean;
   isGameWinner: boolean;
+  itemQuery?: ItemQuery;
 }
 
 /**
@@ -216,6 +223,7 @@ export interface TokenMetadata {
   tokenType: string;
   gameId: string;
   gameVersion: number;
+  actionId?: string;
 }
 export interface TokenContent {
   metadata: TokenMetadata;
@@ -262,6 +270,25 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
     ? game.winningPlayers 
     : undefined;
 
+  // Derive itemQuery from current phase + produced tokens config
+  const currentPhase = game?.currentPhase;
+  let itemQuery: ItemQuery | undefined;
+  if (currentPhase) {
+    const tokenConfig = parseProducedTokensConfig(state.producedTokensConfiguration);
+    if (tokenConfig) {
+      const match = tokenConfig.tokens.find(
+        (t) => t.consumableIn?.phase === currentPhase && t.actionId,
+      );
+      if (match) {
+        itemQuery = {
+          tokenType: match.tokenType,
+          actionId: match.actionId!,
+          actionField: match.consumableIn!.actionField,
+        };
+      }
+    }
+  }
+
   for (const playerId in players) {
     const rawPrivateMessage = players[playerId].privateMessage;
     const actionRequired = players[playerId].actionRequired ?? false;
@@ -282,6 +309,7 @@ function getRuntimeResponse(state: RuntimeStateType): SimResponse {
           ? actionsAllowed
           : actionRequired, // Default to actionRequired if not explicitly set
       isGameWinner: players[playerId].isGameWinner ?? false,
+      ...(itemQuery && actionRequired && { itemQuery }),
     };
 
     playerStates.set(playerId, playerState);
@@ -950,6 +978,7 @@ export async function produceToken(
         tokenType,
         gameId,
         gameVersion,
+        ...(tokenDefinition.actionId && { actionId: tokenDefinition.actionId }),
       },
       data,
     };

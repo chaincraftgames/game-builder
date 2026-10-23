@@ -508,7 +508,7 @@ Same flow as Action 1, but for p2.
 
 ### The Critical Question
 
-**How do we express game rules like "rock beats scissors beats paper" or "highest trump suit wins"?**
+**How do we express game rules like "rock beats scissors beats paper" or "highest dominant-gamepiece suit wins"?**
 
 ### Three Approaches
 
@@ -575,12 +575,12 @@ The instruction includes NL description of the mechanic alongside templated stat
   "transitionName": "resolve_trick",
   "mechanicsGuidance": {
     "rules": [
-      "Spades are always trump",
+      "Spades are always dominant-gamepiece",
       "If any spades were played, highest spade rank wins",
       "If no spades played, highest card of the led suit wins",
       "Rank order: A > K > Q > J > 10 > 9 > ... > 2"
     ],
-    "computation": "Examine all cards in currentTrick, apply trump hierarchy, determine winnerId"
+    "computation": "Examine all cards in currentTrick, apply dominant-gamepiece hierarchy, determine winnerId"
   },
   "stateDelta": [
     {
@@ -760,7 +760,7 @@ Instructions can specify EITHER a mechanic function OR NL guidance:
    ```json
    "mechanicsGuidance": {
      "rules": [
-       "1. Check if any spades played → use spade trump hierarchy",
+       "1. Check if any spades played → use spade dominant-gamepiece hierarchy",
        "2. If no spades → use led suit hierarchy", 
        "3. Rank order: A=14, K=13, Q=12, J=11, 10-2 face value"
      ]

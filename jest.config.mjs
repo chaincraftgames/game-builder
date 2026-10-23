@@ -11,8 +11,8 @@ export default {
       },
     ],
   },
+  resolver: './jest-resolver.cjs',
   moduleNameMapper: {
-    "^#chaincraft/(.*)\.js$": "<rootDir>/src/$1.ts",
     "^(\\.{1,2}/.*)\\.js$": "$1"
   },
   extensionsToTreatAsEsm: ['.ts'],

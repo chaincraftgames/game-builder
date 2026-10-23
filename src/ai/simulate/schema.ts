@@ -408,6 +408,14 @@ export const AutomaticTransitionInstructionSchema = z.object({
     .describe(
       "Brief description of image content to generate for this transition. ONLY include if the game specification explicitly requests image generation for this moment (e.g., 'display an image depicting the final battle'). Null if the spec does not mention generating an image.",
     ),
+
+  // Narrative keys to look up in specNarratives at callLLM time
+  narrativeKeys: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Keys from specNarratives that provide style/tone guidance for message generation. Runtime looks these up and injects the content into the callLLM system prompt.",
+    ),
 });
 
 /**
@@ -500,6 +508,19 @@ export enum TokenSource {
   Player = "player",
 }
 
+export const ConsumableInSchema = z.object({
+  phase: z
+    .string()
+    .describe(
+      "Player phase name where this token can substitute for typed input",
+    ),
+  actionField: z
+    .array(z.string())
+    .describe(
+      "Token field names to try (in order) when resolving the action string at consumption time",
+    ),
+});
+
 export const ProducedTokenConfigurationSchema = z.object({
   tokenType: z
     .string()
@@ -513,6 +534,16 @@ export const ProducedTokenConfigurationSchema = z.object({
   fields: z
     .array(z.string())
     .describe("List of state fields to include in the token"),
+  actionId: z
+    .string()
+    .optional()
+    .describe(
+      "Identifies the action context for this token (used for consumption filtering and schema evolution)",
+    ),
+  consumableIn: ConsumableInSchema.optional().describe(
+    "If set, this token can be used as player input in the specified phase. " +
+      "Every entry in actionField must be one of the token's fields.",
+  ),
 });
 
 export type ProducedTokenConfiguration = z.infer<

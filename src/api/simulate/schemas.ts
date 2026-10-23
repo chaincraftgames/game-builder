@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+// Item query schema for token consumption
+export const ItemQuerySchema = z.object({
+  tokenType: z.string(),
+  actionId: z.string(),
+  actionField: z.array(z.string()),
+});
+
 // Runtime player state schema
 export const RuntimePlayerStateSchema = z.object({
   illegalActionCount: z.number().min(0),
@@ -7,6 +14,7 @@ export const RuntimePlayerStateSchema = z.object({
   actionsAllowed: z.boolean(),
   actionRequired: z.boolean(),
   isGameWinner: z.boolean(),
+  itemQuery: ItemQuerySchema.optional(),
 });
 
 // Player states schema (Map serialized as object)

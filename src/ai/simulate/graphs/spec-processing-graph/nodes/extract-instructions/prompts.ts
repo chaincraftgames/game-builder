@@ -16,7 +16,7 @@ export const planInstructionsTemplate = `
 Analyze the game specification and transitions to extract semantic information needed for instruction execution.
 
 Focus on:
-- **Game mechanics/rules**: Win conditions, scoring, trump rules, costs, constraints
+- **Game mechanics/rules**: Win conditions, scoring, dominant-gamepiece rules, costs, constraints
 - **LLM requirements**: Does this need LLM reasoning or semantic validation?
 - **Message purposes**: Brief description of what messages should convey
 - **Randomness**: Probability distributions, ranges, what values are needed

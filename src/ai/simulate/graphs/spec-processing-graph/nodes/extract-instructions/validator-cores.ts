@@ -990,120 +990,6 @@ export function validateInitialStatePreconditionsCore(
   ];
   if (!initInstructions) return [];
 
-  // Build mock initial state by applying init's stateDelta.
-  // This simulates what the state will look like after init runs,
-  // so we can check if the starting phase will deadlock.
-  //
-  // Limitations handled:
-  // - Template variables ({{game.activePlayer}}) can't be resolved statically,
-  //   so we use optimistic application: if a set targets players.{{...}}.field,
-  //   apply it to the first mock player (proving at least one player will have that value).
-  // - setForAllPlayers ops have 'field' not 'path', so need special handling.
-  // - RNG ops: use choices[0] as a stand-in value.
-  const mockState: any = { game: {}, players: {} };
-
-  // Helper: ensure mock players exist (player1 & player2 as defaults for 2-player games)
-  const ensureMockPlayers = () => {
-    if (Object.keys(mockState.players).length === 0) {
-      mockState.players.player1 = {};
-      mockState.players.player2 = {};
-    }
-  };
-
-  // Helper: set a value at a dot-notation path in an object, creating intermediates
-  const setAtPath = (obj: any, path: string, value: any) => {
-    const parts = path.split(".");
-    let current = obj;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
-      if (arrayMatch) {
-        const arrayName = arrayMatch[1];
-        const index = parseInt(arrayMatch[2], 10);
-        if (!current[arrayName]) current[arrayName] = [];
-        if (!current[arrayName][index]) current[arrayName][index] = {};
-        current = current[arrayName][index];
-      } else {
-        if (!current[part] || typeof current[part] !== "object")
-          current[part] = {};
-        current = current[part];
-      }
-    }
-    const lastPart = parts[parts.length - 1];
-    const arrayMatch = lastPart.match(/^(.+)\[(\d+)\]$/);
-    if (arrayMatch) {
-      const arrayName = arrayMatch[1];
-      const index = parseInt(arrayMatch[2], 10);
-      if (!current[arrayName]) current[arrayName] = [];
-      current[arrayName][index] = value;
-    } else {
-      current[lastPart] = value;
-    }
-  };
-
-  if (
-    initInstructions.stateDelta &&
-    Array.isArray(initInstructions.stateDelta)
-  ) {
-    initInstructions.stateDelta.forEach((op: any) => {
-      // Handle setForAllPlayers (has 'field' not 'path')
-      if (op.op === "setForAllPlayers" && op.field) {
-        ensureMockPlayers();
-        for (const playerId of Object.keys(mockState.players)) {
-          mockState.players[playerId][op.field] = op.value;
-        }
-        return;
-      }
-
-      if (!op.path || typeof op.path !== "string") return;
-
-      // Check if path contains template variables (e.g., {{game.activePlayer}})
-      const hasTemplate = /\{\{[^}]+\}\}/.test(op.path);
-
-      // Handle RNG
-      if (op.op === "rng") {
-        if (hasTemplate) return; // Can't resolve template in RNG path
-        const parts = op.path.split(".");
-        let current = mockState;
-        for (let i = 0; i < parts.length - 1; i++) {
-          if (!current[parts[i]]) current[parts[i]] = {};
-          current = current[parts[i]];
-        }
-        const lastPart = parts[parts.length - 1];
-        if (op.choices && Array.isArray(op.choices) && op.choices.length > 0) {
-          current[lastPart] = op.choices[0];
-        } else {
-          current[lastPart] = null;
-        }
-        return;
-      }
-
-      // Handle set operations
-      if (op.op === "set") {
-        if (hasTemplate) {
-          // Template path — try to resolve optimistically for player fields.
-          // Pattern: players.{{someVar}}.fieldName = value
-          // If we can extract the field name, apply it to the first mock player.
-          // This proves at least one player will have this value at runtime.
-          const templatePlayerMatch = op.path.match(
-            /^players\.\{\{[^}]+\}\}\.(.+)$/,
-          );
-          if (templatePlayerMatch) {
-            const field = templatePlayerMatch[1];
-            ensureMockPlayers();
-            const firstPlayer = Object.keys(mockState.players)[0];
-            if (firstPlayer) {
-              setAtPath(mockState.players[firstPlayer], field, op.value);
-            }
-          }
-          // For non-player template paths (e.g., game.{{...}}), skip — can't resolve
-          return;
-        }
-
-        setAtPath(mockState, op.path, op.value);
-      }
-    });
-  }
 
   // Find all transitions from the starting phase
   const startingTransitions = transitions.transitions.filter(
@@ -1118,142 +1004,48 @@ export function validateInitialStatePreconditionsCore(
     return errors;
   }
 
-  // Check if any transition's preconditions can be satisfied
-  const canFireTransitions = startingTransitions.filter((t: any) => {
-    if (!t.preconditions || !Array.isArray(t.preconditions)) return true;
-
-    const blockingConditions = t.preconditions.filter((p: any) => {
-      if (!p.logic) return false;
-
-      if (
-        p.logic.allPlayers &&
-        Array.isArray(p.logic.allPlayers) &&
-        p.logic.allPlayers.length === 3
-      ) {
-        const [field, op, expectedValue] = p.logic.allPlayers;
-        if (
-          typeof expectedValue === "boolean" &&
-          (op === "==" || op === "===")
-        ) {
-          const players = Object.values(mockState.players || {});
-          if (players.length > 0) {
-            const allMatch = players.every(
-              (player: any) => player[field] === expectedValue,
-            );
-            if (!allMatch) return true;
-          }
-        }
-      }
-
-      if (
-        p.logic.anyPlayer &&
-        Array.isArray(p.logic.anyPlayer) &&
-        p.logic.anyPlayer.length === 3
-      ) {
-        const [field, op, expectedValue] = p.logic.anyPlayer;
-        if (
-          typeof expectedValue === "boolean" &&
-          (op === "==" || op === "===")
-        ) {
-          const players = Object.values(mockState.players || {});
-          if (players.length > 0) {
-            const anyMatch = players.some(
-              (player: any) => player[field] === expectedValue,
-            );
-            if (!anyMatch) return true;
-          }
-        }
-      }
-
-      return false;
-    });
-
-    return blockingConditions.length === 0;
-  });
-
-  // Check deadlock conditions
+  // Static check 2: if the starting phase requires player input, the init stateDelta must
+  // set actionRequired=true for at least one player. A player-input phase with no player
+  // flagged as active is an immediate deadlock — no state simulation needed to detect this.
   const phaseMetadata = transitions.phaseMetadata?.find(
     (pm: any) => pm.phase === startingPhase,
   );
   const requiresPlayerInput = phaseMetadata?.requiresPlayerInput ?? false;
 
-  const players = Object.values(mockState.players || {});
-  const anyPlayerCanAct = players.some(
-    (player: any) => !!player.actionRequired,
-  );
+  if (requiresPlayerInput) {
+    const stateDelta: any[] = initInstructions.stateDelta ?? [];
 
-  const isDeadlock =
-    canFireTransitions.length === 0 &&
-    (!requiresPlayerInput || !anyPlayerCanAct);
+    const setsActionRequiredTrue = stateDelta.some((op: any) => {
+      // setForAllPlayers { field: "actionRequired", value: true }
+      if (op.op === "setForAllPlayers" && op.field === "actionRequired" && op.value === true) return true;
+      // setForRandomPlayer { field: "actionRequired", value: true }
+      if (op.op === "setForRandomPlayer" && op.field === "actionRequired" && op.value === true) return true;
+      // set players.<alias-or-template>.actionRequired = true
+      if (op.op === "set" && op.value === true && typeof op.path === "string") {
+        if (/^players\.[^.]+\.actionRequired$/.test(op.path)) return true;
+      }
+      // setFromMap where path ends in .actionRequired and at least one mapped value is true
+      if (op.op === "setFromMap" && typeof op.path === "string" && op.path.endsWith(".actionRequired")) {
+        if (op.map && typeof op.map === "object") {
+          if (Object.values(op.map).some((v: any) => v === true)) return true;
+        }
+      }
+      // merge targeting a player root (players.<id>) with actionRequired: true in the value
+      if (op.op === "merge" && typeof op.path === "string" && op.value && typeof op.value === "object") {
+        if (/^players\.[^.]+$/.test(op.path) && op.value.actionRequired === true) return true;
+      }
+      return false;
+    });
 
-  if (isDeadlock) {
-    console.error(
-      "[extract_instructions][validation] Deadlock detected in initial state!",
-    );
-    console.error(
-      `[extract_instructions][validation] Starting phase: ${startingPhase}, requiresPlayerInput: ${requiresPlayerInput}, anyPlayerCanAct: ${anyPlayerCanAct}`,
-    );
-    console.error(
-      "[extract_instructions][validation] Mock state:",
-      JSON.stringify(mockState, null, 2),
-    );
-
-    if (!requiresPlayerInput) {
+    if (!setsActionRequiredTrue) {
       errors.push(
-        `Init transition creates immediate deadlock. After initialization, game moves to phase "${startingPhase}" ` +
-          `but none of the ${startingTransitions.length} transition(s) from that phase can fire. ` +
-          `Phase does NOT require player input, so at least one automatic transition must be able to fire. ` +
-          `Common issue: init sets boolean fields to values that block all automatic transitions. ` +
-          `Review init transition stateDelta and starting transitions' preconditions to ensure compatibility.`,
-      );
-    } else {
-      errors.push(
-        `Init transition creates immediate deadlock. After initialization, game moves to phase "${startingPhase}" ` +
-          `but none of the ${startingTransitions.length} transition(s) from that phase can fire AND no players can act. ` +
-          `Phase requires player input but all players have actionRequired=false, preventing any player actions. ` +
-          `No transitions can fire and no players can act, creating a permanent deadlock. ` +
-          `Fix: Either set actionRequired=true for players OR ensure at least one transition can fire immediately.`,
+        `Init transition moves to phase "${startingPhase}" which requires player input, ` +
+          `but the init stateDelta never sets actionRequired=true for any player. ` +
+          `At least one player must have actionRequired=true after initialization or the game will deadlock immediately. ` +
+          `Fix: add a setForRandomPlayer op (e.g. { op: "setForRandomPlayer", field: "actionRequired", value: true }) ` +
+          `or a setFromMap op that maps to actionRequired=true for the starting player.`,
       );
     }
-
-    // Add details about each transition's blocking conditions
-    startingTransitions.forEach((t: any) => {
-      if (!t.preconditions || t.preconditions.length === 0) return;
-
-      const issues: string[] = [];
-      t.preconditions.forEach((p: any) => {
-        if (
-          p.logic?.allPlayers &&
-          Array.isArray(p.logic.allPlayers) &&
-          p.logic.allPlayers.length === 3
-        ) {
-          const [field, op, expectedValue] = p.logic.allPlayers;
-          if (typeof expectedValue === "boolean") {
-            const playerList = Object.values(mockState.players || {});
-            if (playerList.length > 0) {
-              const actualValues = playerList.map(
-                (player: any) => player[field],
-              );
-              const allMatch = playerList.every(
-                (player: any) => player[field] === expectedValue,
-              );
-              if (!allMatch) {
-                issues.push(
-                  `Precondition "${p.id}" requires all players have ${field}=${expectedValue}, ` +
-                    `but init sets it to ${JSON.stringify(actualValues)}`,
-                );
-              }
-            }
-          }
-        }
-      });
-
-      if (issues.length > 0) {
-        errors.push(
-          `  Transition "${t.id}" (${t.fromPhase} → ${t.toPhase}): ${issues.join("; ")}`,
-        );
-      }
-    });
   }
 
   return errors;

@@ -45,6 +45,18 @@ function formatStateFields(stateSchemaJson: string): string {
   }
 }
 
+/**
+ * Format player phase names for prompt
+ */
+function formatPlayerPhases(playerPhaseInstructions: Record<string, string>): string {
+  if (!playerPhaseInstructions || Object.keys(playerPhaseInstructions).length === 0) {
+    return "No player phases available";
+  }
+
+  const phaseNames = Object.keys(playerPhaseInstructions);
+  return `Player phases (phases requiring player input):\n${phaseNames.map(p => `  - ${p}`).join("\n")}`;
+}
+
 export function producedTokensExecutorNode(model: ModelWithOptions) {
   return async (
     state: SpecProcessingStateType,
@@ -58,11 +70,15 @@ export function producedTokensExecutorNode(model: ModelWithOptions) {
     // Format state fields from schema
     const stateFields = formatStateFields(state.stateSchema);
 
+    // Format player phases for consumption configuration
+    const playerPhases = formatPlayerPhases(state.playerPhaseInstructions || {});
+
     // Generate produced tokens extraction
     const executorPrompt = SystemMessagePromptTemplate.fromTemplate(extractProducedTokensTemplate);
     const executorSystemMessage = await executorPrompt.format({
       gameSpecification: state.gameSpecification,
       stateFields,
+      playerPhases,
       outputSchema: JSON.stringify(ProducedTokensArtifactSchemaJson, null, 2),
     });
 
