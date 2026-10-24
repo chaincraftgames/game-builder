@@ -218,7 +218,8 @@ describe("Compiler e2e — Liar's Dice bid validation", () => {
     await controller.processAction({ playerId: "alice", value: 3 });
 
     await controller.processAction({ playerId: "bob", value: { kind: "act", actionId: "makeBid" } });
-    expect(controller.promptFor("bob")!.options).toEqual(range(5, 30));
+    // 2 players x 5 dice: quantity is capped at the dice in play.
+    expect(controller.promptFor("bob")!.options).toEqual(range(5, 10));
 
     await controller.processAction({ playerId: "bob", value: 5 });
     expect(controller.promptFor("bob")!.options).toEqual([4, 5, 6]);
@@ -269,7 +270,7 @@ describe("Compiler e2e — Liar's Dice challenge resolution", () => {
     await controller.processAction({ playerId: "alice", value: bidQuantity });
     await controller.processAction({ playerId: "alice", value: 3 });
     await controller.processAction({ playerId: "bob", value: { kind: "act", actionId: "challenge" } });
-    return controller.getState();
+    return controller;
   }
 
   const cupSize = (state: GameState, playerId: string) => {
@@ -277,25 +278,34 @@ describe("Compiler e2e — Liar's Dice challenge resolution", () => {
     return "pieceIds" in cup ? cup.pieceIds.length : -1;
   };
 
+  // The challenge only decides the round; the loser's die goes when they confirm the review step.
+  async function expectLoser(bidQuantity: number, loser: "alice" | "bob") {
+    const controller = await playChallenge(bidQuantity);
+    const afterChallenge = controller.getState();
+    expect(afterChallenge.gameProperties.roundLoser).toBe(loser);
+    expect(afterChallenge.gameProperties.actualCount).toBe(5);
+    expect(cupSize(afterChallenge, "alice")).toBe(5);
+    expect(cupSize(afterChallenge, "bob")).toBe(5);
+    expect(controller.currentPrompt?.awaiting).toBe(loser);
+    expect(controller.currentPrompt?.input.id).toBe("ready");
+
+    await controller.processAction({ playerId: loser, value: true });
+    const afterReview = controller.getState();
+    const other = loser === "alice" ? "bob" : "alice";
+    expect(cupSize(afterReview, loser)).toBe(4);
+    expect(cupSize(afterReview, other)).toBe(5);
+  }
+
   it("challenger loses when the bid quantity equals the actual count", async () => {
-    const state = await playChallenge(5);
-    expect(state.gameProperties.roundLoser).toBe("bob");
-    expect(cupSize(state, "bob")).toBe(4);
-    expect(cupSize(state, "alice")).toBe(5);
+    await expectLoser(5, "bob");
   });
 
   it("challenger loses when the actual count exceeds the bid quantity", async () => {
-    const state = await playChallenge(4);
-    expect(state.gameProperties.roundLoser).toBe("bob");
-    expect(cupSize(state, "bob")).toBe(4);
-    expect(cupSize(state, "alice")).toBe(5);
+    await expectLoser(4, "bob");
   });
 
   it("bidder loses when the actual count is below the bid quantity", async () => {
-    const state = await playChallenge(6);
-    expect(state.gameProperties.roundLoser).toBe("alice");
-    expect(cupSize(state, "alice")).toBe(4);
-    expect(cupSize(state, "bob")).toBe(5);
+    await expectLoser(6, "alice");
   });
 
   it("rolls every dealt die to a face in 1..6 during setup", async () => {
@@ -414,7 +424,8 @@ describe("Compiler e2e — Liar's Dice full game", () => {
         const messagesBefore = messages.length;
         const roundStart = controller.getState();
         const counts = faceCounts(roundStart);
-        expect([...counts.values()].reduce((a, b) => a + b, 0)).toBe(alive.reduce((n, p) => n + dice[p], 0));
+        const diceInPlay = alive.reduce((n, p) => n + dice[p], 0);
+        expect([...counts.values()].reduce((a, b) => a + b, 0)).toBe(diceInPlay);
 
         // Seat order after the starter (live seats only) fixes who bids last and who challenges.
         const bidderCount = round.raises.length + 1;
@@ -443,8 +454,8 @@ describe("Compiler e2e — Liar's Dice full game", () => {
 
           const quantityPrompt = controller.promptFor(actor)!;
           expect(quantityPrompt.input.id).toBe("quantity");
-          // Same quantity is only legal while a higher face remains.
-          expect(quantityPrompt.options).toEqual(range(prev[1] === 6 ? prev[0] + 1 : Math.max(prev[0], 1), 30));
+          // Same quantity is only legal while a higher face remains; quantity is capped at the dice in play.
+          expect(quantityPrompt.options).toEqual(range(prev[1] === 6 ? prev[0] + 1 : Math.max(prev[0], 1), diceInPlay));
           await controller.processAction({ playerId: actor, value: quantity });
 
           const facePrompt = controller.promptFor(actor)!;
@@ -467,27 +478,39 @@ describe("Compiler e2e — Liar's Dice full game", () => {
 
         await controller.processAction({ playerId: challenger, value: { kind: "act", actionId: "challenge" } });
 
-        dice[round.loser] -= 1;
-        alive = SEATS.filter((p) => dice[p] > 0);
+        // The challenge decides the round and reveals the dice; nobody loses a die until the review step.
         const afterChallenge = controller.getState();
         expect(messages.slice(messagesBefore)).toEqual([
           ...bids.map(([q, f], j) => `${bidders[j]} bids ${q} dice showing ${f}s.`),
-          `The bid of ${prev[0]} ${prev[1]}s by ${finalBidder} was challenged — ${round.loser} loses a die.`,
+          `The bid of ${prev[0]} ${prev[1]}s by ${finalBidder} was challenged — actual count ${actualCount} — ${round.loser} loses a die.`,
         ]);
         expect(afterChallenge.gameProperties.roundLoser).toBe(round.loser);
+        expect(afterChallenge.gameProperties.actualCount).toBe(actualCount);
         for (const seat of SEATS) {
           expect(cupIds(afterChallenge, seat)).toHaveLength(dice[seat]);
-          expect(Boolean(afterChallenge.players[seat].properties.eliminated)).toBe(dice[seat] === 0);
+        }
+        expect(controller.pendingPrompts.size).toBe(1);
+        expect(controller.currentPrompt?.awaiting).toBe(round.loser);
+        expect(controller.currentPrompt?.input.id).toBe("ready");
+
+        await controller.processAction({ playerId: round.loser, value: true });
+
+        dice[round.loser] -= 1;
+        alive = SEATS.filter((p) => dice[p] > 0);
+        const afterReview = controller.getState();
+        for (const seat of SEATS) {
+          expect(cupIds(afterReview, seat)).toHaveLength(dice[seat]);
+          expect(Boolean(afterReview.players[seat].properties.eliminated)).toBe(dice[seat] === 0);
         }
 
         if (i < ROUNDS.length - 1) {
-          // startNextRound runs without input, so the next round is already open and the
+          // The review step ran, so the next round is already open and the
           // loser (or the next live seat when the loser was just eliminated) is prompted.
           expect(controller.isComplete).toBe(false);
-          expect(afterChallenge.gameProperties.currentBidQuantity).toBe(0);
-          expect(afterChallenge.gameProperties.currentBidFace).toBe(0);
-          expect(afterChallenge.gameProperties.currentBidder).toBe("");
-          expect(afterChallenge.gameProperties.challengeMade).toBe(false);
+          expect(afterReview.gameProperties.currentBidQuantity).toBe(0);
+          expect(afterReview.gameProperties.currentBidFace).toBe(0);
+          expect(afterReview.gameProperties.currentBidder).toBe("");
+          expect(afterReview.gameProperties.challengeMade).toBe(false);
           starter = liveSeatFrom(round.loser, alive, true);
           expect(controller.pendingPrompts.size).toBe(1);
           expect(controller.currentPrompt?.awaiting).toBe(starter);
