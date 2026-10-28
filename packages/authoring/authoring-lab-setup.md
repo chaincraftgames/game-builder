@@ -40,6 +40,34 @@ Keep `briefs/` **outside** run folders — each run gets a copy of only its own 
 mkdir -p ~/cc-lab/{packages,briefs,runs,claude-config}
 ```
 
+### 2.1 Building the packages
+
+The tarballs come from two repos, cloned **side by side**:
+
+| Repo | URL | Version |
+|---|---|---|
+| game-builder | (your existing checkout) | branch `dev-preview` |
+| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `d00a166` (pairs with game-builder `e2ce3845`) |
+
+```bash
+# from the folder that contains game-builder/
+git clone https://github.com/chaincraftgames/chaincraft-runtime.git
+git -C chaincraft-runtime checkout d00a166
+cd game-builder
+npm install
+npm run pack:packages
+cp pack-out/*.tgz ~/cc-lab/packages/
+```
+
+- `pack:packages` looks for the runtime at `../chaincraft-runtime`. If it lives elsewhere, run
+  `CHAINCRAFT_RUNTIME_DIR=/path/to/chaincraft-runtime npm run pack:packages`.
+- Check `pack-out/manifest.json`: every package should show `dirty: false`, and the runtime
+  `commit` should match the one above. Record it as `engine_version` in `results.csv`.
+- Start from a clean `dev-preview` checkout so the game-builder packages are not marked dirty.
+- When game-builder moves to a newer commit, check which runtime commit it needs and update the
+  table above.
+- One engine version per batch: clear `~/cc-lab/packages/` before copying in a new set.
+
 ---
 
 ## 3. VS Code + GitHub Copilot
