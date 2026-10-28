@@ -37,6 +37,14 @@ export type {
 /** Reserved inventory ID: every catalog piece starts here before setup effects run. */
 export const UNASSIGNED_INVENTORY_ID = "game:unassigned";
 
+export const CompileCode = {
+  NoExecutor: "no-executor",
+  UnresolvedRef: "unresolved-ref",
+  UnknownPiece: "unknown-piece",
+} as const;
+
+export type CompileCode = (typeof CompileCode)[keyof typeof CompileCode];
+
 /** The mutable intermediate artifact passed between assembler phases. */
 export interface ModuleBuilder {
   specId: string;

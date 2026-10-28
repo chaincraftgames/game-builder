@@ -17,7 +17,7 @@
  */
 
 import type { ModularGameSpec } from "#gamedef/index.js";
-import type { SpecValidator, ValidationError } from "../types.js";
+import { ValidationCode, type SpecValidator, type ValidationError } from "../types.js";
 
 /** True if any game-level mechanic auto-wires an endCondition onto the root loop. */
 function mechanicsAutoWireRootEnd(spec: ModularGameSpec): boolean {
@@ -51,6 +51,7 @@ function checkNode(
           `Loop node has no exit condition — add an "endCondition", a "count", ` +
           `or a game-level mechanic that auto-wires an end condition ` +
           `(e.g., chaincraft:score-track with winAt)`,
+        code: ValidationCode.FlowIntegrity,
       });
     }
 
@@ -81,12 +82,12 @@ export class FlowIntegrityValidator implements SpecValidator {
 
     const root = spec.flow.root;
     if (!root) {
-      errors.push({ path: "flow.root", message: "Flow module must have a root node" });
+      errors.push({ path: "flow.root", message: "Flow module must have a root node", code: ValidationCode.FlowIntegrity });
       return errors;
     }
 
     if ((root as Record<string, unknown>)["kind"] !== "game") {
-      errors.push({ path: "flow.root", message: 'Root node must be kind: "game"' });
+      errors.push({ path: "flow.root", message: 'Root node must be kind: "game"', code: ValidationCode.FlowIntegrity });
       return errors;
     }
 

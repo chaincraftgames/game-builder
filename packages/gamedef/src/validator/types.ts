@@ -9,11 +9,27 @@
 
 import type { ModularGameSpec } from "#gamedef/index.js";
 
+export const ValidationCode = {
+  Schema: "schema",
+  UnresolvedRef: "unresolved-ref",
+  InvalidRefUsage: "invalid-ref-usage",
+  DuplicateId: "duplicate-id",
+  FlowIntegrity: "flow-integrity",
+  FaceTable: "face-table",
+  ActorContext: "actor-context",
+} as const;
+
+export type ValidationCode = (typeof ValidationCode)[keyof typeof ValidationCode];
+
 export interface ValidationError {
   /** Dot-path to the field that failed, e.g. "actions.actions[0].effects[1]" */
   path: string;
   /** Human-readable description of the failure */
   message: string;
+  /** Machine-facing error class */
+  code: ValidationCode;
+  /** For unresolved-ref errors: the ids that would have resolved. Sorted. */
+  knownIds?: string[];
 }
 
 export interface ValidationResult {

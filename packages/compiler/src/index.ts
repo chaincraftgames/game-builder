@@ -3,25 +3,28 @@ export {
   compilePredicate,
   parseExpression,
   ExpressionError,
-} from './expressions/index.js';
+} from '#compiler/expressions/index.js';
 
 export type {
   Expr,
   EvalContext,
   ExprFn,
   PredicateFn,
-} from './expressions/index.js';
+} from '#compiler/expressions/index.js';
 
 export { 
   assembleConfig,
   assembleInitialState, 
   assembleModule,
-  assembleSession 
-} from './assembler/index.js';
+  assembleSession,
+  CompileError,
+  CompileCode,
+} from '#compiler/assembler/index.js';
 export type { 
+  CompileIssue,
   AssembledSessionFactory, 
   GameConfig, 
   GameState, 
   GameSession 
-} from './assembler/index.js';
+} from '#compiler/assembler/index.js';
 

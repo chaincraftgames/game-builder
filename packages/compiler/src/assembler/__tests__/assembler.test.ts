@@ -23,8 +23,10 @@ import {
   assembleConfig, assembleInitialState, assembleSession,
   buildExecutorRegistry, assembleEffectDefs, assembleActions,
   assembleFlow, assembleModule, walkEffectBody,
+  CompileError,
   UNASSIGNED_INVENTORY_ID,
 } from '../index.js';
+import { linkAndValidate } from '../module.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -880,7 +882,93 @@ describe('assembleModule — High Card', () => {
     // If assembleModule doesn't throw, link/validate passed
     expect(() => assembleModule(spec, 'high-card')).not.toThrow();
   });
+
+  it('throws CompileError with structured issues for a flow hook ref to a missing effect', () => {
+    const knownIds = Object.keys(assembleModule(loadHighCardSpec(), 'high-card').effectDefs).sort();
+    const broken = loadHighCardSpec();
+    const root = broken.flow!.root as unknown as { hooks: { onEnter: Array<{ effectRef: string }> } };
+    root.hooks.onEnter[0] = { effectRef: 'fillDec' };
+
+    let error: unknown;
+    try {
+      assembleModule(broken, 'high-card');
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(CompileError);
+    const issues = (error as CompileError).issues;
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toEqual({
+      code: 'unresolved-ref',
+      ref: 'fillDec',
+      knownIds,
+      message: 'Flow hook ref "fillDec" has no effectDef',
+    });
+    expect(knownIds).toContain('fillDeck');
+    expect((error as CompileError).message).toBe(
+      'Module link/validate failed:\n  Flow hook ref "fillDec" has no effectDef',
+    );
+  });
+
+  it('reports unresolved action effect refs with unresolved-ref', () => {
+    const knownIds = Object.keys(assembleModule(loadHighCardSpec(), 'high-card').effectDefs).sort();
+    const broken = loadHighCardSpec();
+    broken.actions!.actions[0].steps.push({ effectRef: 'nope' } as never);
+
+    const issues = compileIssues(() => assembleModule(broken, 'high-card'));
+
+    expect(issues).toEqual([
+      {
+        code: 'unresolved-ref',
+        ref: 'nope',
+        knownIds,
+        message: 'Action "playCard" effect ref "nope" has no effectDef',
+      },
+    ]);
+  });
+
+  it('reports an effect kind with no executor with no-executor', () => {
+    const broken = loadHighCardSpec();
+    broken.effects!.effects.push({ id: 'mystery', effect: 'no-such-kind' } as never);
+
+    const issues = compileIssues(() => assembleModule(broken, 'high-card'));
+
+    expect(issues).toEqual([
+      {
+        code: 'no-executor',
+        ref: 'mystery',
+        message: 'Effect def "mystery" uses kind "no-such-kind" — no executor registered',
+      },
+    ]);
+  });
+
+  it('reports a passive activation for an unknown piece with unknown-piece', () => {
+    const passive = { binding: { kind: 'piece', pieceId: 'ghost' } } as never;
+    const issues = compileIssues(() =>
+      linkAndValidate({ kind: 'game', children: [] } as never, {}, {}, {}, [passive], new Set(['card2', 'card1'])),
+    );
+
+    expect(issues).toEqual([
+      {
+        code: 'unknown-piece',
+        ref: 'ghost',
+        knownIds: ['card1', 'card2'],
+        message: 'Passive activation for unknown pieceId "ghost"',
+      },
+    ]);
+  });
 });
+
+function compileIssues(fn: () => unknown) {
+  try {
+    fn();
+  } catch (e) {
+    expect(e).toBeInstanceOf(CompileError);
+    return (e as CompileError).issues;
+  }
+  throw new Error('expected CompileError');
+}
 
 describe('assembled High Card — e2e setup', () => {
   it('starts a game session and fires onEnter hooks (cards dealt)', async () => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Packs @chaincraft/runtime, gamedef and compiler into installable tarballs under pack-out/.
+// Packs @chaincraft/runtime, gamedef, compiler and authoring into installable tarballs under pack-out/.
 // Internal dependencies are pinned to exact versions in the packed manifests only; sources are untouched.
 //
 // Usage: node scripts/pack.mjs [--skip-build] [--verify]
@@ -25,6 +25,7 @@ const PACKAGES = [
   { dir: runtimeDir },
   { dir: path.join(root, "packages/gamedef") },
   { dir: path.join(root, "packages/compiler") },
+  { dir: path.join(root, "packages/authoring") },
 ];
 
 const DEP_FIELDS = ["dependencies", "peerDependencies", "optionalDependencies"];
@@ -128,6 +129,18 @@ if (verify) {
     const specifiers = ["@chaincraft/runtime", "@chaincraft/gamedef", "@chaincraft/gamedef/validator", "@chaincraft/compiler"];
     const script = `await Promise.all(${JSON.stringify(specifiers)}.map((s) => import(s))); console.log("verify: all packages import OK");`;
     run("node", ["--input-type=module", "-e", script], dir);
+
+    // Exercises the installed CLI end to end; the high-card example covers the single-file spec layout.
+    run("npx", ["--no-install", "chaincraft", "--version"], dir);
+    run("npx", ["--no-install", "chaincraft", "init"], dir);
+    cpSync(path.join(root, "packages/gamedef/examples/high-card.yaml"), path.join(dir, "spec/high-card.yaml"));
+    run("npx", ["--no-install", "chaincraft", "validate"], dir);
+    run("npx", ["--no-install", "chaincraft", "compile"], dir);
+
+    // --version is not traced, so init, validate and compile each leave one line.
+    const traced = readFileSync(path.join(dir, ".chaincraft/log.jsonl"), "utf-8").trim().split("\n");
+    if (traced.length !== 3) throw new Error(`verify: expected 3 trace lines, found ${traced.length}`);
+    console.log("verify: chaincraft init/validate/compile OK");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

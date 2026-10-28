@@ -22,6 +22,7 @@
 
 import { ModularGameSpecSchema } from "#gamedef/index.js";
 import type { ModularGameSpec } from "#gamedef/index.js";
+import { ValidationCode } from "#gamedef/validator/types.js";
 import type { SpecValidator } from "#gamedef/validator/types.js";
 import { ResolveRefsValidator } from "#gamedef/validator/validators/resolve-refs.js";
 import { DuplicateIdsValidator } from "#gamedef/validator/validators/duplicate-ids.js";
@@ -31,6 +32,7 @@ import { ActorContextValidator } from "#gamedef/validator/validators/actor-conte
 
 // Re-export types so consumers only need one import path.
 export type { ValidationError, ValidationResult, SpecValidator } from "./types.js";
+export { ValidationCode } from "#gamedef/validator/types.js";
 
 /**
  * Ordered list of spec validators run after schema validation passes.
@@ -58,6 +60,7 @@ export function validate(raw: unknown): import("./types.js").ValidationResult {
     const errors = parsed.error.issues.map((issue) => ({
       path: issue.path.join("."),
       message: issue.message,
+      code: ValidationCode.Schema,
     }));
     return { valid: false, errors };
   }

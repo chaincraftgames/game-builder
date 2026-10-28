@@ -18,6 +18,7 @@ export { assemblePassives } from "#compiler/assembler/passives.js";
 export { enumerateCatalogPieces } from "#compiler/assembler/catalog.js";
 export type { CatalogPieceEntry } from "#compiler/assembler/catalog.js";
 export type { ModuleBuilder } from "#compiler/assembler/types.js";
-export { assembleModule } from "#compiler/assembler/module.js";
+export { assembleModule, CompileError } from "#compiler/assembler/module.js";
+export type { CompileIssue } from "#compiler/assembler/module.js";
 export { createSeededRng } from "@chaincraft/runtime";
 export * from "#compiler/assembler/types.js";

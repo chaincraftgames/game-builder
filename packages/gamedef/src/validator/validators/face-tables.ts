@@ -7,7 +7,7 @@
  */
 
 import type { ModularGameSpec } from "#gamedef/index.js";
-import type { SpecValidator, ValidationError } from "../types.js";
+import { ValidationCode, type SpecValidator, type ValidationError } from "../types.js";
 
 export class FaceTablesValidator implements SpecValidator {
   readonly name = "FaceTables";
@@ -24,12 +24,14 @@ export class FaceTablesValidator implements SpecValidator {
         errors.push({
           path,
           message: `Gamepiece type "${type.id}" declares both faceCount and faces — use only one`,
+          code: ValidationCode.FaceTable,
         });
       }
       if (type.category === "dice" && !hasCount && !hasFaces) {
         errors.push({
           path,
           message: `Dice type "${type.id}" must declare faceCount or faces — rolling it would do nothing`,
+          code: ValidationCode.FaceTable,
         });
       }
     });

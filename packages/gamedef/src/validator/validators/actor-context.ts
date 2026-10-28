@@ -18,7 +18,7 @@
  */
 
 import type { ModularGameSpec } from "#gamedef/index.js";
-import type { SpecValidator, ValidationError } from "../types.js";
+import { ValidationCode, type SpecValidator, type ValidationError } from "../types.js";
 
 type Obj = Record<string, unknown>;
 
@@ -63,6 +63,7 @@ export class ActorContextValidator implements SpecValidator {
         errors.push({
           path,
           message: `${label} (${kind}): ${problem}, but this runs in a context with no acting player. ${fix}`,
+          code: ValidationCode.ActorContext,
         });
 
       for (const field of SELECTOR_FIELDS[kind] ?? []) {

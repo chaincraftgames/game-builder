@@ -14,7 +14,7 @@
  */
 
 import type { ModularGameSpec } from "#gamedef/index.js";
-import type { SpecValidator, ValidationError } from "../types.js";
+import { ValidationCode, type SpecValidator, type ValidationError } from "../types.js";
 
 function checkDuplicates(
   ids: string[],
@@ -27,6 +27,7 @@ function checkDuplicates(
       errors.push({
         path: modulePath,
         message: `Duplicate ID "${id}" — IDs must be unique within this module`,
+        code: ValidationCode.DuplicateId,
       });
     }
     seen.add(id);
@@ -46,6 +47,7 @@ function collectFlowNodeIds(
       errors.push({
         path,
         message: `Duplicate flow node ID "${n["id"]}" — node IDs must be unique within the flow tree`,
+        code: ValidationCode.DuplicateId,
       });
     }
     seen.add(n["id"]);

@@ -33,6 +33,21 @@ import { assembleSession } from "#compiler/assembler/session.js";
 import type { GameConfig } from "#compiler/assembler/types.js";
 import { assemblePassives } from "#compiler/assembler/passives.js";
 import { enumerateCatalogPieces } from "#compiler/assembler/catalog.js";
+import { CompileCode } from "#compiler/assembler/types.js";
+
+export interface CompileIssue {
+  code: CompileCode;
+  message: string;
+  ref?: string;
+  knownIds?: string[];
+}
+
+export class CompileError extends Error {
+  constructor(readonly issues: CompileIssue[]) {
+    super(`Module link/validate failed:\n  ${issues.map((i) => i.message).join("\n  ")}`);
+    this.name = "CompileError";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Link / validate
@@ -65,7 +80,7 @@ function collectFlowRefs(node: FlowNode, out: Set<string>): void {
  * Verify all refs resolve to effectDefs and all effectDef kinds have executors.
  * Throws a single aggregated error listing all problems.
  */
-function linkAndValidate(
+export function linkAndValidate(
   flow: FlowNode,
   actions: Record<string, ActionDef>,
   effectDefs: Record<string, Record<string, unknown>>,
@@ -73,15 +88,18 @@ function linkAndValidate(
   passiveActivations?: readonly PassiveActivation[],
   pieceIds?: Set<string>,
 ): void {
-  const errors: string[] = [];
+  const errors: CompileIssue[] = [];
+  const knownEffectIds = Object.keys(effectDefs).sort();
 
   // All effect def kinds must have an executor
   for (const [id, def] of Object.entries(effectDefs)) {
     const kind = def.kind as string | undefined;
     if (kind && !effects[kind]) {
-      errors.push(
-        `Effect def "${id}" uses kind "${kind}" — no executor registered`,
-      );
+      errors.push({
+        code: CompileCode.NoExecutor,
+        ref: id,
+        message: `Effect def "${id}" uses kind "${kind}" — no executor registered`,
+      });
     }
   }
 
@@ -90,15 +108,23 @@ function linkAndValidate(
   collectFlowRefs(flow, flowRefs);
   for (const ref of flowRefs) {
     if (!effectDefs[ref]) {
-      errors.push(`Flow hook ref "${ref}" has no effectDef`);
+      errors.push({
+        code: CompileCode.UnresolvedRef,
+        ref,
+        knownIds: knownEffectIds,
+        message: `Flow hook ref "${ref}" has no effectDef`,
+      });
     }
   }
 
   for (const passive of passiveActivations ?? []) {
     if (passive.binding.kind === "piece" && !pieceIds?.has(passive.binding.pieceId)) {
-      errors.push(
-        `Passive activation for unknown pieceId "${passive.binding.pieceId}"`,
-      );
+      errors.push({
+        code: CompileCode.UnknownPiece,
+        ref: passive.binding.pieceId,
+        knownIds: [...(pieceIds ?? [])].sort(),
+        message: `Passive activation for unknown pieceId "${passive.binding.pieceId}"`,
+      });
     }
   }
 
@@ -106,16 +132,17 @@ function linkAndValidate(
   for (const [actionId, action] of Object.entries(actions)) {
     for (const eff of action.segments.flatMap((s) => s.effects)) {
       if ("ref" in eff && typeof eff.ref === "string" && !effectDefs[eff.ref]) {
-        errors.push(
-          `Action "${actionId}" effect ref "${eff.ref}" has no effectDef`,
-        );
+        errors.push({
+          code: CompileCode.UnresolvedRef,
+          ref: eff.ref,
+          knownIds: knownEffectIds,
+          message: `Action "${actionId}" effect ref "${eff.ref}" has no effectDef`,
+        });
       }
     }
   }
 
-  if (errors.length > 0) {
-    throw new Error(`Module link/validate failed:\n  ${errors.join("\n  ")}`);
-  }
+  if (errors.length > 0) throw new CompileError(errors);
 }
 
 // ---------------------------------------------------------------------------

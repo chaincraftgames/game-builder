@@ -16,7 +16,9 @@
  */
 
 import type { ModularGameSpec } from "#gamedef/index.js";
-import type { SpecValidator, ValidationError } from "../types.js";
+import { ValidationCode, type SpecValidator, type ValidationError } from "../types.js";
+
+const sorted = (ids: Set<string>): string[] => [...ids].sort();
 
 /** Recursively collect all `id` strings from a flow node tree. */
 function collectFlowNodeIds(node: unknown, ids: Set<string>): void {
@@ -53,6 +55,8 @@ export class ResolveRefsValidator implements SpecValidator {
           errors.push({
             path: `actions.actions[${ai}].steps[${si}].effectRef`,
             message: `Effect ref "${step.effectRef}" not found in effects module`,
+            code: ValidationCode.UnresolvedRef,
+            knownIds: sorted(effectIds),
           });
         }
       });
@@ -65,6 +69,8 @@ export class ResolveRefsValidator implements SpecValidator {
           errors.push({
             path: `mechanics[${mi}].evaluationInventory`,
             message: `Inventory "${mechanic.evaluationInventory}" not found in inventories module`,
+            code: ValidationCode.UnresolvedRef,
+            knownIds: sorted(inventoryIds),
           });
         }
         if (!mechanic.winnerToState && !mechanic.winningPieceToState) {
@@ -72,6 +78,7 @@ export class ResolveRefsValidator implements SpecValidator {
             path: `mechanics[${mi}]`,
             message:
               "chaincraft:dominant-gamepiece requires at least one of 'winnerToState' or 'winningPieceToState'",
+            code: ValidationCode.InvalidRefUsage,
           });
         }
       }
@@ -84,6 +91,7 @@ export class ResolveRefsValidator implements SpecValidator {
           errors.push({
             path: `gamepieceTypes.types[${ti}].properties[${pi}].source`,
             message: `Property "${prop.id}" has source: runtime but mutable: false; runtime state must be mutable`,
+            code: ValidationCode.InvalidRefUsage,
           });
         }
       });
@@ -98,6 +106,8 @@ export class ResolveRefsValidator implements SpecValidator {
             errors.push({
               path: `gamepieceTypes.types[${ti}].mechanics[${mi}].action`,
               message: `Action ref "${actionId}" not found in actions module`,
+              code: ValidationCode.UnresolvedRef,
+              knownIds: sorted(actionIds),
             });
           }
         }
@@ -108,6 +118,8 @@ export class ResolveRefsValidator implements SpecValidator {
             errors.push({
               path: `gamepieceTypes.types[${ti}].mechanics[${mi}].availableInSubflows[${si}]`,
               message: `Flow node ID "${nodeId}" not found in flow tree`,
+              code: ValidationCode.UnresolvedRef,
+              knownIds: sorted(flowNodeIds),
             });
           }
         });
@@ -127,6 +139,8 @@ export class ResolveRefsValidator implements SpecValidator {
         errors.push({
           path: `catalog.entries[${ei}].typeId`,
           message: `Gamepiece type "${entry.typeId}" not found in gamepieceTypes module`,
+          code: ValidationCode.UnresolvedRef,
+          knownIds: sorted(gamepieceTypeIds),
         });
       }
 
@@ -150,11 +164,13 @@ export class ResolveRefsValidator implements SpecValidator {
             errors.push({
               path: `catalog.entries[${ei}].properties.${key}`,
               message: `Property "${key}" not declared on gamepiece type "${entry.typeId}"`,
+              code: ValidationCode.InvalidRefUsage,
             });
           } else if (prop.source === "runtime") {
             errors.push({
               path: `catalog.entries[${ei}].properties.${key}`,
               message: `Property "${key}" has source: runtime and cannot be set in the catalog`,
+              code: ValidationCode.InvalidRefUsage,
             });
           }
         }
@@ -166,12 +182,16 @@ export class ResolveRefsValidator implements SpecValidator {
             errors.push({
               path: `catalog.entries[${ei}].actionBindings.${slotId}`,
               message: `Action slot "${slotId}" not found on gamepiece type "${entry.typeId}"`,
+              code: ValidationCode.UnresolvedRef,
+              knownIds: sorted(actionSlotIds),
             });
           }
           if (typeof value === "string" && !actionIds.has(value)) {
             errors.push({
               path: `catalog.entries[${ei}].actionBindings.${slotId}`,
               message: `Action "${value}" not found in actions module`,
+              code: ValidationCode.UnresolvedRef,
+              knownIds: sorted(actionIds),
             });
           }
         }
@@ -183,12 +203,16 @@ export class ResolveRefsValidator implements SpecValidator {
             errors.push({
               path: `catalog.entries[${ei}].passiveBindings.${slotId}`,
               message: `Passive slot "${slotId}" not found on gamepiece type "${entry.typeId}"`,
+              code: ValidationCode.UnresolvedRef,
+              knownIds: sorted(passiveSlotIds),
             });
           }
           if (typeof value === "string" && !passiveIds.has(value)) {
             errors.push({
               path: `catalog.entries[${ei}].passiveBindings.${slotId}`,
               message: `Passive "${value}" not found in effects.passives`,
+              code: ValidationCode.UnresolvedRef,
+              knownIds: sorted(passiveIds),
             });
           }
         }

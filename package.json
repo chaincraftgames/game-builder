@@ -10,7 +10,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "clean": "rm -rf dist *.tsbuildinfo",
-    "build:packages": "npm run build -w @chaincraft/gamedef -w @chaincraft/compiler",
+    "build:packages": "npm run build -w @chaincraft/gamedef -w @chaincraft/compiler -w @chaincraft/authoring",
     "pack:packages": "node scripts/pack.mjs",
     "build": "npm run clean && npm run build:packages && tsc -p tsconfig.prod.json",
     "build:dev": "tsc",
