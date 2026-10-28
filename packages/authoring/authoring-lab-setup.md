@@ -53,8 +53,9 @@ The tarballs come from two repos, cloned **side by side**:
 # from the folder that contains game-builder/
 git clone https://github.com/chaincraftgames/chaincraft-runtime.git
 git -C chaincraft-runtime checkout d00a166
+(cd chaincraft-runtime && npm ci)
 cd game-builder
-npm install
+npm ci
 npm run pack:packages
 cp pack-out/*.tgz ~/cc-lab/packages/
 ```
@@ -63,7 +64,8 @@ cp pack-out/*.tgz ~/cc-lab/packages/
   `CHAINCRAFT_RUNTIME_DIR=/path/to/chaincraft-runtime npm run pack:packages`.
 - Check `pack-out/manifest.json`: every package should show `dirty: false`, and the runtime
   `commit` should match the one above. Record it as `engine_version` in `results.csv`.
-- Start from a clean `dev-preview` checkout so the game-builder packages are not marked dirty.
+- Use `npm ci`, not `npm install`: it never rewrites `package-lock.json`, so a clean checkout
+  stays clean. If `npm ci` fails on a lockfile mismatch, report it rather than working around it.
 - When game-builder moves to a newer commit, check which runtime commit it needs and update the
   table above.
 - One engine version per batch: clear `~/cc-lab/packages/` before copying in a new set.
@@ -147,7 +149,7 @@ npm install "$HOME"/cc-lab/packages/*.tgz
 npx chaincraft init
 cp "$HOME/cc-lab/briefs/$brief.md" REQUEST.md
 printf "node_modules/\n" > .gitignore
-git init -q && git add -A && git commit -qm "baseline"
+git init -q && git add -A && git commit -qm "baseline" && git tag baseline
 echo "$run"
 ```
 
