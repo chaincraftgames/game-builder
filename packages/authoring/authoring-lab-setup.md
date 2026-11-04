@@ -47,12 +47,12 @@ The tarballs come from two repos, cloned **side by side**:
 | Repo | URL | Version |
 |---|---|---|
 | game-builder | (your existing checkout) | branch `dev-preview` |
-| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `8b60bb8` (pairs with game-builder `41912d8`) |
+| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `8b60bb8` |
 
 ```bash
 # from the folder that contains game-builder/
 git clone https://github.com/chaincraftgames/chaincraft-runtime.git
-git -C chaincraft-runtime checkout d00a166
+git -C chaincraft-runtime checkout <runtime commit from the table above>
 (cd chaincraft-runtime && npm ci)
 cd game-builder
 npm ci
@@ -63,7 +63,8 @@ cp pack-out/*.tgz ~/cc-lab/packages/
 - `pack:packages` looks for the runtime at `../chaincraft-runtime`. If it lives elsewhere, run
   `CHAINCRAFT_RUNTIME_DIR=/path/to/chaincraft-runtime npm run pack:packages`.
 - Check `pack-out/manifest.json`: every package should show `dirty: false`, and the runtime
-  `commit` should match the one above. Record it as `engine_version` in `results.csv`.
+  `commit` should match the one above. Record the game-builder commit (`gameBuilder.commit`)
+  and the runtime commit as `engine_version` in `results.csv`.
 - Use `npm ci`, not `npm install`: it never rewrites `package-lock.json`, so a clean checkout
   stays clean. If `npm ci` fails on a lockfile mismatch, report it rather than working around it.
 - When game-builder moves to a newer commit, check which runtime commit it needs and update the
