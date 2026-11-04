@@ -88,9 +88,97 @@ describe("init", () => {
   });
 });
 
+describe("docs", () => {
+  it.each([[[]], [["schema"]], [["schema", "flow"]], [["expressions"]], [["example"]], [["example", "flow"]]])(
+    "docs %j exits 0 with output, outside a project",
+    (args) => {
+      const r = cc(["docs", ...(args as string[])]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toMatch(/^chaincraft \S+ \(runtime \S+\)\n\n\S/);
+      expect(r.stdout.length).toBeGreaterThan(200);
+      expect(() => readFileSync(join(dir, ".chaincraft", "log.jsonl"))).toThrow();
+    },
+  );
+
+  it("an unknown topic exits 1 and lists known ids", () => {
+    const r = cc(["docs", "bogus"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("unknown-topic");
+    expect(r.stdout).toContain("known ids: ");
+    expect(r.stdout).toContain("schema");
+  });
+
+  it("lists every known id for an unknown schema query, without truncation", () => {
+    const r = cc(["docs", "schema", "nope", "--json"]);
+    const ids: string[] = JSON.parse(r.stdout).diagnostics[0].knownIds;
+    expect(ids.length).toBeGreaterThan(30);
+    const text = cc(["docs", "schema", "nope"]).stdout;
+    expect(text).not.toContain("more)");
+    expect(text).toContain(ids.at(-1)!);
+  });
+
+  it("rejects a third argument", () => {
+    expect(cc(["docs", "schema", "flow", "extra"]).status).toBe(2);
+  });
+
+  it("a no-argument topic given an argument is unknown-topic without topic ids", () => {
+    const r = cc(["docs", "expressions", "x", "--json"]);
+    expect(r.status).toBe(1);
+    const [diagnostic] = JSON.parse(r.stdout).diagnostics;
+    expect(diagnostic.code).toBe("unknown-topic");
+    expect(diagnostic.message).toContain("takes no argument");
+    expect(diagnostic.knownIds).toBeUndefined();
+    expect(cc(["docs", "expressions", "x"]).stdout).not.toContain("known ids");
+  });
+
+  it("inside a project, appends a log line with the args", () => {
+    expect(cc(["init"]).status).toBe(0);
+    expect(cc(["docs", "schema", "flow"]).status).toBe(0);
+    expect(cc(["docs", "bogus"]).status).toBe(1);
+    const lines = logLines();
+    expect(lines.at(-2)).toMatchObject({ command: "docs", args: ["docs", "schema", "flow"], exitCode: 0 });
+    expect(lines.at(-1)).toMatchObject({ command: "docs", args: ["docs", "bogus"], exitCode: 1 });
+  });
+
+  it("--json has the documented shape", () => {
+    const ok = JSON.parse(cc(["docs", "expressions", "--json"]).stdout);
+    expect(ok).toMatchObject({ command: "docs", ok: true, diagnostics: [] });
+    expect(ok.text).toContain("Condition expressions");
+    expect(ok.versions.authoring).toEqual(expect.any(String));
+    const bad = JSON.parse(cc(["docs", "bogus", "--json"]).stdout);
+    expect(bad).toMatchObject({ command: "docs", ok: false });
+    expect(bad.diagnostics[0].code).toBe("unknown-topic");
+  });
+});
+
 describe("validate / compile", () => {
   beforeEach(() => {
     cc(["init"]);
+  });
+
+  it("points at the schema page after a schema error", () => {
+    writeSpec((spec) => {
+      (spec.flow as Record<string, unknown>).bogusKey = 1;
+    });
+    const r = cc(["validate"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("schema");
+    expect(r.stdout).toMatch(/\n\nsee `chaincraft docs schema flow`$/m);
+  });
+
+  it("points at the bare schema index for an unknown module", () => {
+    writeFileSync(join(dir, "spec", "typo.yaml"), "fow: {}\n");
+    const r = cc(["validate"]);
+    expect(r.stdout).toContain("unknown-module");
+    expect(r.stdout).toMatch(/\n\nsee `chaincraft docs schema`$/m);
+  });
+
+  it.each([["schema flow"], ["schema"]])("the pointer `docs %s` exits 0", (args) => {
+    expect(cc(["docs", ...args.split(" ")]).status).toBe(0);
+  });
+
+  it("prints no schema pointer for other errors", () => {
+    expect(cc(["validate"]).stdout).not.toContain("see `chaincraft docs");
   });
 
   it("empty spec/ exits 1 with no-spec-files", () => {

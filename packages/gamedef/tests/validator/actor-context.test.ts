@@ -16,7 +16,7 @@ const INVENTORIES = {
 
 const DUMMY_TURN = {
   kind: "turn",
-  actor: "all-players",
+  actor: "all",
   grammar: { kind: "action", ref: "dummy" },
 };
 
@@ -52,13 +52,13 @@ describe("ActorContext — hook selectors", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].path).toBe("flow.root.hooks.onEnter[0]");
     expect(errors[0].message).toContain('"hand"');
-    expect(errors[0].message).toContain("player: { kind: all }");
+    expect(errors[0].message).toContain("player: all");
   });
 
   it("accepts a player-scoped selector with player: all in a hook", () => {
     const errors = actorErrors(
       specWith(
-        [{ id: "rollHands", effect: "roll", pieces: { player: { kind: "all" }, inventory: "hand", select: "all" } }],
+        [{ id: "rollHands", effect: "roll", pieces: { player: "all", inventory: "hand", select: "all" } }],
         [{ effectRef: "rollHands" }],
       ),
     );
@@ -75,16 +75,16 @@ describe("ActorContext — hook selectors", () => {
     expect(errors).toHaveLength(0);
   });
 
-  it("rejects player kind actor / all-other in a hook", () => {
-    for (const kind of ["actor", "all-other"]) {
+  it("rejects player actor / all-other in a hook", () => {
+    for (const player of ["actor", "all-other"]) {
       const errors = actorErrors(
         specWith(
-          [{ id: "rollHands", effect: "roll", pieces: { player: { kind }, inventory: "hand", select: "all" } }],
+          [{ id: "rollHands", effect: "roll", pieces: { player, inventory: "hand", select: "all" } }],
           [{ effectRef: "rollHands" }],
         ),
       );
       expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain(`"${kind}"`);
+      expect(errors[0].message).toContain(`"${player}"`);
     }
   });
 
@@ -132,7 +132,7 @@ describe("ActorContext — hook move destination and set-state", () => {
             id: "deal",
             effect: "move",
             from: { inventory: "deck", select: "top" },
-            to: { player: { kind: "stateRef", path: "game.property.p" }, inventory: "hand" },
+            to: { player: { stateRef: "game.property.p" }, inventory: "hand" },
           },
         ],
         [{ effectRef: "deal" }],
@@ -155,8 +155,60 @@ describe("ActorContext — hook move destination and set-state", () => {
   it("accepts a player-property set-state with target all", () => {
     const errors = actorErrors(
       specWith(
-        [{ id: "reset", effect: "set-state", path: "player.property.score", value: 0, target: { kind: "all" } }],
+        [{ id: "reset", effect: "set-state", path: "player.property.score", value: 0, target: "all" }],
         [{ effectRef: "reset" }],
+      ),
+    );
+    expect(errors).toHaveLength(0);
+  });
+});
+
+describe("ActorContext — hook recipients", () => {
+  it("rejects a message to actor / all-other in a hook", () => {
+    for (const to of ["actor", "all-other"]) {
+      const errors = actorErrors(
+        specWith([{ id: "say", effect: "message", to, template: "hi" }], [{ effectRef: "say" }]),
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain(`"to" is "${to}"`);
+    }
+  });
+
+  it("rejects a reveal to actor in a hook", () => {
+    const errors = actorErrors(
+      specWith(
+        [{ id: "show", effect: "reveal", pieces: { inventory: "deck", select: "top" }, to: "actor" }],
+        [{ effectRef: "show" }],
+      ),
+    );
+    expect(errors).toHaveLength(1);
+  });
+
+  it("rejects an llm-effect output to actor in a hook", () => {
+    const errors = actorErrors(
+      specWith(
+        [{ id: "unused", effect: "roll", pieces: { inventory: "deck", select: "all" } }],
+        [
+          {
+            effect: "llm-effect",
+            prompt: { computation: "Say hi." },
+            outputs: [{ field: "hi", message: { to: "actor" } }],
+          },
+        ],
+      ),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain("outputs[0].message.to");
+  });
+
+  it("accepts a message to all or a role in a hook", () => {
+    const errors = actorErrors(
+      specWith(
+        [
+          { id: "sayAll", effect: "message", to: "all", template: "hi" },
+          { id: "sayMafia", effect: "message", to: { roles: ["mafia"] }, template: "hi" },
+        ],
+        [{ effectRef: "sayAll" }, { effectRef: "sayMafia" }],
       ),
     );
     expect(errors).toHaveLength(0);

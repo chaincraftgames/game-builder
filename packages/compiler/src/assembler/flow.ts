@@ -6,8 +6,8 @@
 // effectDefs accumulator (same pattern as Phase 3 actions assembler).
 //
 // Vocabulary translation (anything else throws "not yet supported"):
-//   actor 'all-players' + no turnOrder            → 'round-robin' from seat 1
-//   actor 'all-players' + seat clockwise          → 'round-robin' (+ start)
+//   actor 'all' + no turnOrder                    → 'round-robin' from seat 1
+//   actor 'all' + seat clockwise                  → 'round-robin' (+ start)
 //   actor { player: selector } (no turnOrder)     → 'single'
 //   player selectors: 'first' (startingPlayer only), { stateRef } without offset
 //
@@ -120,7 +120,7 @@ function assembleTurnOrdering(
     if (actor.player === "first") unsupported(`actor { player: "first" }`);
     return { kind: "single", actor: assemblePlayerSelector(actor.player) };
   }
-  if (actor !== "all-players") unsupported(`actor ${JSON.stringify(actor)}`);
+  if (actor !== "all") unsupported(`actor ${JSON.stringify(actor)}`);
 
   if (!turnOrder) return { kind: "round-robin" };
   if (turnOrder.kind !== "seat") unsupported(`turnOrder kind '${turnOrder.kind}'`);

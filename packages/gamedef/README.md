@@ -126,7 +126,7 @@ npm run test:validator  # validator tests only
 src/
   index.ts              # top-level barrel — ModularGameSpecSchema + all re-exports
   modules/              # one file per spec module
-    common.ts           # shared primitives (JsonLogic, StatePath, IntRange)
+    common.ts           # shared primitives (ConditionExpression, Identifier, IntRange)
     metadata.ts
     players.ts
     gamepiece-types.ts

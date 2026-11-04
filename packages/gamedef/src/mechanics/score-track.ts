@@ -80,7 +80,7 @@
 import { z } from "zod";
 
 export const ScoreTrackMechanicSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("chaincraft:score-track"),
     id: z
       .string()
@@ -109,7 +109,7 @@ export const ScoreTrackMechanicSchema = z
         "Player or team property ID to keep in sync with marker position. " +
           "Forward reference to a property declared on the player/team in the players module. " +
           "The engine updates this property automatically when the marker advances. " +
-          "Other modules can read it via JsonLogic: { var: 'actor.property.<scoringProperty>' }.",
+          "Other modules can read it in expressions as actor.property.<scoringProperty>.",
       ),
     scope: z
       .enum(["player", "team"])

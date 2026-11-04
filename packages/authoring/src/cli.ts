@@ -1,19 +1,28 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { COMMANDS, USAGE, type Command } from "./commands.js";
+import { COMMANDS, USAGE, type Command } from "#authoring/commands.js";
 import {
   AuthoringCode,
   countDiagnostics,
   formatDiagnostic,
+  schemaPointer,
   sortDiagnostics,
   type Diagnostic,
-} from "./diagnostics.js";
-import { findProjectRoot, ManifestError, MANIFEST_FILE, readManifest, type Manifest } from "./project.js";
-import { compile, type CompileSummary } from "./tools/compile.js";
-import { init, InitConflictError } from "./tools/init.js";
-import { validate } from "./tools/validate.js";
-import { appendTrace } from "./trace.js";
-import { getVersions, type Versions } from "./versions.js";
+} from "#authoring/diagnostics.js";
+import { moduleKeys } from "#authoring/docs/registry.js";
+import {
+  findProjectRoot,
+  ManifestError,
+  MANIFEST_FILE,
+  readManifest,
+  type Manifest,
+} from "#authoring/project.js";
+import { compile, type CompileSummary } from "#authoring/tools/compile.js";
+import { docs } from "#authoring/tools/docs.js";
+import { init, InitConflictError } from "#authoring/tools/init.js";
+import { validate } from "#authoring/tools/validate.js";
+import { appendTrace } from "#authoring/trace.js";
+import { getVersions, type Versions } from "#authoring/versions.js";
 
 /** Result of one command, shared by the text, JSON and trace outputs. */
 interface Outcome {
@@ -24,6 +33,8 @@ interface Outcome {
   summary?: CompileSummary;
   /** Init only, on success; project-relative targets. */
   created?: string[];
+  /** Docs only, on success. */
+  text?: string;
 }
 
 /** Parses `argv` strictly; throws on unknown flags. */
@@ -32,7 +43,11 @@ function parse(argv: string[]) {
     args: argv,
     allowPositionals: true,
     strict: true,
-    options: { json: { type: "boolean" }, draft: { type: "boolean" }, version: { type: "boolean" } },
+    options: {
+      json: { type: "boolean" },
+      draft: { type: "boolean" },
+      version: { type: "boolean" },
+    },
   });
 }
 
@@ -42,35 +57,60 @@ function headerLine(versions: Versions): string {
 }
 
 /** One-line warning when the manifest's engine pins differ from the installed versions; otherwise `undefined`. */
-function pinWarning(manifest: Manifest, versions: Versions): string | undefined {
+function pinWarning(
+  manifest: Manifest,
+  versions: Versions,
+): string | undefined {
   /** Human-readable description of each pin that differs. */
   const drift: string[] = [];
   if (manifest.engine.authoring !== versions.authoring) {
-    drift.push(`authoring ${manifest.engine.authoring} (installed ${versions.authoring})`);
+    drift.push(
+      `authoring ${manifest.engine.authoring} (installed ${versions.authoring})`,
+    );
   }
   if (manifest.engine.runtime !== versions.runtime) {
-    drift.push(`runtime ${manifest.engine.runtime} (installed ${versions.runtime})`);
+    drift.push(
+      `runtime ${manifest.engine.runtime} (installed ${versions.runtime})`,
+    );
   }
-  return drift.length > 0 ? `warning: ${MANIFEST_FILE} pins ${drift.join(", ")}` : undefined;
+  return drift.length > 0
+    ? `warning: ${MANIFEST_FILE} pins ${drift.join(", ")}`
+    : undefined;
 }
 
 /** Renders the default text output: header, created files, diagnostics (errors first) and a footer. */
 function formatText(outcome: Outcome, versions: Versions): string {
   /** Blank-line separated sections of the output. */
   const blocks = [headerLine(versions)];
-  if (outcome.created) blocks.push(outcome.created.map((p) => `  created ${p}`).join("\n"));
+  if (outcome.created)
+    blocks.push(outcome.created.map((p) => `  created ${p}`).join("\n"));
   blocks.push(...sortDiagnostics(outcome.diagnostics).map(formatDiagnostic));
 
   const { errors, todos } = countDiagnostics(outcome.diagnostics);
   /** Formats a count with a naive English plural, e.g. "1 error", "2 errors". */
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const plural = (n: number, word: string) =>
+    `${n} ${word}${n === 1 ? "" : "s"}`;
   if (errors === 0 && todos === 0) {
     const s = outcome.summary;
-    blocks.push(s ? `OK (${s.actions} actions, ${s.effectDefs} effects, ${s.flowNodes} flow nodes)` : "OK");
+    blocks.push(
+      s
+        ? `OK (${s.actions} actions, ${s.effectDefs} effects, ${s.flowNodes} flow nodes)`
+        : "OK",
+    );
   } else {
     blocks.push(`${plural(errors, "error")}, ${plural(todos, "todo")}`);
+    const pointer = schemaPointer(outcome.diagnostics, moduleKeys());
+    if (pointer) blocks.push(pointer);
   }
   return blocks.join("\n\n");
+}
+
+/** Renders `docs` output: the header, then the page or the diagnostics with every known id and no footer. */
+function formatDocs(outcome: Outcome, versions: Versions): string {
+  const body =
+    outcome.text?.trimEnd() ??
+    outcome.diagnostics.map((d) => formatDiagnostic(d, Infinity)).join("\n\n");
+  return `${headerLine(versions)}\n\n${body}`;
 }
 
 /**
@@ -79,14 +119,27 @@ function formatText(outcome: Outcome, versions: Versions): string {
  * @param root - Project root found from `cwd`, if any.
  * @returns The outcome and the directory to write the trace to, if any.
  */
-function runInit(cwd: string, root: string | undefined): { outcome: Outcome; traceRoot?: string } {
+function runInit(
+  cwd: string,
+  root: string | undefined,
+): { outcome: Outcome; traceRoot?: string } {
   try {
-    return { outcome: { ok: true, diagnostics: [], created: init(cwd).created }, traceRoot: cwd };
+    return {
+      outcome: { ok: true, diagnostics: [], created: init(cwd).created },
+      traceRoot: cwd,
+    };
   } catch (err) {
     if (!(err instanceof InitConflictError)) throw err;
-    const diagnostic: Diagnostic = { severity: "error", code: err.code, message: err.message };
+    const diagnostic: Diagnostic = {
+      severity: "error",
+      code: err.code,
+      message: err.message,
+    };
     // Logging into a directory that is not yet a project would create .chaincraft/ and block a retry.
-    return { outcome: { ok: false, diagnostics: [diagnostic] }, traceRoot: root === cwd ? cwd : undefined };
+    return {
+      outcome: { ok: false, diagnostics: [diagnostic] },
+      traceRoot: root === cwd ? cwd : undefined,
+    };
   }
 }
 
@@ -121,7 +174,10 @@ function runProjectCommand(
     return { outcome: { ok, diagnostics }, warning };
   }
   const { ok, diagnostics, summary } = compile(root);
-  return { outcome: { ok, diagnostics, ...(summary ? { summary } : {}) }, warning };
+  return {
+    outcome: { ok, diagnostics, ...(summary ? { summary } : {}) },
+    warning,
+  };
 }
 
 /**
@@ -139,7 +195,12 @@ function main(argv: string[], cwd: string): number {
   const root = findProjectRoot(cwd);
 
   /** Appends a trace entry to `traceRoot`; no-op when there is no project. */
-  const trace = (traceRoot: string | undefined, command: string, exitCode: number, diagnostics: Diagnostic[]) => {
+  const trace = (
+    traceRoot: string | undefined,
+    command: string,
+    exitCode: number,
+    diagnostics: Diagnostic[],
+  ) => {
     if (!traceRoot) return;
     appendTrace(traceRoot, {
       ts: new Date().toISOString(),
@@ -175,10 +236,17 @@ function main(argv: string[], cwd: string): number {
   }
   const [name, ...extra] = positionals;
   if (name === undefined) return usageError("no command given", "");
-  if (!(COMMANDS as readonly string[]).includes(name)) return usageError(`unknown command "${name}"`, name);
+  if (!(COMMANDS as readonly string[]).includes(name))
+    return usageError(`unknown command "${name}"`, name);
   const command = name as Command;
-  if (extra.length > 0) return usageError(`unexpected argument "${extra[0]}"`, command);
-  if (values.draft && command !== "validate") return usageError("--draft is only valid for validate", command);
+  if (command === "docs") {
+    if (extra.length > 2)
+      return usageError(`unexpected argument "${extra[2]}"`, command);
+  } else if (extra.length > 0) {
+    return usageError(`unexpected argument "${extra[0]}"`, command);
+  }
+  if (values.draft && command !== "validate")
+    return usageError("--draft is only valid for validate", command);
 
   if (command === "help") {
     console.log(USAGE);
@@ -192,18 +260,32 @@ function main(argv: string[], cwd: string): number {
   let traceRoot: string | undefined = root;
   if (command === "init") {
     ({ outcome, traceRoot } = runInit(cwd, root));
+  } else if (command === "docs") {
+    const { ok, text, diagnostics } = docs(extra[0], extra[1]);
+    outcome = { ok, diagnostics, ...(text === undefined ? {} : { text }) };
   } else if (root === undefined) {
-    console.error("Not a ChainCraft project (no chaincraft.yaml found). Run chaincraft init.");
+    console.error(
+      "Not a ChainCraft project (no chaincraft.yaml found). Run chaincraft init.",
+    );
     return 1;
   } else {
-    ({ outcome, warning } = runProjectCommand(command, root, values.draft ?? false, versions));
+    ({ outcome, warning } = runProjectCommand(
+      command,
+      root,
+      values.draft ?? false,
+      versions,
+    ));
   }
 
   if (warning) console.error(warning);
   if (values.json) {
     console.log(JSON.stringify({ command, ...outcome, versions }, null, 2));
   } else {
-    console.log(formatText(outcome, versions));
+    console.log(
+      command === "docs"
+        ? formatDocs(outcome, versions)
+        : formatText(outcome, versions),
+    );
   }
 
   /** 0 when `outcome.ok` (todos allowed), else 1. */

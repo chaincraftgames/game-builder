@@ -102,10 +102,10 @@ import { IdentifierSchema } from "#gamedef/modules/common.js";
  */
 export const InventoryScopeSchema = z
   .discriminatedUnion("kind", [
-    z.object({
+    z.strictObject({
       kind: z.literal("game"),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("player"),
       role: z
         .string()
@@ -116,7 +116,7 @@ export const InventoryScopeSchema = z
             "Omit for all players. Example: 'dealer' for the crib in cribbage.",
         ),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("team"),
       role: z
         .string()
@@ -126,7 +126,7 @@ export const InventoryScopeSchema = z
             "Omit for all teams.",
         ),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("piece"),
     }),
   ])
@@ -186,7 +186,7 @@ export const InventoryStructureSchema = z
  */
 
 export const GridDimensionsSchema = z
-  .object({
+  .strictObject({
     rows: z.number().int().min(1).describe("Number of rows in the grid."),
     columns: z.number().int().min(1).describe("Number of columns in the grid."),
   })
@@ -240,17 +240,17 @@ export const GridDimensionsSchema = z
  */
 export const InventoryPlacementSchema = z
   .discriminatedUnion("kind", [
-    z.object({
+    z.strictObject({
       kind: z.literal("stack-top").describe("Top of a stack-structure inventory."),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("stack-bottom").describe("Bottom of a stack-structure inventory."),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("line-index").describe("Single position on a line-structure inventory."),
       index: z.number().int().min(0).describe("0-based position index."),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("line-range").describe(
         "Contiguous range of positions on a line-structure inventory. " +
           "For catalog use with quantity > 1. Requires quantity === end − start + 1.",
@@ -258,7 +258,7 @@ export const InventoryPlacementSchema = z
       start: z.number().int().min(0).describe("0-based start index (inclusive)."),
       end: z.number().int().min(0).describe("0-based end index (inclusive)."),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("grid-cell").describe("Single cell on a grid-structure inventory."),
       row: z
         .union([z.string(), z.number()])
@@ -267,7 +267,7 @@ export const InventoryPlacementSchema = z
         .union([z.string(), z.number()])
         .describe("Column label or 1-based index. String for lettered columns (e.g. 'e'), number for numeric."),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("grid-row").describe(
         "Fill one piece per column across a row range on a grid-structure inventory. " +
           "For catalog use with quantity > 1.",
@@ -282,7 +282,7 @@ export const InventoryPlacementSchema = z
         .union([z.string(), z.number()])
         .describe("Last column (inclusive)."),
     }),
-    z.object({
+    z.strictObject({
       kind: z.literal("graph-node").describe("Named node on a graph-structure inventory."),
       nodeId: z.string().describe("Identifier of the graph node to place the piece at."),
       neighbors: z
@@ -358,7 +358,7 @@ export const CountVisibilitySchema = z
  * ```
  */
 export const InventoryCapacitySchema = z
-  .object({
+  .strictObject({
     min: z
       .number()
       .int()
@@ -436,7 +436,7 @@ export const InventoryCapacitySchema = z
  * ```
  */
 export const InventoryTypeSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Unique identifier for this inventory type. Referenced by gamepiece-types " +
           "(inventorySlot.inventoryTypeId), effects (move targets), and catalog " +
@@ -514,7 +514,7 @@ export const InventoryTypeSchema = z
 // ---------------------------------------------------------------------------
 
 export const InventoriesModuleSchema = z
-  .object({
+  .strictObject({
     types: z
       .array(InventoryTypeSchema)
       .min(1)

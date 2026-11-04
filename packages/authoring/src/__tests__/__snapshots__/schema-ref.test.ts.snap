@@ -1,0 +1,39 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`schemaDoc lists the modules and mechanic kinds with no query 1`] = `
+"# Spec modules
+
+Top-level keys of a spec. Look one up with \`chaincraft docs schema <module>\`.
+
+| Module | Required | Description |
+|---|---|---|
+| \`metadata\` | yes | Game title, player count, and randomness configuration. |
+| \`players\` | no | Role definitions, assignment rules, and player-scoped properties. |
+| \`gamepieceTypes\` | no | Gamepiece type definitions — properties, inventory slots, and action slots. |
+| \`inventories\` | no | Inventory type declarations — structure, scope, capacity, and visibility. |
+| \`state\` | no | Abstract state declarations — game and per-player properties with no physical gamepiece representation. |
+| \`effects\` | no | Named reusable effects — referenced by actions and flow hooks. |
+| \`actions\` | no | Player-facing actions — inputs, preconditions, and effect sequences. |
+| \`flow\` | yes | Game structural skeleton — loop/turn/simultaneous nodes, hooks, and interrupts. |
+| \`catalog\` | no | Piece registry — declares what pieces exist and their initial property values. |
+| \`mechanics\` | no | Game-level mechanic declarations (score tracks, dominant-gamepiece evaluation, etc.). |
+
+# Mechanic kinds
+
+Look one up with \`chaincraft docs schema <kind>\`.
+
+## GameMechanic
+
+| \`kind\` | Description |
+|---|---|
+| \`chaincraft:score-track\` | Game-level mechanic: tracks player or team scores on a line-structure board. |
+| \`chaincraft:dominant-gamepiece\` | Game-level mechanic: ranks gamepieces in an inventory via a chain of comparison rules and resolves an overall winner. |
+
+## PieceMechanic
+
+| \`kind\` | Description |
+|---|---|
+| \`chaincraft:charges\` | Piece-scoped mechanic: gates an action behind a charge cost drawn from a piece's own inventory. |
+| \`chaincraft:conversion\` | Piece-scoped mechanic: spend one or more resource inventories to produce one or more. |
+"
+`;

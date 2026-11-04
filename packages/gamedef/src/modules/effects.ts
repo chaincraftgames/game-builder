@@ -94,24 +94,23 @@ import { ConditionExpressionSchema, IdentifierSchema, keyedUnion } from "#gamede
 // players except the actor, or players matching a condition.
 //
 // Contexts with no actor (flow hooks) must name their players explicitly.
+//
+// Same vocabulary as the flow module's player references: keywords for the
+// common cases, { param }, { stateRef }, { where }, { roles } otherwise.
 // ---------------------------------------------------------------------------
 
-const ActorTargetSchema = z
-  .object({ kind: z.literal("actor") })
-  .describe("The acting player (default when target is omitted). Requires an actor — not available in flow hooks.");
+export const PlayerKeywordTargetSchema = z
+  .enum(["actor", "all", "all-other"])
+  .describe(
+    "'actor': the acting player (default when omitted). " +
+      "'all': every player in the game. " +
+      "'all-other': every player except the actor. " +
+      "'actor' and 'all-other' require an actor — not available in flow hooks.",
+  );
 
-const AllTargetSchema = z
-  .object({ kind: z.literal("all") })
-  .describe("Every player in the game.");
-
-const AllOtherTargetSchema = z
-  .object({ kind: z.literal("all-other") })
-  .describe("All players except the actor. Requires an actor — not available in flow hooks.");
-
-const ParamTargetSchema = z
-  .object({
-    kind: z.literal("param"),
-    inputId: z
+export const ParamTargetSchema = z
+  .strictObject({
+    param: z
       .string()
       .describe(
         "Action input ID whose value is the target player ID. " +
@@ -123,10 +122,9 @@ const ParamTargetSchema = z
       "The input value must be a valid player ID.",
   );
 
-const StateRefTargetSchema = z
-  .object({
-    kind: z.literal("stateRef"),
-    path: z
+export const StateRefTargetSchema = z
+  .strictObject({
+    stateRef: z
       .string()
       .describe(
         "Dot-path to a string state property whose value is the target player ID. " +
@@ -137,61 +135,64 @@ const StateRefTargetSchema = z
     "A player identified by a state property value (e.g., game.property.roundLoser).",
   );
 
-const MatchingTargetSchema = z
-  .object({
-    kind: z.literal("matching"),
-    condition: ConditionExpressionSchema.describe(
-      "An infix expression evaluated per candidate player. " +
+export const WhereTargetSchema = z
+  .strictObject({
+    where: ConditionExpressionSchema.describe(
+      "An infix expression evaluated per candidate player, with the candidate bound as `player`. " +
         "Available paths: 'player.property.<id>' (stored and computed state properties), " +
         "'count(player.inventory.<id>)' (total piece count in a player-scoped inventory). " +
         "Example: 'player.property.roundsWon >= 3' or " +
         "'count(player.inventory.hand) > 0 and not player.property.eliminated'.",
     ),
   })
-  .describe(
-    "All players satisfying an infix condition expression evaluated against each player's state.",
-  );
+  .describe("All players for whom the expression is true.");
+
+export const RolesTargetSchema = z
+  .strictObject({
+    roles: z
+      .array(z.string())
+      .min(1)
+      .describe(
+        "Role IDs. Forward references to role IDs defined in the players module.",
+      ),
+  })
+  .describe("All players holding at least one of the listed roles.");
 
 /**
  * @example Target a player chosen by the actor
  * ```yaml
- * target: { kind: param, inputId: targetPlayer }
+ * target: { param: targetPlayer }
  * ```
  * @example Target all other players
  * ```yaml
- * target: { kind: all-other }
+ * target: all-other
  * ```
  * @example Target players with >= 1 building (via computed property)
  * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.buildingCount > 0"
- * ```
- * @example Target players whose score exceeds 10
- * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.score >= 10"
+ * target: { where: "player.property.buildingCount > 0" }
  * ```
  * @example Compound condition — score > 5 AND at least one resource
  * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.score > 5 and count(player.inventory.resources) > 0"
+ * target: { where: "player.property.score > 5 and count(player.inventory.resources) > 0" }
+ * ```
+ * @example Target the mafia players
+ * ```yaml
+ * target: { roles: [mafia] }
  * ```
  */
 export const PlayerTargetSchema = z
-  .discriminatedUnion("kind", [
-    ActorTargetSchema,
-    AllTargetSchema,
-    AllOtherTargetSchema,
-    ParamTargetSchema,
-    StateRefTargetSchema,
-    MatchingTargetSchema,
+  .union([
+    PlayerKeywordTargetSchema,
+    keyedUnion({
+      param: ParamTargetSchema,
+      stateRef: StateRefTargetSchema,
+      where: WhereTargetSchema,
+      roles: RolesTargetSchema,
+    }),
   ])
   .describe(
-    "Who a player-scoped effect applies to. Defaults to 'actor' when omitted. " +
-      "Use to target other players, all players, or players matching a condition.",
+    "Which players an effect applies to. Defaults to 'actor' when omitted. " +
+      "One of: actor | all | all-other | { param } | { stateRef } | { where } | { roles }.",
   );
 
 /**
@@ -199,13 +200,13 @@ export const PlayerTargetSchema = z
  * Used where a single player is required (e.g., a move destination).
  */
 export const SinglePlayerTargetSchema = z
-  .discriminatedUnion("kind", [
-    ActorTargetSchema,
-    ParamTargetSchema,
-    StateRefTargetSchema,
+  .union([
+    z.literal("actor"),
+    keyedUnion({ param: ParamTargetSchema, stateRef: StateRefTargetSchema }),
   ])
   .describe(
-    "Exactly one player: the actor, a player chosen via an action input, or a player named by a state property.",
+    "Exactly one player: actor | { param } (chosen via an action input) | " +
+      "{ stateRef } (named by a state property).",
   );
 
 // ---------------------------------------------------------------------------
@@ -221,19 +222,19 @@ export const SinglePlayerTargetSchema = z
  * { inventory: diceTray, select: random, count: 2 }
  * { inventory: game:unassigned, select: { id: whiteKing } }
  * { inventory: playerHand, select: { id: { param: chosenCard } } }
- * { player: { kind: stateRef, path: game.property.roundLoser }, inventory: playerCup, select: top }
- * { player: { kind: param, inputId: targetPlayer }, inventory: playerHand, select: top }
- * { player: { kind: all }, inventory: playerCup, select: all }   # every player's cup — required in flow hooks
+ * { player: { stateRef: game.property.roundLoser }, inventory: playerCup, select: top }
+ * { player: { param: targetPlayer }, inventory: playerHand, select: top }
+ * { player: all, inventory: playerCup, select: all }   # every player's cup — required in flow hooks
  * ```
  */
 export const GamepieceSelectorSchema = z
-  .object({
+  .strictObject({
     player: PlayerTargetSchema
       .optional()
       .describe(
         "Whose instance of a player-scoped inventory to select from. Ignored for game-scoped inventories. " +
           "Omit to use the acting player — an error in flow hooks (onEnter/onComplete), which have no actor, " +
-          "so hook effects must name their players, e.g. { kind: all }. " +
+          "so hook effects must name their players, e.g. player: all. " +
           "With several players, 'select' and 'count' apply to each player's inventory separately.",
       ),
     inventory: z
@@ -252,10 +253,10 @@ export const GamepieceSelectorSchema = z
             "'all': every piece currently in the inventory (ignores 'count').",
         ),
         z
-          .object({
+          .strictObject({
             id: z.union([
               z.string().describe("Literal catalog piece ID (e.g., 'white-king')."),
-              z.object({ param: z.string() }).describe(
+              z.strictObject({ param: z.string() }).describe(
                 "Piece ID from an action input. References a gamepiece-select input by id.",
               ),
             ]),
@@ -308,11 +309,11 @@ export const GamepieceSelectorSchema = z
  * { inventory: battleGrid, at: { kind: grid-cell, row: 1, col: "e" } } # grid cell
  * { inventory: board, at: { kind: graph-node, nodeId: "C3" } }    # graph node
  * { inventory: battleGrid, at: { param: targetCell } }          # position from action input
- * { player: { kind: param, inputId: targetPlayer }, inventory: playerHand }    # opponent's inventory
+ * { player: { param: targetPlayer }, inventory: playerHand }    # opponent's inventory
  * ```
  */
 export const InventoryTargetSchema = z
-  .object({
+  .strictObject({
     player: SinglePlayerTargetSchema.optional().describe(
       "Whose instance of a player-scoped destination inventory receives the pieces. " +
         "Exactly one player. Omit to use the acting player — an error in flow hooks, which have no actor.",
@@ -327,7 +328,7 @@ export const InventoryTargetSchema = z
     at: z
       .union([
         InventoryPlacementSchema,
-        z.object({ param: z.string() }).describe(
+        z.strictObject({ param: z.string() }).describe(
           "Placement position from an action input. References an inventory-position " +
             "input by id. The input resolves to an InventoryPlacement descriptor.",
         ),
@@ -356,7 +357,7 @@ export const InventoryTargetSchema = z
  * ```
  */
 export const DistributeTargetSchema = z
-  .object({
+  .strictObject({
     inventory: z
       .string()
       .describe(
@@ -395,13 +396,13 @@ export const DistributeTargetSchema = z
  */
 export const PieceRefSchema = z
   .union([
-    z.object({
+    z.strictObject({
       param: z.string().describe(
         "Resolve the piece ID from an action input by matching this id. " +
           "The input should be a gamepiece-select type that yields a single piece ID.",
       ),
     }),
-    z.object({
+    z.strictObject({
       id: z.string().describe("A literal gamepiece ID."),
     }),
   ])
@@ -418,16 +419,16 @@ export const PieceRefSchema = z
  * Numeric value or state variable reference with optional negate flag.
  * Shared shape for both delta and mult operators.
  */
-const NumericOrVarSchema = z.union([
+export const NumericOrVarSchema = z.union([
   z.number(),
-  z.object({
+  z.strictObject({
     var: z.string(),
     negate: z.boolean().optional().describe(
       "If true, negate the resolved value before applying. " +
         "Allows decrementing by positive-valued properties without custom effects.",
     ),
   }),
-  z.object({ expr: z.string() }).describe(
+  z.strictObject({ expr: z.string() }).describe(
     "Compute the delta/factor from an infix expression evaluated at execution time. " +
       "Example: 'actor.property.attack - target.property.defense'.",
   ),
@@ -435,7 +436,7 @@ const NumericOrVarSchema = z.union([
 
 /** Additive delta operator: increment/decrement a numeric value. */
 export const DeltaSchema = z
-  .object({ delta: NumericOrVarSchema })
+  .strictObject({ delta: NumericOrVarSchema })
   .describe(
     "Increment or decrement a numeric property. Delta can be a literal number or " +
       "a { var: \"path\" } reference to a numeric state property. " +
@@ -445,13 +446,57 @@ export const DeltaSchema = z
 
 /** Multiplicative operator: scale a numeric value by a factor. */
 export const MultSchema = z
-  .object({ mult: NumericOrVarSchema })
+  .strictObject({ mult: NumericOrVarSchema })
   .describe(
     "Multiply a numeric property by a factor. Mult can be a literal number or " +
       "a { var: \"path\" } reference. Use 0.5 to halve, 2 to double, etc. " +
       "The engine rounds the result to the nearest integer if the property is integer-typed. " +
       "The engine clamps to the property's min/max if defined.",
   );
+
+// ---------------------------------------------------------------------------
+// Random source (for { random } property values)
+// ---------------------------------------------------------------------------
+
+export const RandomSourceSchema = keyedUnion({
+  options: z
+    .strictObject({
+      options: z
+        .array(
+          z
+            .strictObject({
+              value: z
+                .union([z.string(), z.number(), z.boolean()])
+                .describe("A possible result value (string, number, or boolean)."),
+              weight: z
+                .number()
+                .positive()
+                .optional()
+                .describe(
+                  "Relative likelihood of this option. Weights are normalized, so they " +
+                    "need not sum to 1 — probabilities that sum to 1 (e.g. 0.25/0.75) work directly. " +
+                    "Omit weights on all options for an equal-probability pick.",
+                ),
+            })
+            .describe("One weighted candidate value."),
+        )
+        .min(2)
+        .describe("The candidate values to choose from (at least two)."),
+    })
+    .describe(
+      "Weighted choice over an explicit list of values. Covers coin flips, enum picks, " +
+        "and any discrete weighted outcome. " +
+        "Example: { options: [{ value: true, weight: 0.25 }, { value: false, weight: 0.75 }] }.",
+    ),
+  min: z
+    .strictObject({
+      min: z.number().int().describe("Inclusive lower bound."),
+      max: z.number().int().describe("Inclusive upper bound."),
+    })
+    .describe("Uniform random integer in [min, max]. Example: { min: 1, max: 6 }."),
+}).describe(
+  "Where a random value comes from: { options: [...] } (weighted list) or { min, max } (integer range).",
+);
 
 // ---------------------------------------------------------------------------
 // Property value expression (for update effects)
@@ -476,6 +521,8 @@ export const MultSchema = z
  * value: { delta: { var: "source.property.attack", negate: true } }  # subtract source piece's attack
  * value: { var: "target.property.defense" }  # read from current target piece
  * value: { delta: { var: "trigger.delta", negate: true } }  # (passives only) undo/mirror the triggering change
+ * value: { random: { min: 1, max: 6 } }  # uniform random integer
+ * value: { random: { options: [{ value: hearts }, { value: spades }] } }  # random pick
  * ```
  */
 export const PropertyValueSchema = z
@@ -486,24 +533,24 @@ export const PropertyValueSchema = z
     DeltaSchema,
     MultSchema,
     z
-      .object({ toggle: z.literal(true) })
+      .strictObject({ toggle: z.literal(true) })
       .describe("Flip a boolean property to its opposite value."),
     z
-      .object({ param: z.string() })
+      .strictObject({ param: z.string() })
       .describe(
         "Resolve this value from the enclosing action's input steps by matching id. " +
           "Engine convention — no explicit binding needed. " +
           "Only valid in inline effects inside an action that declares a matching input id.",
       ),
     z
-      .object({ actor: z.literal(true) })
+      .strictObject({ actor: z.literal(true) })
       .describe(
         "Set this property to the ID of the player who triggered the current action. " +
           "Useful for recording who made a bid, who attacked, or who initiated any action. " +
           "Engine resolves at execution time from the current action context.",
       ),
     z
-      .object({ var: z.string() })
+      .strictObject({ var: z.string() })
       .describe(
         "Set this property to the value of another state property. Use a dot-path: " +
           "'game.property.<id>', 'player.property.<id>', " +
@@ -514,7 +561,7 @@ export const PropertyValueSchema = z
           "Resolved at effect execution time.",
       ),
     z
-      .object({ expr: z.string() })
+      .strictObject({ expr: z.string() })
       .describe(
         "Compute this value from an infix expression evaluated at effect execution time. " +
           "Supports arithmetic (+, -, *, /), comparisons, boolean operators, " +
@@ -525,10 +572,19 @@ export const PropertyValueSchema = z
           "'if(count(actor.inventory.hand) == 0, actor.id, game.property.leader)'. " +
           "Supersedes var/delta/mult for complex computations.",
       ),
+    z
+      .strictObject({ random: RandomSourceSchema })
+      .describe(
+        "Set this property to a random value drawn from the session RNG. " +
+          "Drawn independently for each target piece or player. " +
+          "Examples: { random: { min: 1, max: 6 } } or " +
+          "{ random: { options: [{ value: true, weight: 0.25 }, { value: false, weight: 0.75 }] } }. " +
+          "For rolling die pieces use the 'roll' effect instead.",
+      ),
   ])
   .describe(
     "The new value to assign, or a relative change to apply to a property. " +
-    "Values can be literals, deltas, multipliers, state references, or action inputs. " +
+    "Values can be literals, deltas, multipliers, state references, action inputs, or random draws. " +
     "Each value performs ONE operation. For computed values (arithmetic, counting or summing " +
     "pieces or players, choosing between two values), use { expr: \"...\" } with the " +
     "aggregators and if() — do not use a custom effect for these.",
@@ -577,7 +633,7 @@ export const PropertyValueSchema = z
  * ```
  */
 export const MoveEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("move"),
     from: GamepieceSelectorSchema.describe("Which pieces to move and where to take them from."),
     to: InventoryTargetSchema.describe(
@@ -609,7 +665,7 @@ export const MoveEffectSchema = z
  * ```
  */
 export const FlipEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("flip"),
     pieces: GamepieceSelectorSchema.describe("Which pieces to flip."),
     to: z
@@ -656,7 +712,7 @@ export const FlipEffectSchema = z
  * ```
  */
 export const UpdateEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("update"),
     source: PieceRefSchema.optional().describe(
       "Optional reference to a source gamepiece whose properties can be read " +
@@ -689,7 +745,7 @@ export const UpdateEffectSchema = z
  * ```
  */
 export const ShuffleEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("shuffle"),
     inventory: z
       .string()
@@ -721,7 +777,7 @@ export const ShuffleEffectSchema = z
  * ```
  */
 export const DistributeEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("distribute"),
     from: GamepieceSelectorSchema.describe(
       "Source inventory and selection method. 'count' on the selector is ignored — " +
@@ -762,7 +818,7 @@ export const DistributeEffectSchema = z
  * ```
  */
 export const RollEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("roll"),
     pieces: GamepieceSelectorSchema.describe(
       "Which die pieces to roll. Should select pieces with faceCount defined on their type.",
@@ -770,104 +826,6 @@ export const RollEffectSchema = z
   })
   .describe(
     "Randomizes the face value of die pieces. Engine picks a random face in [1, faceCount].",
-  );
-
-/**
- * Pick a random value and write it to a game state property — no physical die
- * required (use 'roll' for that). Two shapes, chosen by which field is present:
- *   - options : a weighted list of explicit values (booleans, numbers, or strings).
- *               Omit weights for an equal-probability pick. This subsumes coin flips
- *               (true/false) and enum choices (suits, etc.).
- *   - range   : a uniform random integer in [min, max].
- *
- * @example 25% chance of a dramatic reversal (weighted boolean)
- * ```yaml
- * id: rollReversal
- * effect: set-random
- * path: game.property.includeReversal
- * options:
- *   - value: true
- *     weight: 0.25
- *   - value: false
- *     weight: 0.75
- * ```
- * @example Pick a random suit (equal probability)
- * ```yaml
- * id: chooseDominantSuit
- * effect: set-random
- * path: game.property.dominantSuit
- * options:
- *   - value: hearts
- *   - value: diamonds
- *   - value: clubs
- *   - value: spades
- * ```
- * @example Roll a d6 result into state (numeric range)
- * ```yaml
- * id: rollInitiative
- * effect: set-random
- * path: game.property.initiative
- * range:
- *   min: 1
- *   max: 6
- * ```
- */
-export const SetRandomEffectSchema = z
-  .object({
-    effect: z.literal("set-random"),
-    source: z
-      .discriminatedUnion("kind", [
-        z
-          .object({
-            kind: z.literal("options"),
-            options: z
-              .array(
-                z
-                  .object({
-                    value: z
-                      .union([z.string(), z.number(), z.boolean()])
-                      .describe("A possible result value (string, number, or boolean)."),
-                    weight: z
-                      .number()
-                      .positive()
-                      .optional()
-                      .describe(
-                        "Relative likelihood of this option. Weights are normalized, so they " +
-                          "need not sum to 1 — using probabilities that sum to 1 (e.g. 0.25/0.75) " +
-                          "reads naturally and works directly. Omit weights on all options for an " +
-                          "equal-probability pick.",
-                      ),
-                  })
-                  .describe("One weighted candidate value."),
-              )
-              .min(2)
-              .describe("The candidate values to choose from (at least two)."),
-          })
-          .describe(
-            "Weighted choice over an explicit list of values. Covers coin flips, enum picks, " +
-              "and any discrete weighted outcome.",
-          ),
-        z
-          .object({
-            kind: z.literal("range"),
-            min: z.number().int().describe("Inclusive lower bound."),
-            max: z.number().int().describe("Inclusive upper bound."),
-          })
-          .describe("Uniform random integer in [min, max]."),
-      ])
-      .describe("Where the random value comes from: a weighted 'options' list or a numeric 'range'."),
-    path: z
-      .string()
-      .describe(
-        "Dot-path to the game state property that receives the result " +
-          "(e.g. 'game.property.includeReversal'). Forward reference to a property " +
-          "declared in the state module whose type must be compatible with the result.",
-      ),
-  })
-  .describe(
-    "Picks a random value (from a weighted list of options or a numeric range) and writes it " +
-      "to a state property. Use for RNG that drives game logic (flags, initiative, suit " +
-      "selection). For rolling actual die pieces use 'roll' instead.",
   );
 
 /**
@@ -888,7 +846,7 @@ export const SetRandomEffectSchema = z
  * ```
  */
 export const OrientEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("orient"),
     pieces: GamepieceSelectorSchema.describe("Which pieces to reorient."),
     to: z
@@ -934,7 +892,7 @@ export const OrientEffectSchema = z
  * ```
  */
 export const CustomEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("custom"),
     description: z
       .string()
@@ -953,33 +911,6 @@ export const CustomEffectSchema = z
 // ---------------------------------------------------------------------------
 // Message effect
 // ---------------------------------------------------------------------------
-
-/**
- * Who receives a message. The literal `actor` means the player whose turn/action
- * triggered this effect; `all` broadcasts to all players; `opponents` sends to
- * every player except the actor; `role:<id>` targets all players with the named
- * role; any other string is treated as a specific player ID.
- *
- * @example
- * ```yaml
- * to: actor           # confirmation to the player who just acted
- * to: all             # broadcast to everyone
- * to: opponents       # notify opponents without telling the acting player
- * to: "role:mafia"    # send only to players with the mafia role
- * to: "player1"       # direct to a specific player by ID
- * ```
- */
-export const MessageRecipientSchema = z
-  .string()
-  .describe(
-    "Who receives the message. " +
-      "'actor': the player whose action triggered this effect. " +
-      "'all': every player, including eliminated players. " +
-      "'opponents': all players except the actor. " +
-      "'role:<id>': all players assigned the named role (e.g., 'role:dealer'). " +
-      "Any other string: a specific player ID. " +
-      "For private messages use visibility: private. For broadcast use visibility: public (default).",
-  );
 
 /**
  * Temporarily override the visibility of pieces for specific players.
@@ -1013,16 +944,12 @@ export const MessageRecipientSchema = z
  * ```
  */
 export const RevealEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("reveal"),
     pieces: GamepieceSelectorSchema.describe("Which pieces to temporarily reveal."),
-    to: MessageRecipientSchema.describe(
-      "Who can see the revealed pieces. " +
-        "'actor': only the player whose turn it is. " +
-        "'all': every player, including eliminated players. " +
-        "'opponents': all players except the actor. " +
-        "'role:<id>': only players with the named role. " +
-        "Any other string: a specific player ID.",
+    to: PlayerTargetSchema.describe(
+      "Who can see the revealed pieces: actor | all | all-other | { param } | { stateRef } | " +
+        "{ where } | { roles }. 'actor' and 'all-other' are not available in flow hooks.",
     ),
   })
   .describe(
@@ -1046,7 +973,7 @@ export const RevealEffectSchema = z
  * ```
  */
 export const HideEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("hide"),
     pieces: GamepieceSelectorSchema.describe(
       "Which pieces to revert to their inventory's default visibility.",
@@ -1072,15 +999,21 @@ export const HideEffectSchema = z
  * to: all
  * template: "Round {{state.game.property.currentRound}} begins — select your weapon!"
  * ```
+ * @example Private message to the mafia
+ * ```yaml
+ * id: mafiaWake
+ * effect: message
+ * to: { roles: [mafia] }
+ * template: "Mafia, choose your target."
+ * ```
  */
 export const MessageEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("message"),
-    to: MessageRecipientSchema.describe(
-      "Who receives this message. " +
-        "'all' or 'opponents' = broadcast (visible to those players). " +
-        "'actor' or a specific player ID = private (visible only to that player). " +
-        "'role:<id>' = delivered to players with that role only.",
+    to: PlayerTargetSchema.describe(
+      "Who receives this message: actor | all | all-other | { param } | { stateRef } | " +
+        "{ where } | { roles }. Only the resolved players receive it. " +
+        "'actor' and 'all-other' are not available in flow hooks.",
     ),
     template: z
       .string()
@@ -1093,9 +1026,7 @@ export const MessageEffectSchema = z
   })
   .describe(
     "Delivers a deterministic text message to one or more players. " +
-      "No state mutation — output only. " +
-      "Visibility is determined by 'to': 'all'/'opponents'/'role:<id>' = broadcast; " +
-      "'actor' or player ID = private. " +
+      "No state mutation — output only. Only the players resolved from 'to' receive it. " +
       "For AI-generated text use effect: llm-effect.",
   );
 
@@ -1112,28 +1043,26 @@ export const MessageEffectSchema = z
  * At least one of `message` or `stateWrite` must be present — an output that
  * does neither is meaningless.
  *
- * @example Round narrative delivered as public message
+ * @example Round narrative delivered to everyone
  * ```yaml
  * field: roundNarrative
  * message:
  *   to: all
- *   visibility: public
  * ```
  * @example Winner written to state for follow-on effects to read
  * ```yaml
  * field: roundWinner
  * stateWrite: game.property.roundWinner
  * ```
- * @example Per-player private reveal
+ * @example Private message to the round winner
  * ```yaml
- * field: player1Reveal
+ * field: winnerTaunt
  * message:
- *   to: player1
- *   visibility: private
+ *   to: { stateRef: game.property.roundWinner }
  * ```
  */
 export const LlmOutputSchema = z
-  .object({
+  .strictObject({
     field: z
       .string()
       .describe(
@@ -1141,19 +1070,17 @@ export const LlmOutputSchema = z
           "Enters ephemeral invocation context as {{llm.<field>}} for use in templates.",
       ),
     message: z
-      .object({
-        to: MessageRecipientSchema.describe(
-          "Who receives this output as a message. " +
-            "'all'/'opponents'/'role:<id>' = broadcast. " +
-            "'actor' or player ID = private.",
+      .strictObject({
+        to: PlayerTargetSchema.describe(
+          "Who receives this output as a message: actor | all | all-other | { param } | " +
+            "{ stateRef } | { where } | { roles }.",
         ),
       })
       .optional()
       .describe(
         "If present, deliver this field as a player message. " +
           "The engine uses the LLM's raw text for this field as the message body. " +
-          "Visibility is determined by 'to': broadcast targets are visible to all addressed; " +
-          "'actor' and player ID targets are private.",
+          "Only the players resolved from 'to' receive it.",
       ),
     stateWrite: z
       .string()
@@ -1197,7 +1124,7 @@ export const LlmOutputSchema = z
  * ```
  */
 export const LlmInputSchema = z
-  .object({
+  .strictObject({
     name: z
       .string()
       .describe(
@@ -1257,7 +1184,6 @@ export const LlmInputSchema = z
  *   - field: openingAnnouncement
  *     message:
  *       to: all
- *       visibility: public
  * ```
  * @example Round resolution — compute winner AND narrate (Absurd Armaments match_continues)
  * ```yaml
@@ -1281,28 +1207,24 @@ export const LlmInputSchema = z
  *   - field: roundNarrative
  *     message:
  *       to: all
- *       visibility: public
  * ```
- * @example Per-player private reveal (Absurd Armaments reveal_complete)
+ * @example Private hint to the acting player (inline in an action)
  * ```yaml
- * id: generateReveals
  * effect: llm-effect
+ * inputs:
+ *   - name: hand
+ *     pieces: { inventory: playerHand, select: all }
  * prompt:
  *   computation: >
- *     Create a unique reveal for each player showcasing their opponent's weapons.
+ *     Give the player a one-sentence hint about the strongest card in {{hand}}.
  * outputs:
- *   - field: player1Reveal
+ *   - field: hint
  *     message:
- *       to: player1
- *       visibility: private
- *   - field: player2Reveal
- *     message:
- *       to: player2
- *       visibility: private
+ *       to: actor
  * ```
  */
 export const LlmEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("llm-effect"),
     inputs: z
       .array(LlmInputSchema)
@@ -1316,7 +1238,7 @@ export const LlmEffectSchema = z
           "metadata are always available implicitly. Omit for pure ceremony that needs no game data.",
       ),
     prompt: z
-      .object({
+      .strictObject({
         rules: z
           .array(z.string())
           .optional()
@@ -1394,7 +1316,7 @@ export const LlmEffectSchema = z
  * ```
  */
 export const GenerateImageEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("generate-gamepiece-image"),
     pieces: GamepieceSelectorSchema.describe(
       "Which piece(s) to illustrate. The generator is invoked once per selected piece.",
@@ -1489,27 +1411,25 @@ export const GenerateImageEffectSchema = z
  * effect: set-state
  * path: player.property.health
  * value: { delta: -2 }
- * target: { kind: param, inputId: targetPlayer }
+ * target: { param: targetPlayer }
  * ```
  * @example All other players lose 1 gold
  * ```yaml
  * effect: set-state
  * path: player.property.gold
  * value: { delta: -1 }
- * target: { kind: all-other }
+ * target: all-other
  * ```
  * @example Tax all players who have >= 1 building
  * ```yaml
  * effect: set-state
  * path: player.property.gold
  * value: { delta: -1 }
- * target:
- *   kind: matching
- *   condition: "player.property.buildingCount >= 1"
+ * target: { where: "player.property.buildingCount >= 1" }
  * ```
  */
 export const SetStateEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("set-state"),
     source: PieceRefSchema.optional().describe(
       "Optional reference to a source gamepiece whose properties can be read " +
@@ -1557,7 +1477,7 @@ export const SetStateEffectSchema = z
  * ```
  */
 export const CancelEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("cancel-effect"),
   })
   .describe(
@@ -1643,7 +1563,7 @@ export const CancelEffectSchema = z
  * ```
  */
 export const AdjustEffectSchema = z
-  .object({
+  .strictObject({
     effect: z.literal("adjust"),
     adjustment: z
       .union([DeltaSchema, MultSchema])
@@ -1684,7 +1604,6 @@ export const NamedEffectSchema = z.discriminatedUnion("effect", [
   ShuffleEffectSchema.extend(namedEffectBase),
   DistributeEffectSchema.extend(namedEffectBase),
   RollEffectSchema.extend(namedEffectBase),
-  SetRandomEffectSchema.extend(namedEffectBase),
   OrientEffectSchema.extend(namedEffectBase),
   CustomEffectSchema.extend(namedEffectBase),
   CancelEffectSchema.extend(namedEffectBase),
@@ -1716,7 +1635,6 @@ export const EffectSchema = z.discriminatedUnion("effect", [
   ShuffleEffectSchema,
   DistributeEffectSchema,
   RollEffectSchema,
-  SetRandomEffectSchema,
   OrientEffectSchema,
   CustomEffectSchema,
   CancelEffectSchema,
@@ -1730,7 +1648,7 @@ export const EffectSchema = z.discriminatedUnion("effect", [
 // Passive / Reactive trigger schemas
 // ---------------------------------------------------------------------------
 
-const StateWriteTriggerSchema = z.object({
+export const StateWriteTriggerSchema = z.strictObject({
   kind: z.literal("state-write"),
   scope: z
     .enum(["target", "actor"])
@@ -1754,7 +1672,7 @@ const StateWriteTriggerSchema = z.object({
     ),
 });
 
-const MoveTriggerSchema = z.object({
+export const MoveTriggerSchema = z.strictObject({
   kind: z.literal("move"),
   scope: z
     .enum(["target", "actor"])
@@ -1778,7 +1696,7 @@ const MoveTriggerSchema = z.object({
     ),
 });
 
-const RevealTriggerSchema = z.object({
+export const RevealTriggerSchema = z.strictObject({
   kind: z.literal("reveal"),
   scope: z
     .enum(["target", "actor"])
@@ -1795,7 +1713,7 @@ const RevealTriggerSchema = z.object({
     ),
 });
 
-const SkipTurnTriggerSchema = z.object({
+export const SkipTurnTriggerSchema = z.strictObject({
   kind: z.literal("skip-turn"),
   // Scope is always 'target' — the holder's turn is being skipped by an external effect.
 });
@@ -1983,7 +1901,7 @@ export const PassiveTriggerSchema = z
  * ```
  */
 export const PassiveEffectSchema = z
-  .object({
+  .strictObject({
     id: z
       .string()
       .describe(
@@ -2088,7 +2006,7 @@ export const PassiveEffectSchema = z
  * ```
  */
 export const ReactiveEffectSchema = z
-  .object({
+  .strictObject({
     id: z
       .string()
       .describe(
@@ -2157,7 +2075,7 @@ export const ReactiveEffectSchema = z
 // ---------------------------------------------------------------------------
 
 export const EffectsModuleSchema = z
-  .object({
+  .strictObject({
     effects: z
       .array(NamedEffectSchema)
       .min(1)
@@ -2198,7 +2116,7 @@ export const EffectsModuleSchema = z
  * ```
  */
 export const EffectCallRefSchema = z
-  .object({
+  .strictObject({
     effectRef: z
       .string()
       .describe(
@@ -2244,6 +2162,8 @@ export const EffectCallsSchema = z
 // Types
 // ---------------------------------------------------------------------------
 
+export type PlayerTarget = z.infer<typeof PlayerTargetSchema>;
+export type SinglePlayerTarget = z.infer<typeof SinglePlayerTargetSchema>;
 export type GamepieceSelector = z.infer<typeof GamepieceSelectorSchema>;
 export type InventoryPosition = z.infer<typeof InventoryPlacementSchema>;
 export type InventoryTarget = z.infer<typeof InventoryTargetSchema>;
@@ -2258,7 +2178,7 @@ export type SetStateEffect = z.infer<typeof SetStateEffectSchema>;
 export type ShuffleEffect = z.infer<typeof ShuffleEffectSchema>;
 export type DistributeEffect = z.infer<typeof DistributeEffectSchema>;
 export type RollEffect = z.infer<typeof RollEffectSchema>;
-export type SetRandomEffect = z.infer<typeof SetRandomEffectSchema>;
+export type RandomSource = z.infer<typeof RandomSourceSchema>;
 export type OrientEffect = z.infer<typeof OrientEffectSchema>;
 export type CustomEffect = z.infer<typeof CustomEffectSchema>;
 export type CancelEffect = z.infer<typeof CancelEffectSchema>;
@@ -2266,7 +2186,6 @@ export type AdjustEffect = z.infer<typeof AdjustEffectSchema>;
 export type PassiveTrigger = z.infer<typeof PassiveTriggerSchema>;
 export type PassiveEffect = z.infer<typeof PassiveEffectSchema>;
 export type ReactiveEffect = z.infer<typeof ReactiveEffectSchema>;
-export type MessageRecipient = z.infer<typeof MessageRecipientSchema>;
 export type MessageEffect = z.infer<typeof MessageEffectSchema>;
 export type LlmOutput = z.infer<typeof LlmOutputSchema>;
 export type LlmInput = z.infer<typeof LlmInputSchema>;

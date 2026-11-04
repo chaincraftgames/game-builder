@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": ["./*.ts", "../tests/corpus/*.ts"],
+  "exclude": [],
+  "ts-node": {
+    "transpileOnly": true,
+    "esm": true
+  }
+}

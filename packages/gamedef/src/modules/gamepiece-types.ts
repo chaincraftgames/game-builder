@@ -71,13 +71,6 @@ import { PieceMechanicSchema } from "#gamedef/mechanics/index.js";
 
 
 // ---------------------------------------------------------------------------
-// Property value types
-// ---------------------------------------------------------------------------
-
-// Property value types are defined in common.ts and re-exported here for backward compatibility.
-export { PropertyTypeSchema } from "#gamedef/modules/common.js";
-
-// ---------------------------------------------------------------------------
 // Property visibility
 // ---------------------------------------------------------------------------
 
@@ -127,7 +120,7 @@ export const PropertyVisibilitySchema = z
  * ```
  */
 export const GamepiecePropertySchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Programmatic identifier for this property. Used as the key in catalog instances, " +
           "runtime state, and effect target paths (e.g., 'hitPoints', 'manaCost', 'exhausted'). " +
@@ -145,24 +138,19 @@ export const GamepiecePropertySchema = z
       .boolean()
       .describe(
         "Whether this property can change at runtime. " +
-          "false = static; value comes from the catalog instance and never changes " +
-          "(e.g., card name, mana cost, die face count). " +
-          "true = runtime-tracked; engine initializes from 'default' and effects can modify it " +
-          "(e.g., hitPoints, exhausted, chargeCount). " +
-          "Says nothing about who authors the starting value \u2014 see 'source'.",
+          "false = static; value comes from the catalog instance (e.g., card name, mana cost). " +
+          "true = runtime-tracked; initialized from 'default' and modified by effects " +
+          "(e.g., hitPoints, chargeCount). " +
+          "Independent of 'source', which says who authors the starting value.",
       ),
     source: z
       .enum(["catalog", "runtime"])
       .optional()
       .describe(
         "Where this property's starting value comes from. Defaults to 'catalog'. " +
-          "'catalog': card data authored per piece instance; catalog entries may set it " +
-          "(e.g., power, defense, mana cost). Independent of 'mutable' — a catalog property " +
-          "may still change during play. " +
+          "'catalog': authored per piece instance in the catalog (e.g., power, mana cost). " +
           "'runtime': engine-managed state (e.g., frozen, activatedThisTurn); initialized " +
-          "from 'default' and never set in the catalog. Must be mutable: true. " +
-          "Catalog editors hide runtime properties." +
-          "Defaults to 'catalog' if not specified."
+          "from 'default' and never set in the catalog. Must be mutable: true.",
       ),
     default: z
       .any()
@@ -182,9 +170,6 @@ export const GamepiecePropertySchema = z
     "A named attribute of a gamepiece type. Covers both static catalog data (mutable: false) " +
       "and runtime-tracked state (mutable: true) in a single unified definition.",
   );
-
-/** @deprecated use GamepiecePropertySchema */
-export const GamepieceFieldSchema = GamepiecePropertySchema;
 
 // ---------------------------------------------------------------------------
 // Inventory slots (references to inventory types held by this piece)
@@ -206,7 +191,7 @@ export const GamepieceFieldSchema = GamepiecePropertySchema;
  * ```
  */
 export const InventorySlotSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Local slot identifier. Used as the key in effect target paths " +
           "(e.g., 'player.hand', 'board.resources'). " +
@@ -252,12 +237,10 @@ export const InventorySlotSchema = z
  * ```
  */
 export const PassiveSlotSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Slot identifier. Referenced in catalog passiveBindings to bind a named or inline " +
-          "passive effect to this piece instance. The catalog entry fills in which specific " +
-          "passive occupies this slot — enabling different instances of the same type to " +
-          "carry different (or no) passives.",
+          "passive effect to this piece instance.",
       ),
     description: z
       .string()
@@ -303,12 +286,10 @@ export const PassiveSlotSchema = z
   );
 
 export const ReactiveSlotSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Slot identifier. Referenced in catalog reactiveBindings to bind a named or inline " +
-          "reactive to this piece instance. The catalog entry fills in which specific " +
-          "reactive occupies this slot — enabling different instances of the same type to " +
-          "carry different (or no) reactives.",
+          "reactive to this piece instance.",
       ),
     description: z
       .string()
@@ -322,7 +303,7 @@ export const ReactiveSlotSchema = z
   );
 
 export const ActionSlotSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Slot identifier. Referenced in the flow DSL via gamepiece-actions nodes " +
           "(e.g., slot: 'dayAction', slot: 'nightAction'). " +
@@ -342,10 +323,9 @@ export const ActionSlotSchema = z
           "e.g., a 'day-action' slot available only during the 'day' subflow.",
       ),
     preconditions: ConditionExpressionSchema.optional().describe(
-      "Infix expression evaluated against the gamepiece instance's state before " +
-        "this slot is offered. If false, the slot is unavailable for this piece instance. " +
-        "Available paths: 'piece.property.<id>' (property on the piece holding this slot), " +
-        "'actor.property.<id>', 'count(actor.inventory.<id>)'. " +
+        "Infix expression evaluated against the piece instance before this slot is offered; " +
+        "false makes the slot unavailable. " +
+        "Paths: 'piece.property.<id>', 'actor.property.<id>', 'count(actor.inventory.<id>)'. " +
         "Example: 'piece.property.charges >= 1'",
     ),
   })
@@ -360,7 +340,7 @@ export const ActionSlotSchema = z
 // ---------------------------------------------------------------------------
 
 export const GamepieceTypeSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Unique identifier for this type. Referenced throughout the spec by other modules " +
           "(inventories, actions, effects, mechanics, catalog).",
@@ -368,18 +348,12 @@ export const GamepieceTypeSchema = z
     category: z
       .enum(["card", "token", "dice", "tile", "board"])
       .describe(
-        "The physical category of this gamepiece. Drives rendering decisions and catalog " +
-          "generation logic. Mechanical capabilities vary by category: " +
-          "'card': flippable (front/back), stackable, rotatable (e.g. tap/exhaust), " +
-          "can have sub-inventories/slots (equipment on a creature, counters on a card). " +
-          "'token': flippable (optional), not stackable, not rotatable, no sub-inventories. " +
-          "Covers pawns, figurines, resource markers, score counters, player position markers, " +
-          "wargame units, and any small discrete game object. " +
-          "'dice': has numbered faces, rolled for randomness. " +
-          "'tile': flippable, rotatable (edges matter), can have sub-inventories. " +
-          "Board component laid out spatially with adjacency. " +
-          "'board': the play surface, can have sub-inventories (spaces, regions). " +
-          "Typically holds other gamepieces.",
+        "The physical category of this gamepiece; drives rendering and catalog generation. " +
+          "Capabilities per category are in the GamepieceType description. " +
+          "'token' covers pawns, resource markers, score counters and any small discrete object. " +
+          "'dice' have numbered faces and are rolled. " +
+          "'tile' is a spatial component with adjacency. " +
+          "'board' is the play surface and typically holds other gamepieces (spaces, regions).",
       ),
     description: z
       .string()
@@ -417,11 +391,9 @@ export const GamepieceTypeSchema = z
       .array(PieceMechanicSchema)
       .optional()
       .describe(
-        "Piece-scoped mechanic declarations. Each mechanic generates one or more action slots, " +
-          "preconditions, or lifecycle hooks from a compact declaration — no manual slot, " +
-          "precondition, or cleanup effect authoring required. " +
-          "Mechanic-generated slot IDs share the namespace with actionSlots[]; IDs must be unique. " +
-          "Omit if this piece type has no mechanic-driven behaviour.",
+        "Piece-scoped mechanic declarations. Each generates action slots, preconditions, " +
+          "or lifecycle hooks from a compact declaration. " +
+          "Generated slot IDs share the namespace with actionSlots[] and must be unique.",
       ),
     passiveSlots: z
       .array(PassiveSlotSchema)
@@ -445,26 +417,20 @@ export const GamepieceTypeSchema = z
       .boolean()
       .default(false)
       .describe(
-        "Whether instances of this type have a face-up/face-down state (two-sided). " +
-          "When true, the engine tracks face state as a built-in property and flipping " +
-          "the piece means reveal/hide. Properties with 'visibility: revealed' are hidden " +
-          "when face-down and visible when face-up. " +
-          "Typically true for cards and tiles; false for tokens, boards, and dice. " +
-          "Set true for tokens that have hidden states (e.g., hidden-role tokens). " +
-          "If both hasFaceState and exhaustible are true, flipping means reveal/hide " +
-          "and the exhausted state is shown via a separate visual indicator.",
+        "Whether instances have a face-up/face-down state. " +
+          "When true, the engine tracks it as a built-in property, flipping means reveal/hide, " +
+          "and properties with 'visibility: revealed' are hidden while face-down. " +
+          "Typically true for cards, tiles and tokens with hidden state (e.g., hidden roles); " +
+          "false for boards and dice.",
       ),
     exhaustible: z
       .boolean()
       .default(false)
       .describe(
-        "Whether instances of this type can be exhausted (tapped/spent/on cooldown). " +
+        "Whether instances can be exhausted (tapped/spent/on cooldown). " +
           "When true, the engine tracks an exhausted/ready state as a built-in property. " +
-          "If hasFaceState is false, flipping the piece toggles exhausted/ready. " +
-          "If hasFaceState is true, flipping means reveal/hide and the renderer shows " +
-          "exhaustion via rotation, overlay, or other visual indicator. " +
-          "Typically true for cards that can be tapped (e.g. MTG) or tokens representing " +
-          "abilities with cooldowns.",
+          "Flipping toggles exhausted/ready, unless hasFaceState is true: then flipping means " +
+          "reveal/hide and the renderer shows exhaustion separately (rotation, overlay).",
       ),
     faceCount: z
       .number()
@@ -472,26 +438,21 @@ export const GamepieceTypeSchema = z
       .min(2)
       .optional()
       .describe(
-        "Shorthand for 'faces: [1, 2, ..., faceCount]' — faces numbered 1 to N, one apart. " +
-          "For any other numbering (starting at 0, negative, stepped, non-linear) or for " +
-          "symbols, use 'faces' instead. Mutually exclusive with 'faces'. " +
-          "Examples: 6 for a standard d6, 10 for a d10, 20 for a d20. " +
+        "Shorthand for 'faces: [1, 2, ..., faceCount]'. For any other numbering or for symbols, " +
+          "use 'faces'; the two are mutually exclusive. Examples: 6 for a d6, 20 for a d20. " +
           "Dice (category: 'dice') require either faceCount or faces. " +
-          "The face currently showing is readable in expressions as 'piece.faceValue'.",
+          "The face showing is readable in expressions as 'piece.faceValue'.",
       ),
     faces: z
       .array(z.union([z.number(), z.string()]))
       .min(2)
       .optional()
       .describe(
-        "Ordered table of the values a piece of this type can show; use it for anything " +
-          "faceCount can't express. Entries may be numbers or strings: symbol dice " +
-          "(['skull', 'brain', 'brain', 'footprint']), numbers from 0 or negative " +
-          "([-2, -1, 0, 1, 2, 3]), or stepped / non-linear numbers ([2, 4, 6, 8]). " +
+        "Ordered table of the values a piece can show; use it for anything faceCount can't " +
+          "express. Entries are numbers or strings: symbols (['skull', 'brain', 'footprint']), " +
+          "numbers from 0 or negative ([-2, -1, 0, 1]), or stepped ([2, 4, 6, 8]). " +
           "A roll picks one entry uniformly, so repeated entries weight that face " +
-          "([-1, -1, 0, 0, 1, 1]). " +
-          "Mutually exclusive with 'faceCount'. The face showing is readable in " +
-          "expressions as 'piece.faceValue'.",
+          "([-1, -1, 0, 0, 1, 1]). Mutually exclusive with 'faceCount'.",
       ),
     orientationCount: z
       .number()
@@ -499,26 +460,20 @@ export const GamepieceTypeSchema = z
       .min(1)
       .default(1)
       .describe(
-        "Number of discrete orientations instances of this type can have. " +
-          "Default 1 means no rotation — the piece has a single fixed orientation. " +
+        "Number of discrete orientations instances can have; 1 means no rotation. " +
           "Meaningful for tiles where edge alignment matters (e.g. Carcassonne). " +
           "Common values: 4 (90° rotations), 6 (hex facings). " +
-          "Note: visual rotation to indicate exhaustion (e.g. tapping a card) is NOT " +
-          "modeled by orientationCount — use 'exhaustible: true' instead. " +
-          "Orientation is independent of face state — a tile can have both " +
-          "hasFaceState: true (front/back) and orientationCount: 4 (4 rotations).",
+          "Not for tap/exhaust rotation — use 'exhaustible: true'.",
       ),
   })
   .describe(
-    "A gamepiece type definition. Mechanical capabilities by category:\n" +
-      "| Category | Flippable | Stackable | Rotatable | Sub-inventories |\n" +
-      "| card     | yes       | yes       | no        | yes             |\n" +
-      "| token    | optional  | no        | no        | no              |\n" +
-      "| dice     | N/A       | no        | no        | no              |\n" +
-      "| tile     | yes       | no        | yes       | yes             |\n" +
-      "| board    | optional  | no        | no        | yes             |\n" +
-      "Any category can set 'exhaustible: true' for tap/cooldown state.\n" +
-      "The spec declares types; the catalog declares instances.",
+    "A gamepiece type definition. Capabilities by category: " +
+      "card: flippable, stackable, sub-inventories; " +
+      "tile: flippable, rotatable, sub-inventories; " +
+      "token: optionally flippable; " +
+      "board: optionally flippable, sub-inventories; " +
+      "dice: none of these. " +
+      "Any category can set 'exhaustible: true'. The spec declares types; the catalog declares instances.",
   );
 
 // ---------------------------------------------------------------------------
@@ -526,7 +481,7 @@ export const GamepieceTypeSchema = z
 // ---------------------------------------------------------------------------
 
 export const GamepieceTypesModuleSchema = z
-  .object({
+  .strictObject({
     types: z
       .array(GamepieceTypeSchema)
       .min(1)

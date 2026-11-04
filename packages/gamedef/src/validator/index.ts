@@ -13,6 +13,7 @@
  *   4. FlowIntegrity      — loop termination and flow structural rules
  *   5. FaceTables         — dice face table presence and faceCount/faces exclusivity
  *   6. ActorContext       — effects in actor-less flow hooks must name their players
+ *   7. SpecVersion        — metadata.specVersion must not exceed CURRENT_SPEC_VERSION
  *
  * Usage:
  *   import { validate } from "@chaincraft/gamedef/validator";
@@ -29,10 +30,14 @@ import { DuplicateIdsValidator } from "#gamedef/validator/validators/duplicate-i
 import { FlowIntegrityValidator } from "#gamedef/validator/validators/flow-integrity.js";
 import { FaceTablesValidator } from "#gamedef/validator/validators/face-tables.js";
 import { ActorContextValidator } from "#gamedef/validator/validators/actor-context.js";
+import { SpecVersionValidator } from "#gamedef/validator/validators/spec-version.js";
+import { schemaIssues } from "#gamedef/validator/schema-issues.js";
 
 // Re-export types so consumers only need one import path.
 export type { ValidationError, ValidationResult, SpecValidator } from "./types.js";
 export { ValidationCode } from "#gamedef/validator/types.js";
+export { schemaIssues } from "#gamedef/validator/schema-issues.js";
+export type { SchemaIssue } from "#gamedef/validator/schema-issues.js";
 
 /**
  * Ordered list of spec validators run after schema validation passes.
@@ -45,6 +50,7 @@ const VALIDATORS: SpecValidator[] = [
   new FlowIntegrityValidator(),
   new FaceTablesValidator(),
   new ActorContextValidator(),
+  new SpecVersionValidator(),
 ];
 
 /**
@@ -57,7 +63,7 @@ export function validate(raw: unknown): import("./types.js").ValidationResult {
   // Pass 1: Zod schema validation — must succeed before any SpecValidator runs.
   const parsed = ModularGameSpecSchema.safeParse(raw);
   if (!parsed.success) {
-    const errors = parsed.error.issues.map((issue) => ({
+    const errors = schemaIssues(parsed.error).map((issue) => ({
       path: issue.path.join("."),
       message: issue.message,
       code: ValidationCode.Schema,

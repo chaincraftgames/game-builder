@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "catalog.entries.0.properties.value",
+      "code": "invalid_union"
+    }
+  ]
+}

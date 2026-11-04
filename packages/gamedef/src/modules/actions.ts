@@ -141,119 +141,121 @@ import { ConditionExpressionSchema, IdentifierSchema, keyedUnion } from "./commo
  *     label: Choose Placement
  * ```
  */
+export const ActionInputTypeSchema = z
+  .discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("number"), min: z.number().optional(), max: z.number().optional(), integer: z.boolean().optional().describe("If true, only whole numbers are accepted. Defaults to true.") }),
+    z.strictObject({ kind: z.literal("string") }),
+    z.strictObject({ kind: z.literal("boolean") }),
+    z.strictObject({ kind: z.literal("enum"), values: z.array(z.string()).min(2) }),
+    z.strictObject({ kind: z.literal("effect-originator") }).describe(
+      "Engine auto-populates with the player ID of the player who executed the action " +
+        "that triggered this reactive window. Only valid in reactive actions.",
+    ),
+    z.strictObject({
+      kind: z.literal("trigger-input"),
+      inputId: z.string().describe(
+        "Input ID from the triggering action whose resolved value to inject. " +
+          "Forward reference to an input declared on the action that caused the trigger effect.",
+      ),
+    }).describe(
+      "Engine auto-populates with the resolved value of a specific input from the " +
+        "triggering action. Use to access the gamepiece, player, or other value that " +
+        "the triggering player selected. Only valid in reactive actions.",
+    ),
+    z.strictObject({
+      kind: z.literal("gamepiece-select"),
+      inventory: z.string().describe(
+        "Inventory type ID to select from. Forward reference to inventories module.",
+      ),
+      ofType: z.string().optional().describe(
+        "Restrict selection to pieces of this gamepiece type ID.",
+      ),
+      count: z.number().int().min(1).optional().describe(
+        "How many pieces the player must select. Defaults to 1.",
+      ),
+      fromPlayer: z
+        .union([
+          z.literal("actor").describe("Acting player's own inventory instance (default)."),
+          z.strictObject({ param: z.string() }).describe(
+            "Player identified by a prior player-select input. " +
+              "References the input id of a player-select input step declared earlier in the action.",
+          ),
+        ])
+        .optional()
+        .describe(
+          "Whose inventory instance to select from. Only relevant for player-scoped inventories. " +
+            "Defaults to 'actor'. Use { param: inputId } to select from another player's inventory " +
+            "based on a prior player-select input.",
+        ),
+      filter: ConditionExpressionSchema.optional().describe(
+        "Infix expression to filter eligible pieces. " +
+          "Evaluated per-piece. Available paths: 'piece.id', 'piece.property.<id>', 'piece.typeId', " +
+          "'input.<id>' (an EARLIER input of this action). " +
+          "Example: 'piece.property.charges > 0', 'piece.property.cost <= input.budget', " +
+          "or 'piece.id != input.attacker'. " +
+          "Runtime computes valid options and sends them to UX.",
+      ),
+    }).describe(
+      "Player selects one or more gamepieces from an inventory. " +
+        "Runtime computes valid piece IDs based on constraints and sends them to UX. " +
+        "Resolves to piece ID (or array of IDs if count > 1).",
+    ),
+    z.strictObject({
+      kind: z.literal("player-select"),
+      excludeSelf: z.boolean().optional().describe(
+        "If true, the acting player cannot select themselves. Defaults to false.",
+      ),
+      filter: ConditionExpressionSchema.optional().describe(
+        "Infix expression to filter eligible players. " +
+          "Evaluated per-player. Available paths: 'player.id', 'player.property.<id>', " +
+          "'count(player.inventory.<id>)', 'input.<id>' (an EARLIER input of this action). " +
+          "Example: 'not player.property.eliminated and count(player.inventory.hand) > 0'. " +
+          "Runtime computes valid options and sends them to UX.",
+      ),
+    }).describe(
+      "Player selects another player. Runtime computes valid player IDs " +
+        "based on constraints and sends them to UX. Resolves to player ID.",
+    ),
+    z.strictObject({
+      kind: z.literal("inventory-position"),
+      inventory: z.string().describe(
+        "Inventory type ID to select a position within. " +
+          "Forward reference to inventories module.",
+      ),
+      fromPlayer: z
+        .union([
+          z.literal("actor").describe("Acting player's own inventory instance (default)."),
+          z.strictObject({ param: z.string() }).describe(
+            "Player identified by a prior player-select input.",
+          ),
+        ])
+        .optional()
+        .describe(
+          "Whose inventory instance to select a position from. " +
+            "Only relevant for player-scoped inventories. Defaults to 'actor'.",
+        ),
+    }).describe(
+      "Player selects a position within an inventory (grid cell, line index, graph node). " +
+        "Runtime computes valid positions and sends them to UX. " +
+        "Resolves to an InventoryPlacement descriptor.",
+    ),
+  ])
+  .describe(
+    "Type and structural bounds for this input. The engine enforces these before " +
+      "the action resolves. Inputs are collected sequentially — later inputs can " +
+      "depend on earlier ones via { param: inputId } references. " +
+      "Runtime computes valid options for selection inputs and sends them to UX. " +
+      "'effect-originator': engine auto-populates with the triggering player ID (reactive only). " +
+      "'trigger-input': engine auto-populates with a resolved input from the triggering action (reactive only).",
+  );
+
 export const ActionInputSchema = z
-  .object({
+  .strictObject({
     input: IdentifierSchema.describe(
         "Unique identifier for this input within the action. " +
           "Inline effects in the same action reference it via { param: id } in PropertyValue.",
       ),
-    type: z
-      .discriminatedUnion("kind", [
-        z.object({ kind: z.literal("number"), min: z.number().optional(), max: z.number().optional(), integer: z.boolean().optional().describe("If true, only whole numbers are accepted. Defaults to true.") }),
-        z.object({ kind: z.literal("string") }),
-        z.object({ kind: z.literal("boolean") }),
-        z.object({ kind: z.literal("enum"), values: z.array(z.string()).min(2) }),
-        z.object({ kind: z.literal("effect-originator") }).describe(
-          "Engine auto-populates with the player ID of the player who executed the action " +
-            "that triggered this reactive window. Only valid in reactive actions.",
-        ),
-        z.object({
-          kind: z.literal("trigger-input"),
-          inputId: z.string().describe(
-            "Input ID from the triggering action whose resolved value to inject. " +
-              "Forward reference to an input declared on the action that caused the trigger effect.",
-          ),
-        }).describe(
-          "Engine auto-populates with the resolved value of a specific input from the " +
-            "triggering action. Use to access the gamepiece, player, or other value that " +
-            "the triggering player selected. Only valid in reactive actions.",
-        ),
-        z.object({
-          kind: z.literal("gamepiece-select"),
-          inventory: z.string().describe(
-            "Inventory type ID to select from. Forward reference to inventories module.",
-          ),
-          ofType: z.string().optional().describe(
-            "Restrict selection to pieces of this gamepiece type ID.",
-          ),
-          count: z.number().int().min(1).optional().describe(
-            "How many pieces the player must select. Defaults to 1.",
-          ),
-          fromPlayer: z
-            .union([
-              z.literal("self").describe("Acting player's own inventory instance (default)."),
-              z.object({ param: z.string() }).describe(
-                "Player identified by a prior player-select input. " +
-                  "References the input id of a player-select input step declared earlier in the action.",
-              ),
-            ])
-            .optional()
-            .describe(
-              "Whose inventory instance to select from. Only relevant for player-scoped inventories. " +
-                "Defaults to 'self'. Use { param: inputId } to select from another player's inventory " +
-                "based on a prior player-select input.",
-            ),
-          filter: ConditionExpressionSchema.optional().describe(
-            "Infix expression to filter eligible pieces. " +
-              "Evaluated per-piece. Available paths: 'piece.id', 'piece.property.<id>', 'piece.typeId', " +
-              "'input.<id>' (an EARLIER input of this action). " +
-              "Example: 'piece.property.charges > 0', 'piece.property.cost <= input.budget', " +
-              "or 'piece.id != input.attacker'. " +
-              "Runtime computes valid options and sends them to UX.",
-          ),
-        }).describe(
-          "Player selects one or more gamepieces from an inventory. " +
-            "Runtime computes valid piece IDs based on constraints and sends them to UX. " +
-            "Resolves to piece ID (or array of IDs if count > 1).",
-        ),
-        z.object({
-          kind: z.literal("player-select"),
-          excludeSelf: z.boolean().optional().describe(
-            "If true, the acting player cannot select themselves. Defaults to false.",
-          ),
-          filter: ConditionExpressionSchema.optional().describe(
-            "Infix expression to filter eligible players. " +
-              "Evaluated per-player. Available paths: 'player.id', 'player.property.<id>', " +
-              "'count(player.inventory.<id>)', 'input.<id>' (an EARLIER input of this action). " +
-              "Example: 'not player.property.eliminated and count(player.inventory.hand) > 0'. " +
-              "Runtime computes valid options and sends them to UX.",
-          ),
-        }).describe(
-          "Player selects another player. Runtime computes valid player IDs " +
-            "based on constraints and sends them to UX. Resolves to player ID.",
-        ),
-        z.object({
-          kind: z.literal("inventory-position"),
-          inventory: z.string().describe(
-            "Inventory type ID to select a position within. " +
-              "Forward reference to inventories module.",
-          ),
-          fromPlayer: z
-            .union([
-              z.literal("self").describe("Acting player's own inventory instance (default)."),
-              z.object({ param: z.string() }).describe(
-                "Player identified by a prior player-select input.",
-              ),
-            ])
-            .optional()
-            .describe(
-              "Whose inventory instance to select a position from. " +
-                "Only relevant for player-scoped inventories. Defaults to 'self'.",
-            ),
-        }).describe(
-          "Player selects a position within an inventory (grid cell, line index, graph node). " +
-            "Runtime computes valid positions and sends them to UX. " +
-            "Resolves to an InventoryPlacement descriptor.",
-        ),
-      ])
-      .describe(
-        "Type and structural bounds for this input. The engine enforces these before " +
-          "the action resolves. Inputs are collected sequentially — later inputs can " +
-          "depend on earlier ones via { param: inputId } references. " +
-          "Runtime computes valid options for selection inputs and sends them to UX. " +
-          "'effect-originator': engine auto-populates with the triggering player ID (reactive only). " +
-          "'trigger-input': engine auto-populates with a resolved input from the triggering action (reactive only).",
-      ),
+    type: ActionInputTypeSchema,
     label: z
       .string()
       .optional()
@@ -350,7 +352,7 @@ export const ActionStepSchema = keyedUnion({
  *     type: { kind: gamepiece-select, inventory: playerHand, fromPlayer: { param: target } }
  *     label: Choose card to steal
  *   - effect: move
- *     from: { player: { kind: param, inputId: target }, inventory: playerHand, select: { id: { param: card } } }
+ *     from: { player: { param: target }, inventory: playerHand, select: { id: { param: card } } }
  *     to: { inventory: playerHand }
  * ```
  * @example Liar's Dice bid — player inputs, inline { param } effects
@@ -466,7 +468,7 @@ export const ActionStepSchema = keyedUnion({
  * ```
  */
 export const ActionSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Unique identifier for this action. Referenced by flow phases and action slots.",
       ),
@@ -524,7 +526,7 @@ export const ActionSchema = z
           "subflows the action is eligible for. Omit if the action is never interrupt-eligible.",
       ),
     reactive: z
-      .object({
+      .strictObject({
         trigger: z
           .string()
           .describe(
@@ -576,7 +578,7 @@ export const ActionSchema = z
   );
 
 export const ActionsModuleSchema = z
-  .object({
+  .strictObject({
     actions: z
       .array(ActionSchema)
       .min(1)

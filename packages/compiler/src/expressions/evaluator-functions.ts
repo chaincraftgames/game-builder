@@ -22,6 +22,14 @@ import { InternalFn } from "#compiler/expressions/evaluator.js";
 
 type CompileFn = (node: Expr) => InternalFn;
 
+/** Every function an expression may call; the authoring docs list these. */
+export const EXPRESSION_FUNCTIONS = ["count", "sum", "all", "any", "if"] as const;
+export type ExpressionFunction = (typeof EXPRESSION_FUNCTIONS)[number];
+
+function isExpressionFunction(fn: string): fn is ExpressionFunction {
+  return (EXPRESSION_FUNCTIONS as readonly string[]).includes(fn);
+}
+
 /**
  * Compile a function call expression into an evaluation function.
  * Returns an evaluation function for the given function call.
@@ -31,6 +39,9 @@ export function compileCall(
   args: Expr[],
   compile: CompileFn,
 ): InternalFn {
+  if (!isExpressionFunction(fn)) {
+    throw new ExpressionError(`Unknown function '${fn}'`, 0);
+  }
   switch (fn) {
     case "if":
       return compileIf(args, compile);
@@ -39,8 +50,6 @@ export function compileCall(
     case "all":
     case "any":
       return compileAggregator(fn, args, compile);
-    default:
-      throw new ExpressionError(`Unknown function '${fn}'`, 0);
   }
 }
 

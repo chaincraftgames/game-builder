@@ -31,7 +31,7 @@ import { z } from "zod";
  * ```
  */
 export const IntRangeSchema = z
-  .object({
+  .strictObject({
     min: z.number().int().min(0).optional().describe(
       "Inclusive lower bound. Omit for no lower bound (treated as 0).",
     ),
@@ -46,44 +46,6 @@ export const IntRangeSchema = z
   );
 
 export type IntRange = z.infer<typeof IntRangeSchema>;
-
-// ---------------------------------------------------------------------------
-// State path schema
-// ---------------------------------------------------------------------------
-
-/**
- * A validated state path string for referencing runtime game state.
- * Used as bare strings outside JSONLogic (e.g., effect targets, catalog refs).
- * Inside JSONLogic, use as the argument to the `var` operator.
- *
- * **Path segments by context:**
- * - `game.property.<id>`           — game-level scalar property
- * - `actor.property.<id>`          — property on the acting/evaluated player
- * - `actor.role.<id>`              — 1 if the player holds this role, else 0
- * - `piece.property.<id>`          — property on a gamepiece (piece-context only)
- * - `input.<id>`                   — value of a named action input (action-context only)
- *
- * @example
- * ```
- * game.property.round
- * piece.property.charges
- * input.bidAmount
- * ```
- */
-export const StatePathSchema = z
-  .string()
-  .regex(
-    /^(game\.property\.|actor\.(property|role)\.|piece\.property\.|input\.)\S+/,
-    "Must be a valid state path: game.property.<id>, actor.property.<id>, " +
-      "actor.role.<id>, piece.property.<id>, or input.<id>.",
-  )
-  .describe(
-    "A state path string referencing runtime game state. " +
-      "Valid prefixes: 'game.property.', 'actor.property.', 'actor.role.', " +
-      "'piece.property.', 'input.'.",
-  );
-
-export type StatePath = z.infer<typeof StatePathSchema>;
 
 // ---------------------------------------------------------------------------
 // Condition expression schema
@@ -131,7 +93,7 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * - `game.inventory.<id>`         — a game-level inventory (aggregators only)
  * - `actor.property.<id>`         — property on the acting player
  *
- * **Player matching** (`PlayerTarget.matching.condition`, `player-select.filter`):
+ * **Player matching** (`PlayerTarget { where }`, `player-select.filter`):
  * - `player.id`                   — the candidate player's id (`player-select.filter` only)
  * - `player.property.<id>`        — the candidate player's property
  * - `player.inventory.<id>`       — the candidate player's inventory (aggregators only)
@@ -192,11 +154,9 @@ export type StatePath = z.infer<typeof StatePathSchema>;
  * ```yaml
  * endCondition: "any(players, player.property.score >= 50)"
  * ```
- * @example Player target matching — apply bonus to players who bid correctly
+ * @example Player target { where } — apply bonus to players who bid correctly
  * ```yaml
- * target:
- *   kind: matching
- *   condition: "player.property.bidCorrect == true"
+ * target: { where: "player.property.bidCorrect == true" }
  * ```
  */
 export const ConditionExpressionSchema = z.string().describe(
@@ -215,9 +175,6 @@ export const ConditionExpressionSchema = z.string().describe(
 );
 
 export type ConditionExpression = z.infer<typeof ConditionExpressionSchema>;
-
-/** @deprecated Renamed to ConditionExpressionSchema. */
-export const JsonLogicSchema = ConditionExpressionSchema;
 
 // ---------------------------------------------------------------------------
 // Identifier
@@ -262,38 +219,38 @@ export type Identifier = z.infer<typeof IdentifierSchema>;
  * at runtime and validated by the engine on every set-state write.
  */
 export const PropertyTypeSchema = z.discriminatedUnion("kind", [
-  z.object({
+  z.strictObject({
     kind: z.literal("number"),
     min: z.number().optional().describe("Inclusive minimum value, if constrained"),
     max: z.number().optional().describe("Inclusive maximum value, if constrained"),
     integer: z.boolean().optional().describe("If true, only whole numbers are accepted. Defaults to true."),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("string"),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("boolean"),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("enum"),
     values: z
       .array(z.string())
       .min(2)
       .describe("The exhaustive set of allowed string values"),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("player-id"),
   }).describe(
     "A reference to a player. Stored as a string player ID. " +
       "The engine validates that the written value is a known player at runtime.",
   ),
-  z.object({
+  z.strictObject({
     kind: z.literal("player-role-id"),
   }).describe(
     "A reference to a player role defined in the players module. " +
       "The engine validates that the written value is a known role when roles are configured.",
   ),
-  z.object({
+  z.strictObject({
     kind: z.literal("gamepiece-id"),
   }).describe(
     "A reference to a gamepiece instance. Stored as a string piece ID. " +
@@ -321,7 +278,7 @@ export type PropertyType = z.infer<typeof PropertyTypeSchema>;
 export const PlayerStateRefSchema = z
   .union([
     z
-      .object({
+      .strictObject({
         playerProperty: z
           .string()
           .describe(
@@ -331,7 +288,7 @@ export const PlayerStateRefSchema = z
       })
       .describe("Rank players by a named property value on each player."),
     z
-      .object({
+      .strictObject({
         playerInventory: z
           .string()
           .describe(
@@ -377,22 +334,22 @@ export const PlayerSelectorSchema = z
   .union([
     z.literal("first").describe("Seat 1."),
     z.literal("random").describe("A random non-eliminated player."),
-    z.object({ stateRef: z.string(), ...OffsetField }).strict().describe(
+    z.strictObject({ stateRef: z.string(), ...OffsetField }).describe(
       "The player whose ID is stored at this game property (e.g. game.property.roundLoser). " +
         "If that player is eliminated, the next non-eliminated player in turn direction is used. " +
         "Empty value = seat 1.",
     ),
-    z.object({ role: z.string(), ...OffsetField }).strict().describe(
+    z.strictObject({ role: z.string(), ...OffsetField }).describe(
       "The first non-eliminated player in seat order holding this role.",
     ),
-    z.object({ where: ConditionExpressionSchema, ...OffsetField }).strict().describe(
+    z.strictObject({ where: ConditionExpressionSchema, ...OffsetField }).describe(
       "The first non-eliminated player in seat order for whom this expression is true, " +
         "with the candidate bound as `player`. Example: \"count(player.inventory.firstPlayerMarker) > 0\".",
     ),
-    z.object({ highest: PlayerStateRefSchema, ...OffsetField }).strict().describe(
+    z.strictObject({ highest: PlayerStateRefSchema, ...OffsetField }).describe(
       "The non-eliminated player with the highest value; ties go to the earliest seat.",
     ),
-    z.object({ lowest: PlayerStateRefSchema, ...OffsetField }).strict().describe(
+    z.strictObject({ lowest: PlayerStateRefSchema, ...OffsetField }).describe(
       "The non-eliminated player with the lowest value; ties go to the earliest seat.",
     ),
   ])
@@ -409,16 +366,24 @@ export type PlayerSelector = z.infer<typeof PlayerSelectorSchema>;
  * `effectRef`). Exactly one key must be present. Unlike z.union, validation errors come
  * only from the chosen branch, so they name the actual bad field.
  */
-export function keyedUnion<B extends Record<string, z.ZodTypeAny>>(branches: B) {
+// Metadata is typed `unknown`: a `Record<string, ZodType>` makes `add` fail with TS2589.
+const keyedUnionRegistry = z.registry<{ keyedBranches: unknown }>();
+
+/** The branches of a `keyedUnion` schema, also for `.describe()` copies of it. */
+export function keyedBranchesOf(schema: z.ZodType): Record<string, z.ZodType> | undefined {
+  return keyedUnionRegistry.get(schema)?.keyedBranches as Record<string, z.ZodType> | undefined;
+}
+
+export function keyedUnion<B extends Record<string, z.ZodType>>(branches: B) {
   const keys = Object.keys(branches);
-  return z.unknown().transform((value, ctx): z.output<B[keyof B]> => {
+  const schema = z.unknown().transform((value, ctx): z.output<B[keyof B]> => {
     const present =
       value !== null && typeof value === "object" && !Array.isArray(value)
         ? keys.filter((k) => k in value)
         : [];
     if (present.length !== 1) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message:
           present.length === 0
             ? `Expected an object with one of: ${keys.join(", ")}`
@@ -428,9 +393,11 @@ export function keyedUnion<B extends Record<string, z.ZodTypeAny>>(branches: B) 
     }
     const result = branches[present[0]].safeParse(value);
     if (!result.success) {
-      for (const issue of result.error.issues) ctx.addIssue(issue);
+      for (const issue of result.error.issues) ctx.addIssue(issue as Parameters<typeof ctx.addIssue>[0] & object);
       return z.NEVER;
     }
-    return result.data;
+    return result.data as z.output<B[keyof B]>;
   });
+  keyedUnionRegistry.add(schema, { keyedBranches: branches });
+  return schema;
 }

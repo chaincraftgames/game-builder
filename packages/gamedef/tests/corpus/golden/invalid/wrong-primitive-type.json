@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "metadata.playerCount.min",
+      "code": "invalid_type"
+    }
+  ]
+}

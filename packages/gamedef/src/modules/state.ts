@@ -66,7 +66,7 @@ export const StateDefaultSchema = z
     z.number().describe("Literal numeric default."),
     z.boolean().describe("Literal boolean default."),
     z
-      .object({ fromPlayerCount: z.literal(true) })
+      .strictObject({ fromPlayerCount: z.literal(true) })
       .describe(
         "Initialize this integer property to the number of players at game start. " +
           "Useful for tracking how many players remain active.",
@@ -125,7 +125,7 @@ export const StateDefaultSchema = z
  * ```
  */
 export const ComputedPropertySchema = z
-  .object({
+  .strictObject({
     inventory: z
       .string()
       .describe(
@@ -193,7 +193,7 @@ export const ComputedPropertySchema = z
  * ```
  */
 export const StatePropertySchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Programmatic identifier. Used in dot-path references " +
           "(e.g., game.property.currentBidQuantity). Must be camelCase.",
@@ -228,7 +228,7 @@ export const StatePropertySchema = z
 // ---------------------------------------------------------------------------
 
 export const GameStateSchema = z
-  .object({
+  .strictObject({
     properties: z
       .array(StatePropertySchema)
       .min(1)
@@ -247,7 +247,7 @@ export const GameStateSchema = z
 export const RESERVED_PLAYER_PROPERTY_IDS = ["eliminated"] as const;
 
 export const PlayerStateSchema = z
-  .object({
+  .strictObject({
     properties: z
       .array(StatePropertySchema)
       .min(1)
@@ -277,7 +277,7 @@ export const PlayerStateSchema = z
 // ---------------------------------------------------------------------------
 
 export const StateModuleSchema = z
-  .object({
+  .strictObject({
     game: GameStateSchema.optional().describe(
       "Game-scoped state properties. Singleton values for the whole game.",
     ),

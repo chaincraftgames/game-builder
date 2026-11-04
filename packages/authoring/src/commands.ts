@@ -1,5 +1,5 @@
 /** Every command the CLI accepts; `templates/` may only reference these. */
-export const COMMANDS = ["init", "validate", "compile", "help"] as const;
+export const COMMANDS = ["init", "validate", "compile", "docs", "help"] as const;
 
 /** A command name accepted by the CLI. */
 export type Command = (typeof COMMANDS)[number];
@@ -11,6 +11,7 @@ Commands:
   init               Scaffold a project in the current directory
   validate [--draft] Check spec/*.yaml (--draft: unresolved references become todos)
   compile            Validate strictly, then assemble the module (nothing is written)
+  docs [topic [arg]] Spec reference and guides; no topic lists them (works outside a project)
   help               Show this message
 
 Options:

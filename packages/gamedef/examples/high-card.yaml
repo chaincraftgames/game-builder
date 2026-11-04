@@ -122,7 +122,6 @@ effects:
         inventory: deck
         select: top
       to:
-        scope: all-players
         inventory: hand
       count: 3
 
@@ -137,8 +136,7 @@ effects:
       value:
         delta: 1
       target:
-        kind: stateRef
-        path: game.property.roundWinner
+        stateRef: game.property.roundWinner
 
     - id: announceTrick
       effect: message
@@ -171,7 +169,7 @@ actions:
             kind: gamepiece-select
             inventory: hand
             ofType: card
-            fromPlayer: self
+            fromPlayer: actor
         - effect: move
           from:
             inventory: hand
@@ -208,7 +206,7 @@ flow:
           - kind: turn
             id: playTrick
             label: Play a card
-            actor: all-players
+            actor: all
             turnOrder:
               kind: seat
               direction: clockwise

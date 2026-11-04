@@ -37,7 +37,6 @@ import {
   executeOrient,
   executeReveal,
   executeRoll,
-  executeSetRandom,
   executeSetState,
   executeShuffle,
   executeUpdate,
@@ -54,7 +53,6 @@ const BUILT_IN_EXECUTORS: Record<string, EffectRegistration> = {
   update: { kind: "effect-executor", execute: executeUpdate },
   flip: { kind: "effect-executor", execute: executeFlip },
   roll: { kind: "effect-executor", execute: executeRoll },
-  "set-random": { kind: "effect-executor", execute: executeSetRandom },
   orient: { kind: "effect-executor", execute: executeOrient },
   reveal: { kind: "effect-executor", execute: executeReveal },
   hide: { kind: "effect-executor", execute: executeHide },
@@ -107,11 +105,8 @@ export function walkEffectBody(
       result.kind = value;
     } else if (selectorFields?.includes(key)) {
       result[key] = walkSelector(value);
-    } else if (key === "target" && isMatchingTarget(value)) {
-      result[key] = {
-        kind: "matching",
-        condition: compilePlayerFilter(value.condition),
-      };
+    } else if (PLAYER_TARGET_FIELDS.includes(key) && isWhereTarget(value)) {
+      result[key] = { where: compilePlayerFilter(value.where) };
     } else {
       result[key] = walkValue(value);
     }
@@ -120,14 +115,14 @@ export function walkEffectBody(
   return result;
 }
 
-function isMatchingTarget(
-  value: unknown,
-): value is { kind: "matching"; condition: string } {
+/** Effect fields that hold a PlayerTarget (set-state `target`; message/reveal `to`). */
+const PLAYER_TARGET_FIELDS = ["target", "to"];
+
+function isWhereTarget(value: unknown): value is { where: string } {
   return (
     value != null &&
     typeof value === "object" &&
-    (value as Record<string, unknown>).kind === "matching" &&
-    typeof (value as Record<string, unknown>).condition === "string"
+    typeof (value as Record<string, unknown>).where === "string"
   );
 }
 
@@ -154,8 +149,8 @@ function walkSelector(value: unknown): unknown {
   for (const [k, v] of Object.entries(sel)) {
     if (k === "filter" && typeof v === "string") {
       result[k] = compilePieceFilter(v);
-    } else if (k === "player" && isMatchingTarget(v)) {
-      result[k] = { kind: "matching", condition: compilePlayerFilter(v.condition) };
+    } else if (k === "player" && isWhereTarget(v)) {
+      result[k] = { where: compilePlayerFilter(v.where) };
     } else {
       result[k] = walkValue(v);
     }

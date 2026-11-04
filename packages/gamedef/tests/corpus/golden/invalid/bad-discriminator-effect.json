@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "effects.effects.1.effect",
+      "code": "invalid_union"
+    }
+  ]
+}

@@ -51,7 +51,7 @@ describe("FlowModuleSchema — Liar's Dice", () => {
           id: "stealResponse",
           trigger: "stealDie",
           timing: "before",
-          eligiblePlayers: "opponents",
+          eligiblePlayers: "all-other",
           actions: ["blockSteal"],
           timeout: 15000,
         },
@@ -63,7 +63,7 @@ describe("FlowModuleSchema — Liar's Dice", () => {
           children: [
             {
               kind: "turn",
-              actor: "all-players",
+              actor: "all",
               turnOrder: { kind: "seat", direction: "clockwise" },
               grammar: {
                 kind: "choice",
@@ -129,7 +129,7 @@ describe("FlowModuleSchema — Werewolf", () => {
               kind: "simultaneous",
               id: "dayDiscussion",
               label: "Discussion",
-              actor: "all-players",
+              actor: "all",
               endCondition: "all-passed",
               grammar: {
                 kind: "choice",
@@ -141,7 +141,7 @@ describe("FlowModuleSchema — Werewolf", () => {
               kind: "simultaneous",
               id: "dayVote",
               label: "Vote",
-              actor: "all-players",
+              actor: "all",
               grammar: { kind: "action", ref: "voteEliminate" },
               hooks: {
                 onComplete: [{ effectRef: "revealEliminated" }, { effectRef: "removeEliminated" }],
@@ -175,7 +175,7 @@ describe("FlowModuleSchema — Loop exit", () => {
     const result = ok({
       root: {
         kind: "game",
-        children: [{ kind: "loop", count: 5, children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "noop" } }] }],
+        children: [{ kind: "loop", count: 5, children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "noop" } }] }],
       },
     });
     expect((result.root as any).children[0].count).toBe(5);
@@ -185,7 +185,7 @@ describe("FlowModuleSchema — Loop exit", () => {
     const result = ok({
       root: {
         kind: "game",
-        children: [{ kind: "loop", count: 1, children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "noop" } }] }],
+        children: [{ kind: "loop", count: 1, children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "noop" } }] }],
       },
     });
     expect((result.root as any).children[0].count).toBe(1);
@@ -195,7 +195,7 @@ describe("FlowModuleSchema — Loop exit", () => {
     const result = ok({
       root: {
         kind: "game",
-        children: [{ kind: "loop", endCondition: "game.property.round >= 5", children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "noop" } }] }],
+        children: [{ kind: "loop", endCondition: "game.property.round >= 5", children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "noop" } }] }],
       },
     });
     expect((result.root as any).children[0].endCondition).toBe("game.property.round >= 5");
@@ -211,7 +211,7 @@ describe("FlowModuleSchema — Loop exit", () => {
           children: [
             {
               kind: "simultaneous",
-              actor: "all-players",
+              actor: "all",
               grammar: { kind: "choice", passable: true, options: [{ kind: "action", ref: "noop" }] },
             },
           ],
@@ -230,7 +230,7 @@ describe("FlowModuleSchema — Loop exit", () => {
           endCondition: "actor.property.score >= 50",
           checkAfter: "turn",
           finalRound: true,
-          children: [{ kind: "turn", actor: "all-players", turnOrder: { kind: "seat", direction: "clockwise" }, grammar: { kind: "action", ref: "takeTurn" } }],
+          children: [{ kind: "turn", actor: "all", turnOrder: { kind: "seat", direction: "clockwise" }, grammar: { kind: "action", ref: "takeTurn" } }],
         }],
       },
     });
@@ -247,13 +247,13 @@ describe("FlowModuleSchema — Loop exit", () => {
             id: "exploration",
             endCondition: "game.property.hauntTriggered == true",
             finalRound: true,
-            children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "explore" } }],
+            children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "explore" } }],
           },
           {
             kind: "loop",
             id: "escape",
             endCondition: "game.property.gameOver == true",
-            children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "escape" } }],
+            children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "escape" } }],
           },
         ],
       },
@@ -287,7 +287,7 @@ describe("FlowModuleSchema — Scoped interrupt windows", () => {
             actions: ["respond"],
           },
         ],
-        children: [{ kind: "loop", count: 3, children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "noop" } }] }],
+        children: [{ kind: "loop", count: 3, children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "noop" } }] }],
       },
     });
     expect((result.root as any).interruptWindows).toHaveLength(1);
@@ -298,14 +298,14 @@ describe("FlowModuleSchema — Scoped interrupt windows", () => {
       baseLoop({
         kind: "turn",
         id: "attackTurn",
-        actor: "all-players",
+        actor: "all",
         grammar: { kind: "action", ref: "attack" },
         interruptWindows: [
           {
             id: "counterSpell",
             trigger: "dealDamage",
             timing: "before",
-            eligiblePlayers: "opponents",
+            eligiblePlayers: "all-other",
             actions: ["counterSpell"],
           },
         ],
@@ -319,7 +319,7 @@ describe("FlowModuleSchema — Scoped interrupt windows", () => {
     const result = ok(
       baseLoop({
         kind: "simultaneous",
-        actor: "all-players",
+        actor: "all",
         grammar: { kind: "action", ref: "noop" },
         interruptWindows: [
           {
@@ -336,25 +336,19 @@ describe("FlowModuleSchema — Scoped interrupt windows", () => {
     expect(sim.interruptWindows[0].eligiblePlayers.roles).toContain("healer");
   });
 
-  it("parses interruptWindow with eligiblePlayers: 'non-active'", () => {
-    const result = ok(
-      baseLoop({
-        kind: "turn",
-        actor: "all-players",
-        grammar: { kind: "action", ref: "noop" },
-        interruptWindows: [
-          {
-            id: "nonActiveWindow",
-            trigger: "someEffect",
-            timing: "before",
-            eligiblePlayers: "non-active",
-            actions: ["respond"],
-          },
-        ],
-      }),
-    );
-    const turn = (result.root as any).children[0];
-    expect(turn.interruptWindows[0].eligiblePlayers).toBe("non-active");
+  it("rejects the removed eligiblePlayers values 'non-active' and 'opponents'", () => {
+    for (const eligiblePlayers of ["non-active", "opponents"]) {
+      fail(
+        baseLoop({
+          kind: "turn",
+          actor: "all",
+          grammar: { kind: "action", ref: "noop" },
+          interruptWindows: [
+            { id: "w", trigger: "someEffect", timing: "before", eligiblePlayers, actions: ["respond"] },
+          ],
+        }),
+      );
+    }
   });
 });
 
@@ -364,13 +358,13 @@ describe("FlowModuleSchema — Scoped interrupt windows", () => {
 
 describe("FlowModuleSchema — Turn Grammar", () => {
   it("parses action grammar", () => {
-    const result = ok(baseLoop({ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "playCard" } }));
+    const result = ok(baseLoop({ kind: "turn", actor: "all", grammar: { kind: "action", ref: "playCard" } }));
     expect((result.root as any).children[0].grammar.ref).toBe("playCard");
   });
 
   it("parses slot grammar with select: 'all'", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: { kind: "slot", inventory: "hand", slot: "cardAbility", select: "all" },
     }));
     expect((result.root as any).children[0].grammar.select).toBe("all");
@@ -378,7 +372,7 @@ describe("FlowModuleSchema — Turn Grammar", () => {
 
   it("parses slot grammar with select: { max: 2 }", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: { kind: "slot", inventory: "hand", slot: "cardAbility", select: { max: 2 } },
     }));
     expect((result.root as any).children[0].grammar.select.max).toBe(2);
@@ -386,7 +380,7 @@ describe("FlowModuleSchema — Turn Grammar", () => {
 
   it("parses sequence", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: { kind: "sequence", steps: [{ kind: "action", ref: "draw" }, { kind: "action", ref: "play" }] },
     }));
     expect((result.root as any).children[0].grammar.steps).toHaveLength(2);
@@ -394,7 +388,7 @@ describe("FlowModuleSchema — Turn Grammar", () => {
 
   it("parses choice with passable: true", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: { kind: "choice", passable: true, options: [{ kind: "action", ref: "playCard" }] },
     }));
     expect((result.root as any).children[0].grammar.passable).toBe(true);
@@ -402,7 +396,7 @@ describe("FlowModuleSchema — Turn Grammar", () => {
 
   it("parses repeat with count: { max: 3 }", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: {
         kind: "repeat",
         count: { max: 3 },
@@ -414,7 +408,7 @@ describe("FlowModuleSchema — Turn Grammar", () => {
 
   it("parses repeat with count: 'until-pass'", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: {
         kind: "repeat",
         count: "until-pass",
@@ -432,7 +426,7 @@ describe("FlowModuleSchema — Turn Grammar", () => {
 describe("FlowModuleSchema — TurnOrder", () => {
   it("parses seat order", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       turnOrder: { kind: "seat", direction: "clockwise" },
       grammar: { kind: "action", ref: "noop" },
     }));
@@ -441,7 +435,7 @@ describe("FlowModuleSchema — TurnOrder", () => {
 
   it("parses ranked order", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       turnOrder: { kind: "ranked", by: { playerProperty: "gold" }, order: "ascending" },
       grammar: { kind: "action", ref: "noop" },
     }));
@@ -450,7 +444,7 @@ describe("FlowModuleSchema — TurnOrder", () => {
 
   it("parses explicit order", () => {
     const result = ok(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       turnOrder: { kind: "explicit", players: ["north", "east", "south", "west"] },
       grammar: { kind: "action", ref: "noop" },
     }));
@@ -476,23 +470,23 @@ describe("FlowModuleSchema — Rejection cases", () => {
   });
 
   it("rejects turn with no grammar", () => {
-    fail(baseLoop({ kind: "turn", actor: "all-players" }));
+    fail(baseLoop({ kind: "turn", actor: "all" }));
   });
 
   it("rejects choice with no options", () => {
-    fail(baseLoop({ kind: "turn", actor: "all-players", grammar: { kind: "choice", options: [] } }));
+    fail(baseLoop({ kind: "turn", actor: "all", grammar: { kind: "choice", options: [] } }));
   });
 
   it("rejects repeat with count: 0", () => {
     fail(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: { kind: "repeat", count: 0, body: { kind: "action", ref: "noop" } },
     }));
   });
 
   it("rejects interruptWindow with empty actions", () => {
     fail(baseLoop({
-      kind: "turn", actor: "all-players",
+      kind: "turn", actor: "all",
       grammar: { kind: "action", ref: "noop" },
       interruptWindows: [{ id: "w", trigger: "e", timing: "before", eligiblePlayers: "all", actions: [] }],
     }));
@@ -511,7 +505,7 @@ const baseGame = (winConditions: unknown[]) => ({
   root: {
     kind: "game",
     winConditions,
-    children: [{ kind: "loop", count: 1, children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "noop" } }] }],
+    children: [{ kind: "loop", count: 1, children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "noop" } }] }],
   },
 });
 
@@ -567,7 +561,7 @@ describe("FlowModuleSchema — winConditions", () => {
     const result = ok({
       root: {
         kind: "game",
-        children: [{ kind: "loop", count: 1, children: [{ kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "noop" } }] }],
+        children: [{ kind: "loop", count: 1, children: [{ kind: "turn", actor: "all", grammar: { kind: "action", ref: "noop" } }] }],
       },
     });
     expect(result.root.winConditions).toBeUndefined();

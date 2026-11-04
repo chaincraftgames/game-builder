@@ -169,7 +169,6 @@ effects:
         select: top
         ofType: weapon
       to:
-        scope: all-players
         inventory: forge
       count: 3
 
@@ -224,7 +223,6 @@ effects:
       template: >-
         Your weapon "{{input.weaponDescription}}" has been forged and added to your
         arsenal. The crowd gasps at your audacity.
-      visibility: private
 
     # ---------------------------------------------------------------------------
     # Ceremonies (LLM flavor)
@@ -246,12 +244,11 @@ effects:
         - field: openingAnnouncement
           message:
             to: all
-            visibility: public
 
     - id: revealArsenals
       effect: reveal
       pieces:
-        player: { kind: all }
+        player: all
         inventory: arsenal
         select: all
       to: all
@@ -261,7 +258,7 @@ effects:
       inputs:
         - name: arsenals
           pieces:
-            player: { kind: all }
+            player: all
             inventory: arsenal
             select: all
           properties:
@@ -282,7 +279,6 @@ effects:
         - field: arsenalReveal
           message:
             to: all
-            visibility: public
 
     # ---------------------------------------------------------------------------
     # Clash resolution
@@ -298,15 +294,15 @@ effects:
       to: all
 
     - id: rollReversal
-      effect: set-random
+      effect: set-state
       path: game.property.includeReversal
-      source:
-        kind: options
-        options:
-          - value: true
-            weight: 0.25
-          - value: false
-            weight: 0.75
+      value:
+        random:
+          options:
+            - value: true
+              weight: 0.25
+            - value: false
+              weight: 0.75
 
     - id: resolveRound
       effect: llm-effect
@@ -343,7 +339,6 @@ effects:
         - field: roundNarrative
           message:
             to: all
-            visibility: public
 
     - id: updateScores
       effect: custom
@@ -405,7 +400,6 @@ effects:
         - field: victoryAnnouncement
           message:
             to: all
-            visibility: public
 
 actions:
   actions:
@@ -464,7 +458,7 @@ flow:
           # onComplete: reveal arsenals, then a dramatic public reveal ceremony.
         id: weaponCreation
         label: Weapon Creation
-        actor: all-players
+        actor: all
         grammar:
           kind: repeat
           count: 3
@@ -485,7 +479,7 @@ flow:
           - kind: simultaneous   # weapon selection — both players pick secretly, simultaneously
             id: weaponSelection
             label: Weapon Selection
-            actor: all-players
+            actor: all
             grammar:
               kind: action
               ref: selectWeapon

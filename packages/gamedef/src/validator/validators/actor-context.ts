@@ -13,7 +13,7 @@
  *     flip/update/orient/reveal/hide/roll/generate-gamepiece-image) on a
  *     player-scoped inventory must have a `player` target
  *   - a move destination on a player-scoped inventory must have a `player` target
- *   - `player` / `target` of kind `actor` or `all-other` is rejected
+ *   - `player` / `target` / recipient `to` of `actor` or `all-other` is rejected
  *   - set-state on a `player.property.*` path must have a `target`
  */
 
@@ -34,10 +34,15 @@ const SELECTOR_FIELDS: Record<string, string[]> = {
   "generate-gamepiece-image": ["pieces"],
 };
 
-const NEEDS_ACTOR_KINDS = new Set(["actor", "all-other"]);
+const NEEDS_ACTOR = new Set(["actor", "all-other"]);
+const USE_INSTEAD = "Use all, { param }, { stateRef }, { where } or { roles } instead.";
 
 function isObj(v: unknown): v is Obj {
   return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function needsActor(target: unknown): target is string {
+  return typeof target === "string" && NEEDS_ACTOR.has(target);
 }
 
 export class ActorContextValidator implements SpecValidator {
@@ -71,17 +76,14 @@ export class ActorContextValidator implements SpecValidator {
         if (!isObj(selector)) continue;
         const inventory = selector["inventory"];
         const player = selector["player"];
-        if (typeof inventory === "string" && playerScoped.has(inventory) && !isObj(player)) {
+        if (typeof inventory === "string" && playerScoped.has(inventory) && player === undefined) {
           report(
             `"${field}" selects from player-scoped inventory "${inventory}" without a player`,
-            `Add player: { kind: all } (or another player target) to "${field}".`,
+            `Add player: all (or another player target) to "${field}".`,
           );
         }
-        if (isObj(player) && NEEDS_ACTOR_KINDS.has(player["kind"] as string)) {
-          report(
-            `"${field}.player" is kind "${player["kind"]}"`,
-            `Use kind: all, param, stateRef or matching instead.`,
-          );
+        if (needsActor(player)) {
+          report(`"${field}.player" is "${player}"`, USE_INSTEAD);
         }
       }
 
@@ -89,30 +91,38 @@ export class ActorContextValidator implements SpecValidator {
         const to = effect["to"];
         const inventory = to["inventory"];
         const player = to["player"];
-        if (typeof inventory === "string" && playerScoped.has(inventory) && !isObj(player)) {
+        if (typeof inventory === "string" && playerScoped.has(inventory) && player === undefined) {
           report(
             `"to" targets player-scoped inventory "${inventory}" without a player`,
-            `Add player: { kind: stateRef, path: ... } (or kind: param) to "to".`,
+            `Add player: { stateRef: ... } (or { param: ... }) to "to".`,
           );
         }
-        if (isObj(player) && player["kind"] === "actor") {
-          report(`"to.player" is kind "actor"`, `Use kind: stateRef or param instead.`);
+        if (player === "actor") {
+          report(`"to.player" is "actor"`, `Use { stateRef } or { param } instead.`);
         }
+      }
+
+      if ((kind === "message" || kind === "reveal") && needsActor(effect["to"])) {
+        report(`"to" is "${effect["to"]}"`, USE_INSTEAD);
+      }
+
+      if (kind === "llm-effect" && Array.isArray(effect["outputs"])) {
+        effect["outputs"].forEach((out, i) => {
+          const to = isObj(out) && isObj(out["message"]) ? out["message"]["to"] : undefined;
+          if (needsActor(to)) report(`"outputs[${i}].message.to" is "${to}"`, USE_INSTEAD);
+        });
       }
 
       if (kind === "set-state" && typeof effect["path"] === "string") {
         if (effect["path"].startsWith("player.property.")) {
           const target = effect["target"];
-          if (!isObj(target)) {
+          if (target === undefined) {
             report(
               `writes ${effect["path"]} without a target`,
-              `Add target: { kind: all } (or another player target).`,
+              `Add target: all (or another player target).`,
             );
-          } else if (NEEDS_ACTOR_KINDS.has(target["kind"] as string)) {
-            report(
-              `"target" is kind "${target["kind"]}"`,
-              `Use kind: all, param, stateRef or matching instead.`,
-            );
+          } else if (needsActor(target)) {
+            report(`"target" is "${target}"`, USE_INSTEAD);
           }
         }
       }

@@ -1,0 +1,1232 @@
+{
+  "valid": true,
+  "spec": {
+    "metadata": {
+      "name": "Board Battler v4",
+      "playerCount": {
+        "min": 2,
+        "max": 2
+      },
+      "rng": {
+        "seedSource": "fixed"
+      }
+    },
+    "gamepieceTypes": {
+      "types": [
+        {
+          "id": "creature",
+          "category": "card",
+          "description": "A creature. Stands on the field until something removes it.",
+          "properties": [
+            {
+              "id": "power",
+              "label": "Power",
+              "type": {
+                "kind": "number",
+                "min": 0,
+                "max": 20
+              },
+              "mutable": true,
+              "visibility": "always"
+            },
+            {
+              "id": "defense",
+              "label": "Defense",
+              "type": {
+                "kind": "number",
+                "min": 0,
+                "max": 20
+              },
+              "mutable": true,
+              "visibility": "always"
+            },
+            {
+              "id": "frozen",
+              "label": "Frozen",
+              "type": {
+                "kind": "boolean"
+              },
+              "mutable": true,
+              "default": false,
+              "visibility": "always"
+            },
+            {
+              "id": "cost",
+              "label": "Cost",
+              "type": {
+                "kind": "number",
+                "min": 0,
+                "max": 20
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "cardClass",
+              "label": "Class",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "cardId",
+              "label": "Card ID",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "setId",
+              "label": "Set ID",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "displayName",
+              "label": "Display Name",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            }
+          ],
+          "passiveSlots": [
+            {
+              "id": "whileOnField",
+              "description": "Active while this creature is on the field. Holds whichever passive the card binds to it.",
+              "enabledIn": [
+                "field"
+              ],
+              "faceFilter": "any",
+              "exhaustedFilter": "any"
+            }
+          ],
+          "hasFaceState": false,
+          "exhaustible": false,
+          "orientationCount": 1
+        },
+        {
+          "id": "spell",
+          "category": "card",
+          "description": "Fires once and goes to the discard.",
+          "properties": [
+            {
+              "id": "cost",
+              "label": "Cost",
+              "type": {
+                "kind": "number",
+                "min": 0,
+                "max": 20
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "cardClass",
+              "label": "Class",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "cardId",
+              "label": "Card ID",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "setId",
+              "label": "Set ID",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            },
+            {
+              "id": "displayName",
+              "label": "Display Name",
+              "type": {
+                "kind": "string"
+              },
+              "mutable": false,
+              "visibility": "always"
+            }
+          ],
+          "hasFaceState": false,
+          "exhaustible": false,
+          "orientationCount": 1
+        }
+      ]
+    },
+    "inventories": {
+      "types": [
+        {
+          "id": "library",
+          "label": "Library",
+          "scope": {
+            "kind": "game"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "never",
+          "countVisibility": "always",
+          "structure": "stack",
+          "description": "Shared staging pile, shuffled at setup and emptied into the two sides."
+        },
+        {
+          "id": "deck",
+          "label": "Deck",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "never",
+          "countVisibility": "always",
+          "structure": "stack"
+        },
+        {
+          "id": "hand",
+          "label": "Hand",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "owner",
+          "structure": "none",
+          "capacity": {
+            "max": 8
+          }
+        },
+        {
+          "id": "field",
+          "label": "Field",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "creature"
+          ],
+          "visibility": "always",
+          "structure": "none",
+          "description": "Where creatures stand. They persist here across rounds."
+        },
+        {
+          "id": "discard",
+          "label": "Discard",
+          "scope": {
+            "kind": "game"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "always",
+          "structure": "none"
+        }
+      ]
+    },
+    "state": {
+      "player": {
+        "properties": [
+          {
+            "id": "life",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 30
+            },
+            "default": 30,
+            "description": "Reaching 0 does not end the match early (FG-003: win conditions only evaluate once the whole rounds loop completes)."
+          },
+          {
+            "id": "energyCap",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 6
+            },
+            "default": 1,
+            "description": "Permanent ramp ceiling, shared schedule for both players. +1 at the start of each round, clamped at 6 (the new set's highest card cost) by this property's own declared max."
+          },
+          {
+            "id": "energy",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 6
+            },
+            "default": 2,
+            "description": "Spendable resource. Refilled to energyCap at the start of each round; spent when a creature or spell is played."
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "effect": "move",
+          "from": {
+            "inventory": "game:unassigned",
+            "select": "all"
+          },
+          "to": {
+            "inventory": "library"
+          },
+          "id": "fillLibrary"
+        },
+        {
+          "effect": "shuffle",
+          "inventory": "library",
+          "id": "shuffleLibrary"
+        },
+        {
+          "effect": "distribute",
+          "from": {
+            "inventory": "library",
+            "select": "top"
+          },
+          "to": {
+            "inventory": "hand"
+          },
+          "count": 4,
+          "style": "round-robin",
+          "id": "dealHands"
+        },
+        {
+          "effect": "distribute",
+          "from": {
+            "inventory": "library",
+            "select": "top"
+          },
+          "to": {
+            "inventory": "deck"
+          },
+          "count": 16,
+          "style": "round-robin",
+          "id": "dealDecks"
+        },
+        {
+          "effect": "message",
+          "to": "all",
+          "template": "Both sides start at 30 life with 4 cards in hand and 16 in the deck. Energy ramps by 1 each round. Play creatures, cast spells, attack, and bring the other side down.",
+          "id": "announceStart"
+        },
+        {
+          "effect": "set-state",
+          "path": "player.property.energyCap",
+          "value": {
+            "delta": 1
+          },
+          "target": "all",
+          "id": "turnEnergyCapUp"
+        },
+        {
+          "effect": "set-state",
+          "path": "player.property.energy",
+          "value": {
+            "var": "player.property.energyCap"
+          },
+          "target": "all",
+          "id": "turnEnergyRefill"
+        },
+        {
+          "effect": "update",
+          "pieces": {
+            "player": "all",
+            "inventory": "field",
+            "select": "all"
+          },
+          "property": "frozen",
+          "value": false,
+          "id": "thawAll"
+        }
+      ],
+      "passives": [
+        {
+          "id": "lifesteal",
+          "trigger": {
+            "kind": "state-write",
+            "scope": "actor",
+            "path": "player.property.life",
+            "direction": "decrease"
+          },
+          "effects": [
+            {
+              "effect": "set-state",
+              "path": "player.property.life",
+              "value": {
+                "delta": 2
+              }
+            }
+          ]
+        },
+        {
+          "id": "thorns",
+          "trigger": {
+            "kind": "state-write",
+            "scope": "target",
+            "path": "gamepiece.property.defense",
+            "direction": "decrease"
+          },
+          "effects": [
+            {
+              "effect": "set-state",
+              "path": "player.property.life",
+              "value": {
+                "delta": -2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "actions": [
+        {
+          "id": "drawCard",
+          "label": "Draw a card",
+          "description": "Draw the top card of your deck into your hand.",
+          "preconditions": "count(actor.inventory.hand) < 8 and count(actor.inventory.deck) > 0",
+          "steps": [
+            {
+              "effect": "move",
+              "from": {
+                "inventory": "deck",
+                "select": "top"
+              },
+              "to": {
+                "inventory": "hand"
+              }
+            }
+          ]
+        },
+        {
+          "id": "playCreature",
+          "label": "Play a creature",
+          "description": "Put a creature from your hand onto your field. Costs energy.",
+          "preconditions": "count(actor.inventory.hand) > 0 and actor.property.energy > 0",
+          "steps": [
+            {
+              "input": "card",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "hand",
+                "ofType": "creature",
+                "fromPlayer": "actor",
+                "filter": "piece.property.cost <= actor.property.energy"
+              },
+              "label": "Choose a creature"
+            },
+            {
+              "effect": "move",
+              "from": {
+                "inventory": "hand",
+                "select": {
+                  "id": {
+                    "param": "card"
+                  }
+                }
+              },
+              "to": {
+                "inventory": "field"
+              }
+            },
+            {
+              "effect": "set-state",
+              "source": {
+                "param": "card"
+              },
+              "path": "player.property.energy",
+              "value": {
+                "delta": {
+                  "var": "source.property.cost",
+                  "negate": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "attackCreature",
+          "label": "Attack a creature",
+          "description": "Your creature and theirs each take the other's power.",
+          "preconditions": "all(players, count(player.inventory.field) > 0)",
+          "steps": [
+            {
+              "input": "attacker",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": "actor",
+                "filter": "piece.property.frozen == false"
+              },
+              "label": "Choose your attacker"
+            },
+            {
+              "input": "defenderOwner",
+              "type": {
+                "kind": "player-select",
+                "excludeSelf": true
+              },
+              "label": "Choose whose creature to attack"
+            },
+            {
+              "input": "defender",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": {
+                  "param": "defenderOwner"
+                }
+              },
+              "label": "Choose the creature to attack"
+            },
+            {
+              "effect": "update",
+              "source": {
+                "param": "attacker"
+              },
+              "pieces": {
+                "player": {
+                  "param": "defenderOwner"
+                },
+                "inventory": "field",
+                "select": {
+                  "id": {
+                    "param": "defender"
+                  }
+                }
+              },
+              "property": "defense",
+              "value": {
+                "delta": {
+                  "var": "source.property.power",
+                  "negate": true
+                }
+              }
+            },
+            {
+              "effect": "update",
+              "source": {
+                "param": "defender"
+              },
+              "pieces": {
+                "inventory": "field",
+                "select": {
+                  "id": {
+                    "param": "attacker"
+                  }
+                }
+              },
+              "property": "defense",
+              "value": {
+                "delta": {
+                  "var": "source.property.power",
+                  "negate": true
+                }
+              }
+            },
+            {
+              "effect": "move",
+              "from": {
+                "player": {
+                  "param": "defenderOwner"
+                },
+                "inventory": "field",
+                "select": "all",
+                "ofType": "creature",
+                "filter": "piece.property.defense <= 0"
+              },
+              "to": {
+                "inventory": "discard"
+              }
+            },
+            {
+              "effect": "move",
+              "from": {
+                "inventory": "field",
+                "select": "all",
+                "ofType": "creature",
+                "filter": "piece.property.defense <= 0"
+              },
+              "to": {
+                "inventory": "discard"
+              }
+            }
+          ]
+        },
+        {
+          "id": "attackPlayer",
+          "label": "Attack the opposing player",
+          "description": "Your creature strikes the other player directly.",
+          "preconditions": "count(actor.inventory.field) > 0",
+          "steps": [
+            {
+              "input": "attacker",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": "actor",
+                "filter": "piece.property.frozen == false"
+              },
+              "label": "Choose your attacker"
+            },
+            {
+              "effect": "set-state",
+              "source": {
+                "param": "attacker"
+              },
+              "path": "player.property.life",
+              "value": {
+                "delta": {
+                  "var": "source.property.power",
+                  "negate": true
+                }
+              },
+              "target": "all-other"
+            }
+          ]
+        },
+        {
+          "id": "castFreeze",
+          "label": "Cast a freeze",
+          "description": "Freeze one of the opposing player's creatures. Costs energy.",
+          "preconditions": "count(actor.inventory.hand) > 0 and actor.property.energy > 0 and any(players, count(player.inventory.field) > 0)",
+          "steps": [
+            {
+              "input": "card",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "hand",
+                "ofType": "spell",
+                "fromPlayer": "actor",
+                "filter": "piece.property.cost <= actor.property.energy"
+              },
+              "label": "Choose a freeze card"
+            },
+            {
+              "input": "victimOwner",
+              "type": {
+                "kind": "player-select",
+                "excludeSelf": true
+              },
+              "label": "Choose whose creature to freeze"
+            },
+            {
+              "input": "victim",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": {
+                  "param": "victimOwner"
+                }
+              },
+              "label": "Choose the creature to freeze"
+            },
+            {
+              "effect": "move",
+              "from": {
+                "inventory": "hand",
+                "select": {
+                  "id": {
+                    "param": "card"
+                  }
+                }
+              },
+              "to": {
+                "inventory": "discard"
+              }
+            },
+            {
+              "effect": "update",
+              "pieces": {
+                "player": {
+                  "param": "victimOwner"
+                },
+                "inventory": "field",
+                "select": {
+                  "id": {
+                    "param": "victim"
+                  }
+                }
+              },
+              "property": "frozen",
+              "value": true
+            },
+            {
+              "effect": "set-state",
+              "source": {
+                "param": "card"
+              },
+              "path": "player.property.energy",
+              "value": {
+                "delta": {
+                  "var": "source.property.cost",
+                  "negate": true
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "flow": {
+      "root": {
+        "kind": "game",
+        "label": "Board Battler v3",
+        "hooks": {
+          "onEnter": [
+            {
+              "effectRef": "fillLibrary"
+            },
+            {
+              "effectRef": "shuffleLibrary"
+            },
+            {
+              "effectRef": "dealHands"
+            },
+            {
+              "effectRef": "dealDecks"
+            },
+            {
+              "effectRef": "announceStart"
+            }
+          ]
+        },
+        "children": [
+          {
+            "kind": "loop",
+            "id": "rounds",
+            "label": "Rounds",
+            "count": 20,
+            "children": [
+              {
+                "kind": "turn",
+                "id": "main",
+                "label": "Take your turn",
+                "actor": "all",
+                "turnOrder": {
+                  "kind": "seat",
+                  "direction": "clockwise"
+                },
+                "grammar": {
+                  "kind": "repeat",
+                  "body": {
+                    "kind": "choice",
+                    "options": [
+                      {
+                        "kind": "action",
+                        "ref": "drawCard"
+                      },
+                      {
+                        "kind": "action",
+                        "ref": "playCreature"
+                      },
+                      {
+                        "kind": "action",
+                        "ref": "attackCreature"
+                      },
+                      {
+                        "kind": "action",
+                        "ref": "attackPlayer"
+                      },
+                      {
+                        "kind": "action",
+                        "ref": "castFreeze"
+                      }
+                    ],
+                    "passable": true
+                  },
+                  "count": {
+                    "min": 0,
+                    "max": 2
+                  }
+                },
+                "hooks": {
+                  "onEnter": [
+                    {
+                      "effectRef": "turnEnergyCapUp"
+                    },
+                    {
+                      "effectRef": "turnEnergyRefill"
+                    }
+                  ],
+                  "onComplete": [
+                    {
+                      "effectRef": "thawAll"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "winConditions": [
+          {
+            "rule": "ranking",
+            "property": "player.property.life",
+            "order": "highest",
+            "tiebreak": "all-win",
+            "onVictory": [
+              {
+                "effect": "message",
+                "to": "all",
+                "template": "{{game.winners[0]}} wins with the most life remaining."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "catalog": {
+      "entries": [
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d31",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 1,
+            "power": 2,
+            "defense": 1,
+            "cardClass": "mage",
+            "cardId": "nc-1",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Apprentice"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d32",
+          "typeId": "spell",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "cardClass": "mage",
+            "cardId": "nc-2",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Flash Freeze"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d33",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "power": 3,
+            "defense": 2,
+            "cardClass": "mage",
+            "cardId": "nc-3",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Adept"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d34",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 3,
+            "power": 3,
+            "defense": 4,
+            "cardClass": "mage",
+            "cardId": "nc-4",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Scholar"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d35",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 4,
+            "power": 5,
+            "defense": 4,
+            "cardClass": "mage",
+            "cardId": "nc-5",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Conjurer"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d36",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 5,
+            "power": 5,
+            "defense": 6,
+            "cardClass": "mage",
+            "cardId": "nc-6",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Magus"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d37",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 6,
+            "power": 7,
+            "defense": 6,
+            "cardClass": "mage",
+            "cardId": "nc-7",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Archmage"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d38",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 1,
+            "power": 2,
+            "defense": 1,
+            "cardClass": "necromancer",
+            "cardId": "nc-8",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Acolyte"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d39",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "power": 4,
+            "defense": 1,
+            "cardClass": "necromancer",
+            "cardId": "nc-9",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Gravedigger"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3130",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 4,
+            "power": 5,
+            "defense": 2,
+            "cardClass": "necromancer",
+            "cardId": "nc-10",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Bonepicker"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3131",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 4,
+            "power": 6,
+            "defense": 3,
+            "cardClass": "necromancer",
+            "cardId": "nc-11",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Corpsewright"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3132",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 5,
+            "power": 7,
+            "defense": 4,
+            "cardClass": "necromancer",
+            "cardId": "nc-12",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Soulbinder"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3133",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 6,
+            "power": 8,
+            "defense": 5,
+            "cardClass": "necromancer",
+            "cardId": "nc-13",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Lich"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3134",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 1,
+            "power": 1,
+            "defense": 2,
+            "cardClass": "shaman",
+            "cardId": "nc-14",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Initiate"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3135",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "power": 1,
+            "defense": 4,
+            "cardClass": "shaman",
+            "cardId": "nc-15",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Totemcarver"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3136",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 3,
+            "power": 2,
+            "defense": 5,
+            "cardClass": "shaman",
+            "cardId": "nc-16",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Spiritbinder"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3137",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 4,
+            "power": 3,
+            "defense": 6,
+            "cardClass": "shaman",
+            "cardId": "nc-17",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Stormcaller"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3138",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 5,
+            "power": 4,
+            "defense": 7,
+            "cardClass": "shaman",
+            "cardId": "nc-18",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Ancestor Speaker"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3139",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 6,
+            "power": 5,
+            "defense": 8,
+            "cardClass": "shaman",
+            "cardId": "nc-19",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Worldroot Elder"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3230",
+          "typeId": "spell",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "cardClass": "necromancer",
+            "cardId": "nc-20",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Siphon Life"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3231",
+          "typeId": "spell",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "cardClass": "shaman",
+            "cardId": "nc-21",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Barbed Ward"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3232",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 3,
+            "power": 2,
+            "defense": 3,
+            "cardClass": "mage",
+            "cardId": "nc-22",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Frostcaller"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3233",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "power": 2,
+            "defense": 2,
+            "cardClass": "necromancer",
+            "cardId": "nc-23",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Bloodleech"
+          },
+          "passiveBindings": {
+            "whileOnField": "lifesteal"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3234",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 3,
+            "power": 2,
+            "defense": 4,
+            "cardClass": "shaman",
+            "cardId": "nc-24",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "Thornhide"
+          },
+          "passiveBindings": {
+            "whileOnField": "thorns"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3235",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 1,
+            "power": 2,
+            "defense": 2,
+            "cardClass": "neutral",
+            "cardId": "nc-25",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "NEUTRAL-Recruit"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3236",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 1,
+            "power": 1,
+            "defense": 2,
+            "cardClass": "neutral",
+            "cardId": "nc-26",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "NEUTRAL-Scout"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3237",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "power": 2,
+            "defense": 3,
+            "cardClass": "neutral",
+            "cardId": "nc-27",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "NEUTRAL-Sentinel"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3238",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 2,
+            "power": 3,
+            "defense": 2,
+            "cardClass": "neutral",
+            "cardId": "nc-28",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "NEUTRAL-Wanderer"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3239",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 3,
+            "power": 3,
+            "defense": 4,
+            "cardClass": "neutral",
+            "cardId": "nc-29",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "NEUTRAL-Warden"
+          }
+        },
+        {
+          "id": "s2c8a1642c45f40deba70d440cc981f66c6e632d3330",
+          "typeId": "creature",
+          "quantity": 2,
+          "properties": {
+            "cost": 3,
+            "power": 4,
+            "defense": 3,
+            "cardClass": "neutral",
+            "cardId": "nc-30",
+            "setId": "2c8a1642-c45f-40de-ba70-d440cc981f66",
+            "displayName": "NEUTRAL-Drifter"
+          }
+        }
+      ]
+    }
+  }
+}

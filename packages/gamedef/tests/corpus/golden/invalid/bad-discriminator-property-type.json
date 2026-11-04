@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "state.game.properties.0.type.kind",
+      "code": "invalid_union"
+    }
+  ]
+}

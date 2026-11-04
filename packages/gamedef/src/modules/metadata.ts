@@ -15,7 +15,7 @@ export const RngSeedSourceSchema = z
   );
 
 export const RngConfigSchema = z
-  .object({
+  .strictObject({
     seedSource: RngSeedSourceSchema,
   })
   .describe(
@@ -25,7 +25,7 @@ export const RngConfigSchema = z
   );
 
 export const PlayerCountSchema = z
-  .object({
+  .strictObject({
     min: z.number().int().min(1).describe("Minimum number of players"),
     max: z.number().int().min(1).describe("Maximum number of players"),
   })
@@ -34,9 +34,17 @@ export const PlayerCountSchema = z
   })
   .describe("Valid player count range. Both min and max are inclusive.");
 
+export const CURRENT_SPEC_VERSION = 1;
+
 export const MetadataModuleSchema = z
-  .object({
+  .strictObject({
     name: z.string().describe("The display name of the game"),
+    specVersion: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Spec format version this spec was written for; omit for version 1."),
     playerCount: PlayerCountSchema,
     rng: RngConfigSchema.optional(),
   })

@@ -11,6 +11,8 @@ export { buildEvaluator, buildPredicate } from '#compiler/expressions/evaluator.
 export type { ExprFn, PredicateFn } from '#compiler/expressions/evaluator.js';
 export type { Expr, CompareOp, ArithOp, EvalContext, InventoryLike, PlayerLike } from '#compiler/expressions/types.js';
 export { ExpressionError } from '#compiler/expressions/types.js';
+export { EXPRESSION_FUNCTIONS } from '#compiler/expressions/evaluator-functions.js';
+export type { ExpressionFunction } from '#compiler/expressions/evaluator-functions.js';
 
 import { parseExpression } from '#compiler/expressions/parser.js';
 import { buildEvaluator, buildPredicate } from '#compiler/expressions/evaluator.js';

@@ -3,12 +3,14 @@ export {
   compilePredicate,
   parseExpression,
   ExpressionError,
+  EXPRESSION_FUNCTIONS,
 } from '#compiler/expressions/index.js';
 
 export type {
   Expr,
   EvalContext,
   ExprFn,
+  ExpressionFunction,
   PredicateFn,
 } from '#compiler/expressions/index.js';
 

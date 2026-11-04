@@ -282,7 +282,7 @@ describe('assembleEffectDefs — High Card', () => {
       kind: 'set-state',
       path: 'player.property.score',
       value: { delta: 1 },
-      target: { kind: 'stateRef', path: 'game.property.roundWinner' },
+      target: { stateRef: 'game.property.roundWinner' },
     });
   });
 });
@@ -308,7 +308,7 @@ describe('assembleActions — High Card', () => {
       kind: 'gamepiece-select',
       inventory: 'hand',
       ofType: 'card',
-      fromPlayer: 'self',
+      fromPlayer: 'actor',
     });
   });
 
@@ -731,18 +731,18 @@ describe('assembleFlow — turn ordering', () => {
 
   const seat = { kind: 'seat', direction: 'clockwise' };
 
-  it('all-players with no turnOrder is round-robin from seat 1', () => {
-    expect(assembleTurn({ actor: 'all-players' })).toEqual({ kind: 'round-robin' });
+  it('actor all with no turnOrder is round-robin from seat 1', () => {
+    expect(assembleTurn({ actor: 'all' })).toEqual({ kind: 'round-robin' });
   });
 
   it('startingPlayer: first is round-robin from seat 1', () => {
-    expect(assembleTurn({ actor: 'all-players', turnOrder: { ...seat, startingPlayer: 'first' } }))
+    expect(assembleTurn({ actor: 'all', turnOrder: { ...seat, startingPlayer: 'first' } }))
       .toEqual({ kind: 'round-robin' });
   });
 
   it('startingPlayer { stateRef } maps to round-robin start', () => {
     expect(assembleTurn({
-      actor: 'all-players',
+      actor: 'all',
       turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner' } },
     })).toEqual({ kind: 'round-robin', start: { kind: 'state-ref', path: 'game.property.roundWinner' } });
   });
@@ -764,15 +764,15 @@ describe('assembleFlow — turn ordering', () => {
     ['actor { where }', { actor: { where: 'not player.property.eliminated' } }],
     ['actor { player: first }', { actor: { player: 'first' } }],
     ['actor { player: random }', { actor: { player: 'random' } }],
-    ['ranked turnOrder', { actor: 'all-players', turnOrder: { kind: 'ranked', by: { playerProperty: 'score' }, order: 'ascending' } }],
-    ['explicit turnOrder', { actor: 'all-players', turnOrder: { kind: 'explicit', players: ['alice', 'bob'] } }],
-    ['counter-clockwise', { actor: 'all-players', turnOrder: { kind: 'seat', direction: 'counter-clockwise' } }],
-    ['startingPlayer random', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: 'random' } }],
-    ['startingPlayer { role }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { role: 'dealer' } } }],
-    ['startingPlayer { where }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { where: 'player.property.score > 0' } } }],
-    ['startingPlayer { highest }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { highest: { playerProperty: 'score' } } } }],
-    ['startingPlayer { lowest }', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { lowest: { playerProperty: 'score' } } } }],
-    ['selector offset', { actor: 'all-players', turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner', offset: 1 } } }],
+    ['ranked turnOrder', { actor: 'all', turnOrder: { kind: 'ranked', by: { playerProperty: 'score' }, order: 'ascending' } }],
+    ['explicit turnOrder', { actor: 'all', turnOrder: { kind: 'explicit', players: ['alice', 'bob'] } }],
+    ['counter-clockwise', { actor: 'all', turnOrder: { kind: 'seat', direction: 'counter-clockwise' } }],
+    ['startingPlayer random', { actor: 'all', turnOrder: { ...seat, startingPlayer: 'random' } }],
+    ['startingPlayer { role }', { actor: 'all', turnOrder: { ...seat, startingPlayer: { role: 'dealer' } } }],
+    ['startingPlayer { where }', { actor: 'all', turnOrder: { ...seat, startingPlayer: { where: 'player.property.score > 0' } } }],
+    ['startingPlayer { highest }', { actor: 'all', turnOrder: { ...seat, startingPlayer: { highest: { playerProperty: 'score' } } } }],
+    ['startingPlayer { lowest }', { actor: 'all', turnOrder: { ...seat, startingPlayer: { lowest: { playerProperty: 'score' } } } }],
+    ['selector offset', { actor: 'all', turnOrder: { ...seat, startingPlayer: { stateRef: 'game.property.roundWinner', offset: 1 } } }],
   ])('rejects unsupported %s', (_name, patch) => {
     expect(() => assembleTurn(patch)).toThrow('is not yet supported');
   });
@@ -1070,15 +1070,14 @@ describe('walkEffectBody — { expr } compilation', () => {
     expect(body.value).toBe(42);
   });
 
-  it('compiles a matching player-target condition into a per-player filter', () => {
+  it('compiles a { where } player target into a per-player filter', () => {
     const body = walkEffectBody({
       kind: 'set-state',
       path: 'player.property.eliminated',
       value: true,
-      target: { kind: 'matching', condition: 'count(player.inventory.hand) == 0' },
+      target: { where: 'count(player.inventory.hand) == 0' },
     } as never);
-    const target = body.target as { kind: string; condition: (s: never, p: string) => boolean };
-    expect(target.kind).toBe('matching');
+    const target = body.target as { where: (s: never, p: string) => boolean };
 
     const mockSession = {
       players: ['alice', 'bob'],
@@ -1092,21 +1091,29 @@ describe('walkEffectBody — { expr } compilation', () => {
         gamepieces: {},
       },
     } as never;
-    expect(target.condition(mockSession, 'alice')).toBe(false);
-    expect(target.condition(mockSession, 'bob')).toBe(true);
+    expect(target.where(mockSession, 'alice')).toBe(false);
+    expect(target.where(mockSession, 'bob')).toBe(true);
   });
 
-  it('compiles a matching player condition on a gamepiece selector', () => {
+  it('compiles a { where } player condition on a gamepiece selector', () => {
     const body = walkEffectBody({
       effect: 'hide',
       pieces: {
-        player: { kind: 'matching', condition: 'count(player.inventory.hand) == 0' },
+        player: { where: 'count(player.inventory.hand) == 0' },
         inventory: 'hand',
         select: 'all',
       },
     } as never);
-    const player = (body.pieces as { player: { kind: string; condition: unknown } }).player;
-    expect(player.kind).toBe('matching');
-    expect(typeof player.condition).toBe('function');
+    const player = (body.pieces as { player: { where: unknown } }).player;
+    expect(typeof player.where).toBe('function');
+  });
+
+  it('compiles a { where } message recipient', () => {
+    const body = walkEffectBody({
+      effect: 'message',
+      to: { where: 'player.property.score > 0' },
+      template: 'hi',
+    } as never);
+    expect(typeof (body.to as { where: unknown }).where).toBe('function');
   });
 });

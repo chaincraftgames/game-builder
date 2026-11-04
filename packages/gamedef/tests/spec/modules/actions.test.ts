@@ -469,7 +469,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
             },
             {
               effect: "move",
-              from: { player: { kind: "param", inputId: "target" }, inventory: "playerHand", select: { id: { param: "card" } } },
+              from: { player: { param: "target" }, inventory: "playerHand", select: { id: { param: "card" } } },
               to: { inventory: "playerHand" },
             },
           ],
@@ -478,7 +478,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
     });
   });
 
-  it("accepts gamepiece-select with fromPlayer 'self'", () => {
+  it("accepts gamepiece-select with fromPlayer 'actor'", () => {
     ok({
       actions: [
         {
@@ -486,7 +486,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
           steps: [
             {
               input: "card",
-              type: { kind: "gamepiece-select", inventory: "playerHand", fromPlayer: "self" },
+              type: { kind: "gamepiece-select", inventory: "playerHand", fromPlayer: "actor" },
             },
             { effectRef: "play" },
           ],
@@ -658,7 +658,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
             {
               effect: "move",
               from: { inventory: "playerHand", select: "top" },
-              to: { player: { kind: "param", inputId: "recipient" }, inventory: "playerHand" },
+              to: { player: { param: "recipient" }, inventory: "playerHand" },
             },
           ],
         },
@@ -675,7 +675,7 @@ describe("ActionsModuleSchema — selection inputs", () => {
             {
               effect: "move",
               from: { inventory: "penaltyPool", select: "top" },
-              to: { player: { kind: "stateRef", path: "game.property.roundLoser" }, inventory: "playerHand" },
+              to: { player: { stateRef: "game.property.roundLoser" }, inventory: "playerHand" },
             },
           ],
         },
@@ -701,7 +701,7 @@ describe("ActionsModuleSchema — reactive input types", () => {
               effect: "set-state",
               path: "player.property.hp",
               value: { delta: -2 },
-              target: { kind: "param", inputId: "attacker" },
+              target: { param: "attacker" },
             },
           ],
         },

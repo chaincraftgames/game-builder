@@ -1,0 +1,426 @@
+{
+  "valid": true,
+  "spec": {
+    "metadata": {
+      "name": "Liar's Dice",
+      "playerCount": {
+        "min": 2,
+        "max": 6
+      }
+    },
+    "gamepieceTypes": {
+      "types": [
+        {
+          "id": "die",
+          "category": "dice",
+          "description": "A six-sided die kept hidden under each player's cup.",
+          "hasFaceState": false,
+          "exhaustible": false,
+          "faceCount": 6,
+          "orientationCount": 1
+        }
+      ]
+    },
+    "inventories": {
+      "types": [
+        {
+          "id": "playerCup",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "die"
+          ],
+          "visibility": "owner",
+          "structure": "none",
+          "description": "Each player's hidden cup. Dice here are visible only to the owning player."
+        }
+      ]
+    },
+    "state": {
+      "game": {
+        "properties": [
+          {
+            "id": "currentBidQuantity",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 30
+            },
+            "default": 0,
+            "description": "Quantity of dice declared in the current round's bid. 0 = no bid yet."
+          },
+          {
+            "id": "currentBidFace",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 6
+            },
+            "default": 0,
+            "description": "Face value declared in the current round's bid. 0 = no bid yet."
+          },
+          {
+            "id": "currentBidder",
+            "type": {
+              "kind": "string"
+            },
+            "default": "",
+            "description": "Player ID of the player who made the current bid. Empty string = no bid yet."
+          },
+          {
+            "id": "challengeMade",
+            "type": {
+              "kind": "boolean"
+            },
+            "default": false,
+            "description": "Set to true when a player challenges the current bid. Exits the bidding loop and advances to the review turn."
+          },
+          {
+            "id": "roundLoser",
+            "type": {
+              "kind": "string"
+            },
+            "default": "",
+            "description": "Player ID of the loser of the most recent challenge. Set by resolveChallenge; used by eliminateDie to remove the correct die. Kept between rounds: the loser (or the next seat if eliminated) starts the next round. Empty before the first challenge = seat 1."
+          },
+          {
+            "id": "actualCount",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 30
+            },
+            "default": 0,
+            "description": "How many dice in play showed the bid face when the bid was challenged. Set by the challenge; announced with the result."
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "effect": "distribute",
+          "from": {
+            "inventory": "game:unassigned",
+            "select": "top",
+            "ofType": "die"
+          },
+          "to": {
+            "inventory": "playerCup"
+          },
+          "count": 5,
+          "style": "round-robin",
+          "id": "dealDice"
+        },
+        {
+          "effect": "roll",
+          "pieces": {
+            "player": "all",
+            "inventory": "playerCup",
+            "select": "all"
+          },
+          "id": "rollAllDice"
+        },
+        {
+          "effect": "reveal",
+          "pieces": {
+            "player": "all",
+            "inventory": "playerCup",
+            "select": "all"
+          },
+          "to": "all",
+          "id": "revealAllDice"
+        },
+        {
+          "effect": "hide",
+          "pieces": {
+            "player": "all",
+            "inventory": "playerCup",
+            "select": "all"
+          },
+          "id": "hideAllDice"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.currentBidQuantity",
+          "value": 0,
+          "id": "resetBid"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.currentBidFace",
+          "value": 0,
+          "id": "resetBidFace"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.currentBidder",
+          "value": "",
+          "id": "resetBidder"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.challengeMade",
+          "value": false,
+          "id": "resetChallengeMade"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.challengeMade",
+          "value": true,
+          "id": "setChallengeMade"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.actualCount",
+          "value": {
+            "expr": "sum(players, count(player.inventory.playerCup, piece.faceValue == game.property.currentBidFace))"
+          },
+          "id": "countBidFace"
+        },
+        {
+          "effect": "set-state",
+          "path": "game.property.roundLoser",
+          "value": {
+            "expr": "if(sum(players, count(player.inventory.playerCup, piece.faceValue == game.property.currentBidFace)) >= game.property.currentBidQuantity, actor.id, game.property.currentBidder)"
+          },
+          "id": "resolveChallenge"
+        },
+        {
+          "effect": "move",
+          "from": {
+            "player": {
+              "stateRef": "game.property.roundLoser"
+            },
+            "inventory": "playerCup",
+            "select": "random",
+            "count": 1
+          },
+          "to": {
+            "inventory": "game:unassigned"
+          },
+          "id": "eliminateDie"
+        },
+        {
+          "effect": "set-state",
+          "path": "player.property.eliminated",
+          "value": true,
+          "target": {
+            "where": "count(player.inventory.playerCup) == 0"
+          },
+          "id": "checkElimination"
+        }
+      ]
+    },
+    "actions": {
+      "actions": [
+        {
+          "id": "makeBid",
+          "label": "Make Bid",
+          "description": "Declare how many dice across all players show a given face value. Must be strictly higher than the previous bid.",
+          "steps": [
+            {
+              "input": "quantity",
+              "type": {
+                "kind": "number",
+                "min": 1,
+                "max": 30
+              },
+              "label": "Quantity",
+              "validation": "input.quantity <= sum(players, count(player.inventory.playerCup))",
+              "validationMessage": "Bid no more dice than are in play."
+            },
+            {
+              "input": "faceValue",
+              "type": {
+                "kind": "number",
+                "min": 1,
+                "max": 6
+              },
+              "label": "Face Value",
+              "validation": "input.quantity > game.property.currentBidQuantity or (input.quantity == game.property.currentBidQuantity and input.faceValue > game.property.currentBidFace)",
+              "validationMessage": "Bid a higher quantity, or the same quantity with a higher face value."
+            },
+            {
+              "effect": "set-state",
+              "path": "game.property.currentBidQuantity",
+              "value": {
+                "param": "quantity"
+              }
+            },
+            {
+              "effect": "set-state",
+              "path": "game.property.currentBidFace",
+              "value": {
+                "param": "faceValue"
+              }
+            },
+            {
+              "effect": "set-state",
+              "path": "game.property.currentBidder",
+              "value": {
+                "actor": true
+              }
+            },
+            {
+              "effect": "message",
+              "to": "all",
+              "template": "{{state.game.property.currentBidder}} bids {{input.quantity}} dice showing {{input.faceValue}}s."
+            }
+          ]
+        },
+        {
+          "id": "challenge",
+          "label": "Challenge",
+          "description": "Call out the current bid as a lie. Counts the dice showing the bid face, resolves the round and announces the result; every cup in play is then revealed for the review step.",
+          "preconditions": "game.property.currentBidQuantity != 0",
+          "steps": [
+            {
+              "effectRef": "countBidFace"
+            },
+            {
+              "effectRef": "resolveChallenge"
+            },
+            {
+              "effectRef": "setChallengeMade"
+            },
+            {
+              "effect": "message",
+              "to": "all",
+              "template": "The bid of {{state.game.property.currentBidQuantity}} {{state.game.property.currentBidFace}}s by {{state.game.property.currentBidder}} was challenged — actual count {{state.game.property.actualCount}} — {{state.game.property.roundLoser}} loses a die."
+            }
+          ]
+        },
+        {
+          "id": "startNextRound",
+          "label": "Start Next Round",
+          "description": "End the review step: the round's loser gives up one die. Every cup is then hidden and re-rolled for the next round.",
+          "steps": [
+            {
+              "input": "ready",
+              "type": {
+                "kind": "boolean"
+              },
+              "label": "Ready for the next round",
+              "validation": "input.ready == true",
+              "validationMessage": "Confirm to start the next round."
+            },
+            {
+              "effectRef": "eliminateDie"
+            },
+            {
+              "effectRef": "checkElimination"
+            }
+          ]
+        }
+      ]
+    },
+    "flow": {
+      "root": {
+        "kind": "game",
+        "hooks": {
+          "onEnter": [
+            {
+              "effectRef": "dealDice"
+            }
+          ]
+        },
+        "children": [
+          {
+            "kind": "loop",
+            "endCondition": "count(players, not player.property.eliminated) <= 1",
+            "children": [
+              {
+                "kind": "loop",
+                "endCondition": "game.property.challengeMade == true",
+                "checkAfter": "turn",
+                "children": [
+                  {
+                    "kind": "turn",
+                    "actor": "all",
+                    "turnOrder": {
+                      "kind": "seat",
+                      "direction": "clockwise",
+                      "startingPlayer": {
+                        "stateRef": "game.property.roundLoser"
+                      }
+                    },
+                    "grammar": {
+                      "kind": "choice",
+                      "options": [
+                        {
+                          "kind": "action",
+                          "ref": "makeBid"
+                        },
+                        {
+                          "kind": "action",
+                          "ref": "challenge"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "hooks": {
+                  "onComplete": [
+                    {
+                      "effectRef": "revealAllDice"
+                    }
+                  ]
+                }
+              },
+              {
+                "kind": "turn",
+                "actor": {
+                  "player": {
+                    "stateRef": "game.property.roundLoser"
+                  }
+                },
+                "grammar": {
+                  "kind": "action",
+                  "ref": "startNextRound"
+                }
+              }
+            ],
+            "hooks": {
+              "onEnter": [
+                {
+                  "effectRef": "hideAllDice"
+                },
+                {
+                  "effectRef": "rollAllDice"
+                },
+                {
+                  "effectRef": "resetBid"
+                },
+                {
+                  "effectRef": "resetBidFace"
+                },
+                {
+                  "effectRef": "resetBidder"
+                },
+                {
+                  "effectRef": "resetChallengeMade"
+                }
+              ]
+            }
+          }
+        ],
+        "winConditions": [
+          {
+            "rule": "condition",
+            "condition": "not player.property.eliminated"
+          }
+        ]
+      }
+    },
+    "catalog": {
+      "entries": [
+        {
+          "typeId": "die",
+          "quantity": 30
+        }
+      ]
+    }
+  }
+}

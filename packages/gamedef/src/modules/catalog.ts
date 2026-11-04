@@ -127,7 +127,7 @@ export const PassiveBindingValueSchema = z.union([
  *   - boolean         → boolean
  */
 const InitialPropertiesSchema = z
-  .record(z.union([z.string(), z.number(), z.boolean()]))
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
   .describe(
     "Initial property values for this piece instance. " +
       "Keys are property IDs matching properties[] declared on the gamepiece type. " +
@@ -162,7 +162,7 @@ const InitialPropertiesSchema = z
  * ```
  */
 export const CatalogEntrySchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.optional().describe(
         "Optional unique identifier for this specific piece instance. " +
           "Assign when you need to reference this piece by name in setup effects: " +
@@ -191,7 +191,7 @@ export const CatalogEntrySchema = z
         "Omit to leave all properties at their declared defaults.",
     ),
     actionBindings: z
-      .record(ActionBindingValueSchema)
+      .record(z.string(), ActionBindingValueSchema)
       .optional()
       .describe(
         "Binds actions to this piece instance's action slots. " +
@@ -201,7 +201,7 @@ export const CatalogEntrySchema = z
           "Omit slots that should remain empty.",
       ),
     passiveBindings: z
-      .record(PassiveBindingValueSchema)
+      .record(z.string(), PassiveBindingValueSchema)
       .optional()
       .describe(
         "Binds passives to this piece instance's passive slots. " +
@@ -221,7 +221,7 @@ export const CatalogEntrySchema = z
 // ---------------------------------------------------------------------------
 
 export const CatalogModuleSchema = z
-  .object({
+  .strictObject({
     entries: z
       .array(CatalogEntrySchema)
       .min(1)

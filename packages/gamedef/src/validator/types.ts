@@ -17,6 +17,7 @@ export const ValidationCode = {
   FlowIntegrity: "flow-integrity",
   FaceTable: "face-table",
   ActorContext: "actor-context",
+  UnsupportedSpecVersion: "unsupported-spec-version",
 } as const;
 
 export type ValidationCode = (typeof ValidationCode)[keyof typeof ValidationCode];

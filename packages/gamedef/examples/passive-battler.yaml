@@ -489,7 +489,7 @@ actions:
             kind: gamepiece-select
             inventory: hand
             ofType: card
-            fromPlayer: self
+            fromPlayer: actor
         # ORDER MATTERS AND IS DELIBERATE. The card leaves hand FIRST, because
         # that move is what the bleed passive watches; bleed should dock before
         # the card's own damage resolves, so a player is punished for acting
@@ -524,8 +524,7 @@ actions:
         # -------------------------------------------------------------------
         - effect: set-state
           path: player.property.life
-          target:
-            kind: all-other # exactly one opponent in a two player game
+          target: all-other # exactly one opponent in a two player game
           source:
             param: card
           value:
@@ -538,8 +537,7 @@ actions:
         # why there is one action rather than a thief-only second action.
         - effect: set-state
           path: player.property.bleed
-          target:
-            kind: all-other
+          target: all-other
           source:
             param: card
           value:
@@ -649,7 +647,7 @@ flow:
             # round-robin ordering, so one seat completes its play and then
             # the other does. Damage never lands simultaneously, which is what
             # keeps the passive firing order readable.
-            actor: all-players
+            actor: all
             turnOrder:
               kind: seat
               direction: clockwise

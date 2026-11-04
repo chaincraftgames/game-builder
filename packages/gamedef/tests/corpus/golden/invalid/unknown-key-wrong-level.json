@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "effects.passives.0",
+      "code": "unrecognized_keys"
+    }
+  ]
+}

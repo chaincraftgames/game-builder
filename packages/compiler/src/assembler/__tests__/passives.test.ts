@@ -90,7 +90,7 @@ describe("Passives — lifesteal and thorns (board-battler)", () => {
         kind: "set-state",
         path: "player.property.life",
         value: { delta: -5 },
-        target: { kind: "all-other" },
+        target: "all-other",
       },
       actionInputs: {},
     });
@@ -113,7 +113,7 @@ describe("Passives — lifesteal and thorns (board-battler)", () => {
       effectDef: {
         kind: "update",
         pieces: {
-          player: { kind: "param", inputId: "defenderOwner" },
+          player: { param: "defenderOwner" },
           inventory: "field",
           select: { id: { param: "defender" } },
         },
@@ -177,7 +177,7 @@ describe("Passives — trigger context and source piece", () => {
         kind: "set-state",
         path: "player.property.life",
         value: { delta: -7 },
-        target: { kind: "all-other" },
+        target: "all-other",
       },
       actionInputs: {},
     });
@@ -201,7 +201,7 @@ describe("Passives — trigger context and source piece", () => {
         kind: "set-state",
         path: "player.property.life",
         value: { delta: -4 },
-        target: { kind: "all-other" },
+        target: "all-other",
       },
       actionInputs: {},
     });
@@ -226,7 +226,7 @@ describe("Passives — trigger context and source piece", () => {
         kind: "set-state",
         path: "player.property.life",
         value: { delta: -10 },
-        target: { kind: "all-other" },
+        target: "all-other",
       },
       actionInputs: {},
     });
@@ -250,7 +250,7 @@ describe("Passives — trigger context and source piece", () => {
       effectDef: {
         kind: "update",
         pieces: {
-          player: { kind: "param", inputId: "defenderOwner" },
+          player: { param: "defenderOwner" },
           inventory: "field",
           select: { id: { param: "defender" } },
         },
@@ -280,7 +280,7 @@ describe("Passives — trigger context and source piece", () => {
       effectDef: {
         kind: "update",
         pieces: {
-          player: { kind: "param", inputId: "defenderOwner" },
+          player: { param: "defenderOwner" },
           inventory: "field",
           select: { id: { param: "defender" } },
         },

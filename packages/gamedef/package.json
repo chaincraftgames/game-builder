@@ -29,6 +29,7 @@
     "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --testTimeout=30000",
     "test:spec": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/spec --testTimeout=30000",
     "test:validator": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/validator --testTimeout=30000",
+    "corpus:record": "npm run build && TS_NODE_PROJECT=scripts/tsconfig.json node --loader ts-node/esm scripts/record-corpus.ts",
     "clean": "rm -rf dist"
   },
   "keywords": [
@@ -40,7 +41,7 @@
   "license": "MIT",
   "dependencies": {
     "js-yaml": "^4.2.0",
-    "zod": "^3.23.0"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

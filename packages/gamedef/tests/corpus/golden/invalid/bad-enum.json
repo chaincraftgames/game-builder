@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "inventories.types.0.structure",
+      "code": "invalid_value"
+    }
+  ]
+}

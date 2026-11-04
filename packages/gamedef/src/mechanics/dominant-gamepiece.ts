@@ -122,7 +122,7 @@ import { z } from "zod";
  * ```
  */
 export const DominantRuleSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("dominant"),
     property: z
       .string()
@@ -159,7 +159,7 @@ export const DominantRuleSchema = z
  * ```
  */
 export const ComparisonRuleSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("comparison"),
     property: z
       .string()
@@ -215,7 +215,7 @@ export const ComparisonRuleSchema = z
  * ```
  */
 export const MatrixRuleSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("matrix"),
     property: z
       .string()
@@ -259,7 +259,7 @@ export type DominantGamepieceRule = z.infer<typeof DominantGamepieceRuleSchema>;
 // ---------------------------------------------------------------------------
 
 export const DominantGamepieceMechanicSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("chaincraft:dominant-gamepiece"),
     id: z
       .string()

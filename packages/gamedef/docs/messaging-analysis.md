@@ -77,7 +77,7 @@ Used for Pattern B: send a pre-known message to one or more players. No LLM invo
 ```yaml
 id: confirm-weapon
 kind: message
-to: actor         # actor | all | opponents | role:<roleId>
+to: actor         # actor | all | all-other | { param } | { stateRef } | { where } | { roles }
 template: "Your weapon '{{input.weaponDescription}}' has been registered."
 visibility: private  # private | public
 ```
@@ -85,7 +85,7 @@ visibility: private  # private | public
 **Fields:**
 | Field | Required | Notes |
 |-------|----------|-------|
-| `to` | yes | `actor`, `all`, `opponents`, `role:<id>`, `player-id` |
+| `to` | yes | PlayerTarget: `actor`, `all`, `all-other`, `{ param }`, `{ stateRef }`, `{ where }`, `{ roles }` |
 | `template` | yes | Handlebars string; `{{input.*}}` and `{{state.*}}` refs |
 | `visibility` | no | `public` (default) or `private` |
 

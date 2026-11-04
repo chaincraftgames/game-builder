@@ -86,8 +86,7 @@ winConditions:
   path: player.property.eliminated
   value: true
   target:
-    kind: matching
-    condition: "count(player.inventory.playerCup) == 0"
+    where: "count(player.inventory.playerCup) == 0"
 ```
 
 ## Roadmap (tracked in compiler-roadmap; all generic)

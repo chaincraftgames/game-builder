@@ -73,7 +73,7 @@ import { GameMechanicSchema } from "#gamedef/mechanics/index.js";
  * ```
  */
 export const ModularGameSpecSchema = z
-  .object({
+  .strictObject({
     metadata: MetadataModuleSchema.optional().describe(
       "Game title, player count, and randomness configuration.",
     ),

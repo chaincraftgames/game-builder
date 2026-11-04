@@ -10,3 +10,5 @@ export { compile } from "./tools/compile.js";
 export type { CompileResult, CompileSummary } from "./tools/compile.js";
 export { init, InitConflictError } from "./tools/init.js";
 export type { InitOptions, InitResult } from "./tools/init.js";
+export { docs } from "./tools/docs.js";
+export type { DocsOptions, DocsResult } from "./tools/docs.js";

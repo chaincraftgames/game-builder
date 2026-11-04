@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "metadata.name",
+      "code": "invalid_type"
+    }
+  ]
+}

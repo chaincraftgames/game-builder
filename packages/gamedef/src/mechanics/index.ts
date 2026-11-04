@@ -15,18 +15,24 @@
 // Piece-level mechanics
 // ---------------------------------------------------------------------------
 
-export { ChargesMechanicSchema } from "./charges.js";
-export type { ChargesMechanic } from "./charges.js";
+export { ChargesMechanicSchema } from "#gamedef/mechanics/charges.js";
+export type { ChargesMechanic } from "#gamedef/mechanics/charges.js";
 
-export { ConversionMechanicSchema } from "./conversion.js";
-export type { ConversionMechanic, ConversionLeg } from "./conversion.js";
+export {
+  ConversionMechanicSchema,
+  ConversionLegSchema,
+} from "#gamedef/mechanics/conversion.js";
+export type {
+  ConversionMechanic,
+  ConversionLeg,
+} from "#gamedef/mechanics/conversion.js";
 
 // ---------------------------------------------------------------------------
 // Game-level mechanics
 // ---------------------------------------------------------------------------
 
-export { ScoreTrackMechanicSchema } from "./score-track.js";
-export type { ScoreTrackMechanic } from "./score-track.js";
+export { ScoreTrackMechanicSchema } from "#gamedef/mechanics/score-track.js";
+export type { ScoreTrackMechanic } from "#gamedef/mechanics/score-track.js";
 
 export {
   DominantGamepieceMechanicSchema,
@@ -34,8 +40,11 @@ export {
   DominantRuleSchema,
   ComparisonRuleSchema,
   MatrixRuleSchema,
-} from "./dominant-gamepiece.js";
-export type { DominantGamepieceMechanic, DominantGamepieceRule } from "./dominant-gamepiece.js";
+} from "#gamedef/mechanics/dominant-gamepiece.js";
+export type {
+  DominantGamepieceMechanic,
+  DominantGamepieceRule,
+} from "#gamedef/mechanics/dominant-gamepiece.js";
 
 // ---------------------------------------------------------------------------
 // Union schemas
@@ -68,7 +77,10 @@ export const PieceMechanicSchema = z
  * from a compact declaration.
  */
 export const GameMechanicSchema = z
-  .discriminatedUnion("kind", [ScoreTrackMechanicSchema, DominantGamepieceMechanicSchema])
+  .discriminatedUnion("kind", [
+    ScoreTrackMechanicSchema,
+    DominantGamepieceMechanicSchema,
+  ])
   .describe(
     "A game-level mechanic declaration. " +
       "Game mechanics add behavioral overlays to the game structure — scoring, " +

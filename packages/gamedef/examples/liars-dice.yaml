@@ -80,21 +80,20 @@ effects:
         select: top
         ofType: die
       to:
-        scope: all-players
         inventory: playerCup
       count: 5
 
     - id: rollAllDice
       effect: roll
       pieces:
-        player: { kind: all }
+        player: all
         inventory: playerCup
         select: all
 
     - id: revealAllDice
       effect: reveal
       pieces:
-        player: { kind: all }
+        player: all
         inventory: playerCup
         select: all
       to: all
@@ -102,7 +101,7 @@ effects:
     - id: hideAllDice
       effect: hide
       pieces:
-        player: { kind: all }
+        player: all
         inventory: playerCup
         select: all
 
@@ -151,7 +150,7 @@ effects:
     - id: eliminateDie
       effect: move
       from:
-        player: { kind: stateRef, path: game.property.roundLoser }
+        player: { stateRef: game.property.roundLoser }
         inventory: playerCup
         select: random
         count: 1
@@ -163,8 +162,7 @@ effects:
       path: player.property.eliminated
       value: true
       target:
-        kind: matching
-        condition: "count(player.inventory.playerCup) == 0"
+        where: "count(player.inventory.playerCup) == 0"
 
 actions:
   actions:
@@ -276,7 +274,7 @@ flow:
                 - effectRef: revealAllDice
             children:
               - kind: turn
-                actor: all-players
+                actor: all
                 turnOrder:
                   kind: seat
                   direction: clockwise

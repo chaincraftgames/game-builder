@@ -86,8 +86,8 @@ import { z } from "zod";
 /**
  * A single resource leg in a conversion — an inventory and how many items are involved.
  */
-const ConversionLegSchema = z
-  .object({
+export const ConversionLegSchema = z
+  .strictObject({
     inventory: z
       .string()
       .describe(
@@ -104,7 +104,7 @@ const ConversionLegSchema = z
   .describe("One resource leg of a conversion — an inventory and item count.");
 
 export const ConversionMechanicSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("chaincraft:conversion"),
     slotId: z
       .string()

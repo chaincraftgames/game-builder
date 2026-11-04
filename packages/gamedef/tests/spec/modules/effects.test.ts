@@ -168,16 +168,16 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
         id: "dealDice",
         effect: "distribute",
         from: { inventory: "diceCup", select: "top" },
-        to: { scope: "all-players", inventory: "playerTray" },
+        to: { inventory: "playerTray" },
         count: 5,
       },
 
-      // distribute: deal to active player only
+      // distribute: deal one more die to every player
       {
         id: "dealExtraDie",
         effect: "distribute",
         from: { inventory: "diceCup", select: "top" },
-        to: { scope: "active-player", inventory: "playerTray" },
+        to: { inventory: "playerTray" },
         count: 1,
       },
 
@@ -304,21 +304,6 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
     expect(result.effects[0].effect).toBe("cancel-effect");
   });
 
-  it("parses distribute to all-teams scope", () => {
-    const result = ok({
-      effects: [
-        {
-          id: "dealTeamCards",
-          effect: "distribute",
-          from: { inventory: "drawDeck", select: "top" },
-          to: { scope: "all-teams", inventory: "teamHand" },
-          count: 3,
-        },
-      ],
-    });
-    expect(result.effects[0].effect).toBe("distribute");
-  });
-
   it("parses distribute with roles filter (setup: deal kill-card to mafia only)", () => {
     const result = ok({
       effects: [
@@ -326,7 +311,7 @@ describe("EffectsModuleSchema — Liar's Dice", () => {
           id: "dealKillCard",
           effect: "distribute",
           from: { inventory: "game:unassigned", select: "top", ofType: "killCard" },
-          to: { scope: "all-players", inventory: "playerHand", roles: ["mafia"] },
+          to: { inventory: "playerHand", roles: ["mafia"] },
           count: 1,
         },
       ],
@@ -381,19 +366,27 @@ describe("EffectsModuleSchema — selector player target", () => {
   });
 
   it.each([
-    [{ kind: "all" }],
-    [{ kind: "actor" }],
-    [{ kind: "all-other" }],
-    [{ kind: "param", inputId: "target" }],
-    [{ kind: "stateRef", path: "game.property.roundLoser" }],
-    [{ kind: "matching", condition: "not player.property.eliminated" }],
+    ["all"],
+    ["actor"],
+    ["all-other"],
+    [{ param: "target" }],
+    [{ stateRef: "game.property.roundLoser" }],
+    [{ where: "not player.property.eliminated" }],
+    [{ roles: ["mafia"] }],
   ])("accepts selector player %j", (player) => {
     ok(roll(player));
   });
 
-  it("rejects the old { stateRef } / { param } shorthand on a selector", () => {
-    fail(roll({ stateRef: "game.property.roundLoser" }));
-    fail(roll({ param: "target" }));
+  it("rejects the old kind-tagged player targets on a selector", () => {
+    fail(roll({ kind: "all" }));
+    fail(roll({ kind: "stateRef", path: "game.property.roundLoser" }));
+    fail(roll({ kind: "param", inputId: "target" }));
+    fail(roll({ kind: "matching", condition: "true" }));
+  });
+
+  it("rejects a player target with more than one form", () => {
+    fail(roll({ param: "target", stateRef: "game.property.roundLoser" }));
+    fail(roll({ param: "target", extra: 1 }));
   });
 
   it("accepts a single-player move destination", () => {
@@ -403,14 +396,14 @@ describe("EffectsModuleSchema — selector player target", () => {
           id: "m",
           effect: "move",
           from: { inventory: "deck", select: "top" },
-          to: { player: { kind: "param", inputId: "target" }, inventory: "hand" },
+          to: { player: { param: "target" }, inventory: "hand" },
         },
       ],
     });
   });
 
   it("rejects a multi-player move destination", () => {
-    for (const player of [{ kind: "all" }, { kind: "all-other" }, { kind: "matching", condition: "true" }]) {
+    for (const player of ["all", "all-other", { where: "true" }]) {
       fail({
         effects: [
           {
@@ -665,6 +658,54 @@ describe("LlmEffectSchema", () => {
     const r = LlmEffectSchema.safeParse({
       ...base,
       inputs: [{ name: "bad" }],
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("PropertyValueSchema — random", () => {
+  const setState = (value: unknown) =>
+    EffectSchema.safeParse({ effect: "set-state", path: "game.property.x", value });
+
+  it("accepts weighted options", () => {
+    const r = setState({ random: { options: [{ value: true, weight: 0.25 }, { value: false, weight: 0.75 }] } });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts unweighted options of mixed literal types", () => {
+    expect(setState({ random: { options: [{ value: "hearts" }, { value: 3 }] } }).success).toBe(true);
+  });
+
+  it("accepts an integer range", () => {
+    expect(setState({ random: { min: 1, max: 6 } }).success).toBe(true);
+  });
+
+  it("accepts random on an update effect", () => {
+    const r = EffectSchema.safeParse({
+      effect: "update",
+      pieces: { inventory: "test", select: "all" },
+      property: "suit",
+      value: { random: { options: [{ value: "hearts" }, { value: "spades" }] } },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it.each([
+    ["a single option", { options: [{ value: true }] }],
+    ["a non-positive weight", { options: [{ value: true, weight: 0 }, { value: false }] }],
+    ["a non-integer range bound", { min: 1.5, max: 6 }],
+    ["a range missing max", { min: 1 }],
+    ["both options and a range", { options: [{ value: 1 }, { value: 2 }], min: 1, max: 2 }],
+    ["neither options nor a range", { max: 6 }],
+  ])("rejects %s", (_name, source) => {
+    expect(setState({ random: source }).success).toBe(false);
+  });
+
+  it("rejects the removed set-random effect kind", () => {
+    const r = EffectSchema.safeParse({
+      effect: "set-random",
+      path: "game.property.x",
+      source: { kind: "range", min: 1, max: 6 },
     });
     expect(r.success).toBe(false);
   });

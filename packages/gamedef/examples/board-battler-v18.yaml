@@ -41,7 +41,7 @@
 # with the engine facts that decided its shape (all pins be57e0f /
 # 43670aa / 7bbda86, unchanged from every report cited below):
 #
-# 1. THE FLOW STAYS board-battler.yaml's OWN SHAPE (actor: all-players, one
+# 1. THE FLOW STAYS board-battler.yaml's OWN SHAPE (actor: all, one
 #    turn node per round), REVERSED FROM AN EARLIER DRAFT OF THIS FILE that
 #    restructured to actor: active-player expecting per-player hook timing.
 #    THAT DRAFT WAS PROVEN WRONG BY DRIVING IT, not by reasoning about it:
@@ -64,10 +64,10 @@
 #    by the property's own declared max (the same delta-clamps-to-declared-max
 #    behavior reports/FG002_DISCARD_ON_ZERO_v1.md already proved for defense);
 #    energy is refilled to energyCap at the same moment. BOTH APPLY TO EVERY
-#    PLAYER AT ONCE (`target: { kind: all }`), because item 1 rules out a
+#    PLAYER AT ONCE (`target: all`), because item 1 rules out a
 #    single-player target from a hook. This is "own round start," not
 #    literally "own turn start": traced directly in
-#    engine/chaincraft-runtime/src/effects/set-state.ts, `target: { kind: all }`
+#    engine/chaincraft-runtime/src/effects/set-state.ts, `target: all`
 #    resolves player IDs with no actorId needed (resolvePlayerTarget), and
 #    for EACH targeted player the value expression is evaluated with
 #    `targetPlayerId` bound (not actorId) — engine/chaincraft-runtime/src/
@@ -511,7 +511,7 @@ effects:
 
     # -------------------------------------------------------------------
     # ENERGY, fired once per round (item 2 above). Both effects target
-    # { kind: all } because a flow hook never carries an actorId (item 1),
+    # all because a flow hook never carries an actorId (item 1),
     # so "actor"/default-target set-state is unusable here — proven by
     # driving it, not assumed. capUp clamps to 6 via the property's own
     # declared max, the same delta-clamp behavior FG-002 proved for defense.
@@ -522,19 +522,19 @@ effects:
     - id: turnEnergyCapUp
       effect: set-state
       path: player.property.energyCap
-      target: { kind: all }
+      target: all
       value: { delta: 1 }
 
     - id: turnEnergyRefill
       effect: set-state
       path: player.property.energy
-      target: { kind: all }
+      target: all
       value: { var: "player.property.energyCap" }
 
     # -------------------------------------------------------------------
     # FREEZE, THE CLEAR. Unchanged from board-battler.yaml: fires once per
     # round at the turn node's onComplete, sweeps BOTH fields (a hook has no
-    # actor, so the selector names its players with player: { kind: all }),
+    # actor, so the selector names its players with player: all),
     # thawing every creature.
     # board-battler.yaml's own asymmetric-freeze finding (frozen by the last
     # player to act in a round never bites) is unchanged and not fixed here;
@@ -642,7 +642,7 @@ actions:
             kind: gamepiece-select
             inventory: hand
             ofType: creature
-            fromPlayer: self
+            fromPlayer: actor
             # AFFORDABILITY, item 3 above. Same filter mechanism freeze uses.
             filter: "piece.property.cost <= actor.property.energy"
         - effect: move
@@ -670,7 +670,7 @@ actions:
             kind: gamepiece-select
             inventory: field
             ofType: creature
-            fromPlayer: self
+            fromPlayer: actor
             filter: "piece.property.frozen == false and piece.property.attackedThisTurn == false and piece.property.playedThisTurn == false"
         - input: defenderOwner
           label: Choose whose creature to attack
@@ -691,7 +691,7 @@ actions:
         - effect: update
           source: { param: attacker }
           pieces:
-            player: { kind: param, inputId: defenderOwner }
+            player: { param: defenderOwner }
             inventory: field
             select: { id: { param: defender } }
           property: defense
@@ -709,7 +709,7 @@ actions:
         # unlike the hook effects in item 1/2 above).
         - effect: move
           from:
-            player: { kind: param, inputId: defenderOwner }
+            player: { param: defenderOwner }
             inventory: field
             select: all
             ofType: creature
@@ -735,7 +735,7 @@ actions:
             kind: gamepiece-select
             inventory: field
             ofType: creature
-            fromPlayer: self
+            fromPlayer: actor
             filter: "piece.property.frozen == false and piece.property.attackedThisTurn == false and piece.property.playedThisTurn == false"
         - effect: update
           pieces: { inventory: field, select: { id: { param: attacker } } }
@@ -743,7 +743,7 @@ actions:
           value: true
         - effect: set-state
           path: player.property.life
-          target: { kind: all-other }
+          target: all-other
           source: { param: attacker }
           value: { delta: { var: "source.property.power", negate: true } }
 
@@ -765,7 +765,7 @@ actions:
             kind: gamepiece-select
             inventory: hand
             ofType: spell
-            fromPlayer: self
+            fromPlayer: actor
             filter: "piece.property.cost <= actor.property.energy"
         - input: victimOwner
           label: Choose whose creature to freeze
@@ -784,14 +784,14 @@ actions:
           to: { inventory: discard }
         - effect: update
           pieces:
-            player: { kind: param, inputId: victimOwner }
+            player: { param: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozen
           value: true
         - effect: update
           pieces:
-            player: { kind: param, inputId: victimOwner }
+            player: { param: victimOwner }
             inventory: field
             select: { id: { param: victim } }
           property: frozenRounds
@@ -826,7 +826,7 @@ flow:
       - kind: turn
         id: seating
         label: Seating
-        actor: all-players
+        actor: all
         turnOrder:
           kind: seat
           direction: clockwise
@@ -847,7 +847,7 @@ flow:
           - kind: turn
             id: draw
             label: Draw
-            actor: all-players
+            actor: all
             turnOrder:
               kind: seat
               direction: clockwise
@@ -862,7 +862,7 @@ flow:
           - kind: turn
             id: main
             label: Take your turn
-            actor: all-players
+            actor: all
             turnOrder:
               kind: seat
               direction: clockwise

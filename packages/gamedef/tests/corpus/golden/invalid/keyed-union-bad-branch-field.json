@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "actions.actions.0.steps.0.label",
+      "code": "invalid_type"
+    }
+  ]
+}

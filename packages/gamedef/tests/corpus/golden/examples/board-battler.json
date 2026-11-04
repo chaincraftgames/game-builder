@@ -1,0 +1,649 @@
+{
+  "valid": true,
+  "spec": {
+    "metadata": {
+      "name": "Board Battler",
+      "playerCount": {
+        "min": 2,
+        "max": 2
+      },
+      "rng": {
+        "seedSource": "fixed"
+      }
+    },
+    "gamepieceTypes": {
+      "types": [
+        {
+          "id": "creature",
+          "category": "card",
+          "description": "A creature. Stands on the field until something removes it.",
+          "properties": [
+            {
+              "id": "power",
+              "label": "Power",
+              "type": {
+                "kind": "number",
+                "min": 0,
+                "max": 20
+              },
+              "mutable": true,
+              "visibility": "always"
+            },
+            {
+              "id": "defense",
+              "label": "Defense",
+              "type": {
+                "kind": "number",
+                "min": 0,
+                "max": 20
+              },
+              "mutable": true,
+              "visibility": "always"
+            },
+            {
+              "id": "frozen",
+              "label": "Frozen",
+              "type": {
+                "kind": "boolean"
+              },
+              "mutable": true,
+              "source": "runtime",
+              "default": false,
+              "visibility": "always"
+            }
+          ],
+          "passiveSlots": [
+            {
+              "id": "onDealDamage",
+              "description": "Fires when this creature's controller deals damage.",
+              "enabledIn": [
+                "field"
+              ],
+              "faceFilter": "any",
+              "exhaustedFilter": "any"
+            },
+            {
+              "id": "onTargeted",
+              "description": "Fires when an opponent targets this creature.",
+              "enabledIn": [
+                "field"
+              ],
+              "faceFilter": "any",
+              "exhaustedFilter": "any"
+            }
+          ],
+          "hasFaceState": false,
+          "exhaustible": false,
+          "orientationCount": 1
+        },
+        {
+          "id": "spell",
+          "category": "card",
+          "description": "Fires once and goes to the discard.",
+          "hasFaceState": false,
+          "exhaustible": false,
+          "orientationCount": 1
+        }
+      ]
+    },
+    "inventories": {
+      "types": [
+        {
+          "id": "library",
+          "label": "Library",
+          "scope": {
+            "kind": "game"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "never",
+          "countVisibility": "always",
+          "structure": "stack",
+          "description": "Shared staging pile, shuffled at setup and emptied into the two sides. It exists because shuffle resolves a player-scoped inventory through the acting player and setup has no acting player."
+        },
+        {
+          "id": "deck",
+          "label": "Deck",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "never",
+          "countVisibility": "always",
+          "structure": "stack"
+        },
+        {
+          "id": "hand",
+          "label": "Hand",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "owner",
+          "structure": "none"
+        },
+        {
+          "id": "field",
+          "label": "Field",
+          "scope": {
+            "kind": "player"
+          },
+          "accepts": [
+            "creature"
+          ],
+          "visibility": "always",
+          "structure": "none",
+          "description": "Where creatures stand. They persist here across rounds."
+        },
+        {
+          "id": "discard",
+          "label": "Discard",
+          "scope": {
+            "kind": "game"
+          },
+          "accepts": [
+            "creature",
+            "spell"
+          ],
+          "visibility": "always",
+          "structure": "none"
+        }
+      ]
+    },
+    "state": {
+      "player": {
+        "properties": [
+          {
+            "id": "life",
+            "type": {
+              "kind": "number",
+              "min": 0,
+              "max": 30
+            },
+            "default": 30,
+            "description": "Reaching 0 does not end the match today. See THE MISSING PIECES at the foot of this file."
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "effect": "move",
+          "from": {
+            "inventory": "game:unassigned",
+            "select": "all"
+          },
+          "to": {
+            "inventory": "library"
+          },
+          "id": "fillLibrary"
+        },
+        {
+          "effect": "shuffle",
+          "inventory": "library",
+          "id": "shuffleLibrary"
+        },
+        {
+          "effect": "distribute",
+          "from": {
+            "inventory": "library",
+            "select": "top"
+          },
+          "to": {
+            "inventory": "hand"
+          },
+          "count": 2,
+          "style": "round-robin",
+          "id": "dealHands"
+        },
+        {
+          "effect": "distribute",
+          "from": {
+            "inventory": "library",
+            "select": "top"
+          },
+          "to": {
+            "inventory": "deck"
+          },
+          "count": 2,
+          "style": "round-robin",
+          "id": "dealDecks"
+        },
+        {
+          "effect": "message",
+          "to": "all",
+          "template": "Both sides start at 30 life. Play creatures, attack with them, and bring the other side down.",
+          "id": "announceStart"
+        },
+        {
+          "effect": "update",
+          "pieces": {
+            "player": "all",
+            "inventory": "field",
+            "select": "all"
+          },
+          "property": "frozen",
+          "value": false,
+          "id": "thawAll"
+        }
+      ],
+      "passives": [
+        {
+          "id": "lifesteal",
+          "trigger": {
+            "kind": "state-write",
+            "scope": "actor",
+            "path": "player.property.life",
+            "direction": "decrease"
+          },
+          "effects": [
+            {
+              "effect": "set-state",
+              "path": "player.property.life",
+              "value": {
+                "delta": 2
+              }
+            }
+          ]
+        },
+        {
+          "id": "thorns",
+          "trigger": {
+            "kind": "state-write",
+            "scope": "target",
+            "path": "gamepiece.property.defense",
+            "direction": "decrease"
+          },
+          "effects": [
+            {
+              "effect": "set-state",
+              "path": "player.property.life",
+              "value": {
+                "delta": -2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "actions": [
+        {
+          "id": "playCreature",
+          "label": "Play a creature",
+          "description": "Put a creature from your hand onto your field.",
+          "steps": [
+            {
+              "input": "card",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "hand",
+                "ofType": "creature",
+                "fromPlayer": "actor"
+              },
+              "label": "Choose a creature"
+            },
+            {
+              "effect": "move",
+              "from": {
+                "inventory": "hand",
+                "select": {
+                  "id": {
+                    "param": "card"
+                  }
+                }
+              },
+              "to": {
+                "inventory": "field"
+              }
+            }
+          ]
+        },
+        {
+          "id": "attackCreature",
+          "label": "Attack a creature",
+          "description": "Your creature and theirs each take the other's power.",
+          "steps": [
+            {
+              "input": "attacker",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": "actor"
+              },
+              "label": "Choose your attacker"
+            },
+            {
+              "input": "defenderOwner",
+              "type": {
+                "kind": "player-select",
+                "excludeSelf": true
+              },
+              "label": "Choose whose creature to attack"
+            },
+            {
+              "input": "defender",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": {
+                  "param": "defenderOwner"
+                }
+              },
+              "label": "Choose the creature to attack"
+            },
+            {
+              "effect": "update",
+              "source": {
+                "param": "attacker"
+              },
+              "pieces": {
+                "player": {
+                  "param": "defenderOwner"
+                },
+                "inventory": "field",
+                "select": {
+                  "id": {
+                    "param": "defender"
+                  }
+                }
+              },
+              "property": "defense",
+              "value": {
+                "delta": {
+                  "var": "source.property.power",
+                  "negate": true
+                }
+              }
+            },
+            {
+              "effect": "update",
+              "source": {
+                "param": "defender"
+              },
+              "pieces": {
+                "inventory": "field",
+                "select": {
+                  "id": {
+                    "param": "attacker"
+                  }
+                }
+              },
+              "property": "defense",
+              "value": {
+                "delta": {
+                  "var": "source.property.power",
+                  "negate": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "attackPlayer",
+          "label": "Attack the opposing player",
+          "description": "Your creature strikes the other player directly.",
+          "steps": [
+            {
+              "input": "attacker",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": "actor"
+              },
+              "label": "Choose your attacker"
+            },
+            {
+              "effect": "set-state",
+              "source": {
+                "param": "attacker"
+              },
+              "path": "player.property.life",
+              "value": {
+                "delta": {
+                  "var": "source.property.power",
+                  "negate": true
+                }
+              },
+              "target": "all-other"
+            }
+          ]
+        },
+        {
+          "id": "castFreeze",
+          "label": "Cast a freeze",
+          "description": "Freeze one of the opposing player's creatures.",
+          "steps": [
+            {
+              "input": "card",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "hand",
+                "ofType": "spell",
+                "fromPlayer": "actor"
+              },
+              "label": "Choose a freeze card"
+            },
+            {
+              "input": "victimOwner",
+              "type": {
+                "kind": "player-select",
+                "excludeSelf": true
+              },
+              "label": "Choose whose creature to freeze"
+            },
+            {
+              "input": "victim",
+              "type": {
+                "kind": "gamepiece-select",
+                "inventory": "field",
+                "ofType": "creature",
+                "fromPlayer": {
+                  "param": "victimOwner"
+                }
+              },
+              "label": "Choose the creature to freeze"
+            },
+            {
+              "effect": "move",
+              "from": {
+                "inventory": "hand",
+                "select": {
+                  "id": {
+                    "param": "card"
+                  }
+                }
+              },
+              "to": {
+                "inventory": "discard"
+              }
+            },
+            {
+              "effect": "update",
+              "pieces": {
+                "player": {
+                  "param": "victimOwner"
+                },
+                "inventory": "field",
+                "select": {
+                  "id": {
+                    "param": "victim"
+                  }
+                }
+              },
+              "property": "frozen",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    "flow": {
+      "root": {
+        "kind": "game",
+        "label": "Board Battler",
+        "hooks": {
+          "onEnter": [
+            {
+              "effectRef": "fillLibrary"
+            },
+            {
+              "effectRef": "shuffleLibrary"
+            },
+            {
+              "effectRef": "dealHands"
+            },
+            {
+              "effectRef": "dealDecks"
+            },
+            {
+              "effectRef": "announceStart"
+            }
+          ]
+        },
+        "children": [
+          {
+            "kind": "loop",
+            "id": "rounds",
+            "label": "Rounds",
+            "count": 3,
+            "children": [
+              {
+                "kind": "turn",
+                "id": "main",
+                "label": "Take your turn",
+                "actor": "all",
+                "turnOrder": {
+                  "kind": "seat",
+                  "direction": "clockwise"
+                },
+                "grammar": {
+                  "kind": "choice",
+                  "options": [
+                    {
+                      "kind": "action",
+                      "ref": "playCreature"
+                    },
+                    {
+                      "kind": "action",
+                      "ref": "attackCreature"
+                    },
+                    {
+                      "kind": "action",
+                      "ref": "attackPlayer"
+                    },
+                    {
+                      "kind": "action",
+                      "ref": "castFreeze"
+                    }
+                  ],
+                  "passable": true
+                },
+                "hooks": {
+                  "onComplete": [
+                    {
+                      "effectRef": "thawAll"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "winConditions": [
+          {
+            "rule": "ranking",
+            "property": "player.property.life",
+            "order": "highest",
+            "tiebreak": "all-win",
+            "onVictory": [
+              {
+                "effect": "message",
+                "to": "all",
+                "template": "{{game.winners[0]}} wins with the most life remaining."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "catalog": {
+      "entries": [
+        {
+          "id": "ironOak",
+          "typeId": "creature",
+          "properties": {
+            "power": 2,
+            "defense": 6
+          }
+        },
+        {
+          "id": "swiftFang",
+          "typeId": "creature",
+          "properties": {
+            "power": 4,
+            "defense": 2
+          }
+        },
+        {
+          "id": "duskRaider",
+          "typeId": "creature",
+          "properties": {
+            "power": 3,
+            "defense": 4
+          }
+        },
+        {
+          "id": "stoneWarden",
+          "typeId": "creature",
+          "properties": {
+            "power": 1,
+            "defense": 7
+          }
+        },
+        {
+          "id": "bloodHunter",
+          "typeId": "creature",
+          "properties": {
+            "power": 3,
+            "defense": 3
+          },
+          "passiveBindings": {
+            "onDealDamage": "lifesteal"
+          }
+        },
+        {
+          "id": "thornBeast",
+          "typeId": "creature",
+          "properties": {
+            "power": 2,
+            "defense": 5
+          },
+          "passiveBindings": {
+            "onTargeted": "thorns"
+          }
+        },
+        {
+          "id": "frostBind",
+          "typeId": "spell"
+        },
+        {
+          "id": "rimeSnare",
+          "typeId": "spell"
+        }
+      ]
+    }
+  }
+}

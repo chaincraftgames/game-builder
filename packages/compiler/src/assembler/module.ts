@@ -10,7 +10,8 @@
 //   6. buildExecutorRegistry → EffectRegistration map from effectDefs kinds
 //   7. applyMechanics        → mechanic passes extend effectDefs + effects
 //   8. linkAndValidate       → error on unresolved refs
-//   9. seal                  → CompiledGameModule
+//   9. classify              → irreversibleEffects (effectDef ids)
+//  10. seal                  → CompiledGameModule
 // ---------------------------------------------------------------------------
 
 import type { ModularGameSpec } from "@chaincraft/gamedef";
@@ -32,6 +33,7 @@ import { applyMechanics } from "#compiler/assembler/mechanics.js";
 import { assembleSession } from "#compiler/assembler/session.js";
 import type { GameConfig } from "#compiler/assembler/types.js";
 import { assemblePassives } from "#compiler/assembler/passives.js";
+import { classifyIrreversibleEffects } from "#compiler/assembler/irreversible.js";
 import { enumerateCatalogPieces } from "#compiler/assembler/catalog.js";
 import { CompileCode } from "#compiler/assembler/types.js";
 
@@ -214,5 +216,6 @@ export function assembleModule(
     effectDefs,
     actions,
     passiveActivations,
+    irreversibleEffects: classifyIrreversibleEffects(effectDefs, config, passiveActivations),
   };
 }

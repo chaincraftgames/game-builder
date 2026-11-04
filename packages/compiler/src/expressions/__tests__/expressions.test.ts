@@ -5,7 +5,7 @@
 // against synthetic EvalContext snapshots.
 // ---------------------------------------------------------------------------
 
-import { compileExpression, compilePredicate, parseExpression, ExpressionError, referencedInputs } from '../index.js';
+import { compileExpression, compilePredicate, parseExpression, ExpressionError, EXPRESSION_FUNCTIONS, referencedInputs } from '../index.js';
 import type { EvalContext } from '../index.js';
 
 // --- Test helpers -----------------------------------------------------------
@@ -596,6 +596,12 @@ describe('error reporting', () => {
 
   it('rejects unknown function', () => {
     expect(() => compileExpression('unknown(1)')).toThrow(ExpressionError);
+  });
+
+  it('recognises every name in EXPRESSION_FUNCTIONS', () => {
+    for (const name of EXPRESSION_FUNCTIONS) {
+      expect(() => compileExpression(`${name}()`)).not.toThrow("Unknown function");
+    }
   });
 
   it('rejects count with wrong arity', () => {

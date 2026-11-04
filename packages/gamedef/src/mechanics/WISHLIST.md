@@ -74,7 +74,7 @@ Key config (tentative):
 - `trigger` — named effect ID that initiates the NPC's turn (e.g. `resolve-monster-turn`,
   called from a player turn's `onComplete` hook)
 - `target` — who the NPC acts against: `trigger-actor` (the player whose hook fired) |
-  `all-players` | `{ roles: [...] }`
+  `all` | `{ roles: [...] }`
 - `behaviors[]` — ordered list of possible behaviors:
   - `id` — behavior identifier (also used as cooldown property name)
   - `weight` — relative probability weight (engine sums all weights, rolls, picks proportionally)

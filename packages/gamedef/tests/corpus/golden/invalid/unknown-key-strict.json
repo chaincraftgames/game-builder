@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "effects.effects.4.target",
+      "code": "unrecognized_keys"
+    }
+  ]
+}

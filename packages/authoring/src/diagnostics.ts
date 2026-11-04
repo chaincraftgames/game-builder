@@ -13,6 +13,7 @@ export const AuthoringCode = {
   Internal: "internal",
   InitConflict: "init-conflict",
   InvalidManifest: "invalid-manifest",
+  UnknownTopic: "unknown-topic",
 } as const;
 
 export type AuthoringCode = (typeof AuthoringCode)[keyof typeof AuthoringCode];
@@ -71,16 +72,31 @@ export function sortDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[
   return [...diagnostics].sort((a, b) => Number(b.severity === "error") - Number(a.severity === "error"));
 }
 
+/**
+ * One-line pointer to the schema docs for the first schema-shaped problem, or `undefined` if there is none.
+ *
+ * @param moduleKeys - Valid top-level module keys; the pointer names a module only if the path starts with one.
+ */
+export function schemaPointer(diagnostics: readonly Diagnostic[], moduleKeys: readonly string[]): string | undefined {
+  const issue = sortDiagnostics(diagnostics).find(
+    (d) => d.code === ValidationCode.Schema || d.code === AuthoringCode.UnknownModule,
+  );
+  if (!issue) return undefined;
+  const segment = (issue.path ?? "").split(/[.[]/, 1)[0];
+  const module = issue.code === ValidationCode.Schema && moduleKeys.includes(segment) ? ` ${segment}` : "";
+  return `see \`chaincraft docs schema${module}\``;
+}
+
 /** Renders one diagnostic as an optional location line, the message line and an optional known-ids line. */
-export function formatDiagnostic(d: Diagnostic): string {
+export function formatDiagnostic(d: Diagnostic, maxKnownIds: number = MAX_KNOWN_IDS): string {
   const file = d.file !== undefined && d.line !== undefined ? `${d.file}:${d.line}` : d.file;
   const location = [file, d.path].filter((part) => part !== undefined).join("  ");
   const lines: string[] = [];
   if (location) lines.push(location);
   lines.push(`  ${d.severity} ${d.code}: ${d.message}`);
   if (d.knownIds) {
-    const shown = d.knownIds.slice(0, MAX_KNOWN_IDS).join(", ");
-    const more = d.knownIds.length > MAX_KNOWN_IDS ? `, … (${d.knownIds.length - MAX_KNOWN_IDS} more)` : "";
+    const shown = d.knownIds.slice(0, maxKnownIds).join(", ");
+    const more = d.knownIds.length > maxKnownIds ? `, … (${d.knownIds.length - maxKnownIds} more)` : "";
     lines.push(`  known ids: ${shown || "(none)"}${more}`);
   }
   return lines.join("\n");

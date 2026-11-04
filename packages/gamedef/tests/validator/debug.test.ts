@@ -1,7 +1,7 @@
 import { validate } from "#gamedef/validator/index.js";
 
 const META = { name: "Test Game", playerCount: { min: 2, max: 2 } };
-const DUMMY_TURN = { kind: "turn", actor: "all-players", grammar: { kind: "action", ref: "dummy" } };
+const DUMMY_TURN = { kind: "turn", actor: "all", grammar: { kind: "action", ref: "dummy" } };
 
 test("debug - duplicate flow node IDs", () => {
   const result = validate({

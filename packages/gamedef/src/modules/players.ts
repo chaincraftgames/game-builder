@@ -35,10 +35,10 @@ import { PassiveEffectSchema } from "#gamedef/modules/effects.js";
 
 export const RoleAssignmentTimingSchema = z
   .discriminatedUnion("when", [
-    z.object({
+    z.strictObject({
       when: z.literal("game-start"),
     }),
-    z.object({
+    z.strictObject({
       when: z.literal("subflow-start"),
       subflowId: z
         .string()
@@ -61,14 +61,14 @@ export const RoleAssignmentTimingSchema = z
 
 export const RoleAssignmentSchema = z
   .discriminatedUnion("method", [
-    z.object({
+    z.strictObject({
       method: z.literal("random"),
       at: RoleAssignmentTimingSchema,
     }).describe(
       "Engine randomly assigns this role from the pool of eligible players at the given time.",
     ),
 
-    z.object({
+    z.strictObject({
       method: z.literal("player-choice"),
       description: z
         .string()
@@ -82,7 +82,7 @@ export const RoleAssignmentSchema = z
         "Example: choosing a character class at the start of a deck builder game.",
     ),
 
-    z.object({
+    z.strictObject({
       method: z.literal("rotating"),
       at: RoleAssignmentTimingSchema,
       direction: z
@@ -94,7 +94,7 @@ export const RoleAssignmentSchema = z
         "Example: dealer rotates clockwise at the start of each round.",
     ),
 
-    z.object({
+    z.strictObject({
       method: z.literal("condition"),
       condition: z
         .string()
@@ -107,7 +107,7 @@ export const RoleAssignmentSchema = z
       "Role is assigned to whichever player meets the given condition at the specified time.",
     ),
 
-    z.object({
+    z.strictObject({
       method: z.literal("effect"),
     }).describe(
       "Role is only ever assigned or removed via an explicit effect. " +
@@ -126,10 +126,10 @@ export const RoleAssignmentSchema = z
 
 export const RoleVisibilitySchema = z
   .discriminatedUnion("type", [
-    z.object({
+    z.strictObject({
       type: z.literal("public"),
     }),
-    z.object({
+    z.strictObject({
       type: z.literal("hidden"),
       revealedOn: z
         .string()
@@ -151,11 +151,11 @@ export const RoleVisibilitySchema = z
 // ---------------------------------------------------------------------------
 
 export const RoleDefinitionSchema = z
-  .object({
+  .strictObject({
     id: IdentifierSchema.describe(
         "Unique identifier for this role. Referenced in flow conditions " +
           "(e.g., startingPlayer: { role: dealer }), action eligibility " +
-          "(e.g., eligiblePlayers: role(mafia)), and turn order.",
+          "(e.g., eligiblePlayers: { roles: [mafia] }), and turn order.",
       ),
     description: z
       .string()
@@ -183,7 +183,7 @@ export const RoleDefinitionSchema = z
 // ---------------------------------------------------------------------------
 
 export const PlayersModuleSchema = z
-  .object({
+  .strictObject({
     roles: z
       .array(RoleDefinitionSchema)
       .optional()

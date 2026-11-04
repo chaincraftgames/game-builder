@@ -1,6 +1,28 @@
-import { countDiagnostics, formatDiagnostic, sortDiagnostics, type Diagnostic } from "../diagnostics.js";
+import { countDiagnostics, formatDiagnostic, schemaPointer, sortDiagnostics, type Diagnostic } from "../diagnostics.js";
 
 const base: Diagnostic = { severity: "error", code: "unresolved-ref", message: "boom" };
+
+describe("schemaPointer", () => {
+  const keys = ["flow", "effects"];
+  const schema = (path?: string): Diagnostic => ({ ...base, code: "schema", ...(path === undefined ? {} : { path }) });
+
+  it("names the module of the first schema diagnostic", () => {
+    expect(schemaPointer([schema("effects.effects.0"), schema("flow")], keys)).toBe("see `chaincraft docs schema effects`");
+  });
+
+  it.each([[""], [undefined], ["nope.x"]])("drops the argument for a schema path %j", (path) => {
+    expect(schemaPointer([schema(path)], keys)).toBe("see `chaincraft docs schema`");
+  });
+
+  it("never names the key of an unknown-module diagnostic", () => {
+    const unknown: Diagnostic = { ...base, code: "unknown-module", path: "flow" };
+    expect(schemaPointer([unknown], keys)).toBe("see `chaincraft docs schema`");
+  });
+
+  it("is undefined without a schema or unknown-module diagnostic", () => {
+    expect(schemaPointer([base], keys)).toBeUndefined();
+  });
+});
 
 describe("formatDiagnostic", () => {
   it("prints file, path, message and known ids", () => {

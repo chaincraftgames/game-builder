@@ -1,0 +1,9 @@
+{
+  "valid": false,
+  "issues": [
+    {
+      "path": "flow.root.children.0.children.0.actor",
+      "code": "unrecognized_keys"
+    }
+  ]
+}

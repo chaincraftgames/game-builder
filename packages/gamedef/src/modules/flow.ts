@@ -109,7 +109,7 @@
  *     - id: stealResponse
  *       trigger: stealDie
  *       timing: before
- *       eligiblePlayers: opponents
+ *       eligiblePlayers: all-other
  *       actions: [blockSteal]
  *       timeout: 15000
  *   children:
@@ -117,7 +117,7 @@
  *       endCondition: "count(players, not player.property.eliminated) <= 1"
  *       children:
  *         - kind: turn
- *           actor: all-players
+ *           actor: all
  *           turnOrder:
  *             kind: seat
  *             direction: clockwise
@@ -151,7 +151,7 @@
  *         - kind: simultaneous
  *           id: dayDiscussion
  *           label: Discussion
- *           actor: all-players
+ *           actor: all
  *           endCondition: until-pass
  *           grammar:
  *             kind: choice
@@ -162,7 +162,7 @@
  *         - kind: simultaneous
  *           id: dayVote
  *           label: Vote
- *           actor: all-players
+ *           actor: all
  *           grammar:
  *             kind: action
  *             ref: voteEliminate
@@ -187,8 +187,8 @@ import {
 // Flow hooks (effects triggered at structural boundaries)
 // ---------------------------------------------------------------------------
 
-const FlowHooksSchema = z
-  .object({
+export const FlowHooksSchema = z
+  .strictObject({
     onEnter: EffectCallsSchema.optional().describe(
       "Effects executed when this flow node is entered. " +
         "Use for setup: deal cards, initialize trackers, reveal roles.",
@@ -249,10 +249,10 @@ const FlowHooksSchema = z
  *   players: [north, east, south, west]
  * ```
  */
-const TurnOrderSchema = z
+export const TurnOrderSchema = z
   .discriminatedUnion("kind", [
     z
-      .object({
+      .strictObject({
         kind: z.literal("seat"),
         direction: z
           .enum(["clockwise", "counter-clockwise"])
@@ -272,7 +272,7 @@ const TurnOrderSchema = z
       ),
 
     z
-      .object({
+      .strictObject({
         kind: z.literal("ranked"),
         by: PlayerStateRefSchema.describe(
           "Per-player state reference used to rank players. " +
@@ -292,7 +292,7 @@ const TurnOrderSchema = z
       ),
 
     z
-      .object({
+      .strictObject({
         kind: z.literal("explicit"),
         players: z
           .array(z.string())
@@ -317,13 +317,13 @@ const TurnOrderSchema = z
 // Actor specification (who acts in a turn or simultaneous node)
 // ---------------------------------------------------------------------------
 
-const ActorSpecSchema = z
+export const ActorSpecSchema = z
   .union([
     z
-      .literal("all-players")
+      .literal("all")
       .describe("Every non-eliminated player participates (regardless of role)."),
     z
-      .object({
+      .strictObject({
         roles: z
           .array(z.string())
           .min(1)
@@ -338,7 +338,7 @@ const ActorSpecSchema = z
         "Only players holding at least one of the listed roles act in this node.",
       ),
     z
-      .object({
+      .strictObject({
         where: ConditionExpressionSchema.describe(
           "Per-player infix expression with the candidate bound as `player`. " +
             "Re-evaluated before each turn, so a player who stops matching mid-node " +
@@ -347,16 +347,14 @@ const ActorSpecSchema = z
             "means out of the game and affects end conditions.",
         ),
       })
-      .strict()
       .describe("Only players for whom the expression is true act in this node."),
     z
-      .object({
+      .strictObject({
         player: PlayerSelectorSchema.describe(
           "Selects the single acting player. " +
             "Example: { stateRef: game.property.roundLoser }.",
         ),
       })
-      .strict()
       .describe(
         "Exactly one player acts, chosen by the selector. Do not combine with turnOrder.",
       ),
@@ -416,7 +414,7 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
     .discriminatedUnion("kind", [
       // --- action: take a specific named action ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("action"),
           ref: z
             .string()
@@ -428,7 +426,7 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
 
       // --- slot: activate gamepiece action slots ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("slot"),
           inventory: z
             .string()
@@ -477,7 +475,7 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
 
       // --- sequence: ordered steps, all taken ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("sequence"),
           steps: z
             .array(TurnGrammarNodeSchema)
@@ -493,7 +491,7 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
 
       // --- choice: pick one (or pick N) from options ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("choice"),
           options: z
             .array(TurnGrammarNodeSchema)
@@ -525,7 +523,7 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
 
       // --- repeat: N times or until-pass ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("repeat"),
           body: TurnGrammarNodeSchema.describe("The grammar node to repeat."),
           count: z
@@ -588,7 +586,7 @@ export type TurnGrammarNode =
     };
 
 // "until-pass": end when all eligible players have consecutively passed
-const FlowEndConditionSchema = z.union([
+export const FlowEndConditionSchema = z.union([
   ConditionExpressionSchema,
   z
     .literal("until-pass")
@@ -620,7 +618,7 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
     .discriminatedUnion("kind", [
       // --- loop ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("loop"),
           id: z
             .string()
@@ -640,44 +638,40 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
             .describe(
               "Repeat exactly this many times then exit. " +
                 "Use for fixed-round games: count: 5 = play 5 rounds. " +
-                "Provide either 'count' or 'endCondition', not both.",
+                "Exclusive with 'endCondition'.",
             ),
           endCondition: FlowEndConditionSchema.optional().describe(
             "Infix expression; the loop exits when true. When it is evaluated is set by 'checkAfter'. " +
-              "Example: 'game.property.gameWinner != \"\"' or 'count(game.inventory.deck) == 0'. " +
-              "Or the special value 'until-pass' to exit when all players consecutively pass. " +
               "Paths: game.property.<id>, count(game.inventory.<id>); actor.property.<id> only with checkAfter: turn. " +
-              "Functions: count(c[, expr]), sum(c, expr), all(c, expr), any(c, expr) where c is " +
-              "'players' or an inventory path; if(cond, a, b). " +
-              "Provide either 'count' or 'endCondition', not both.",
+              "Or 'until-pass' to exit when all players consecutively pass. " +
+              "Exclusive with 'count'. Example: 'count(game.inventory.deck) == 0'. " +
+              "See `chaincraft docs guide game-end`.",
           ),
           checkAfter: z
             .enum(["iteration", "turn"])
             .optional()
             .describe(
-              "When endCondition is evaluated. 'iteration' (default): after all children finish — the " +
-                "current round always completes; no actor is bound. 'turn': after each player's turn in " +
-                "any turn node inside this loop, with that player bound as 'actor'; the loop exits " +
-                "immediately, so later seats do not act. Use 'turn' for elimination/instant-win games.",
+              "When endCondition is evaluated. 'iteration' (default): after all children finish, so the " +
+                "round always completes; no actor is bound. 'turn': after each player's turn in any turn " +
+                "node inside this loop, with that player bound as 'actor'; the loop exits at once, so " +
+                "later seats do not act. Use for elimination/instant-win games.",
             ),
           finalRound: z
             .boolean()
             .optional()
             .describe(
-              "If true, when a player's turn ends with endCondition true, every other player gets one " +
-                "more turn: the loop exits when turn order returns to the triggering player. " +
-                "Use for 'first to 50 points triggers the final round' patterns. " +
+              "When a player's turn ends with endCondition true, every other player gets one " +
+                "more turn; the loop exits when turn order returns to the triggering player. " +
+                "For 'first to 50 points triggers the final round'. " +
                 "Requires endCondition with checkAfter: turn. Defaults to false.",
             ),
           writeIterationTo: z
             .string()
             .optional()
             .describe(
-              "Dot-path to a game state integer property (e.g. 'game.property.currentRound'). " +
-                "When set, the engine automatically writes the current 1-based iteration number " +
-                "to this property at the start of each iteration, eliminating the need for a " +
-                "manual set-state effect in onComplete hooks. " +
-                "Forward reference to a property declared in the state module.",
+              "Dot-path to a game integer property (e.g. 'game.property.currentRound'). " +
+                "The engine writes the current 1-based iteration number to it at the start of " +
+                "each iteration. Forward reference to a property declared in the state module.",
             ),
           children: z
             .array(FlowNodeSchema)
@@ -700,13 +694,13 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
           "A repeating structural container. Executes children in order, then loops. " +
             "Use for rounds, phases, or any repeating structure. " +
             "Must provide exactly one of 'count' (fixed iterations) or 'endCondition' (state-based exit). " +
-            "For a game with multiple distinct phases, use count: 1 with child loops — " +
-            "one loop per phase, each with its own endCondition.",
+            "For distinct sequential phases, put one child loop per phase under the game root, " +
+            "each with its own endCondition.",
         ),
 
       // --- turn ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("turn"),
           id: IdentifierSchema.optional().describe(
             "Optional identifier. Set when referenced by 'availableInSubflows'.",
@@ -748,7 +742,7 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
 
       // --- simultaneous ---
       z
-        .object({
+        .strictObject({
           kind: z.literal("simultaneous"),
           id: IdentifierSchema.optional().describe(
             "Optional identifier. Set when referenced by 'availableInSubflows'.",
@@ -759,17 +753,13 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
             .describe("Human-readable name shown in the UI."),
           actor: ActorSpecSchema.describe("Which player(s) participate."),
           grammar: TurnGrammarNodeSchema.describe(
-            "What each actor does. All actors act independently and without seeing each other's choices. " +
-              "Outcomes are hidden until all actors submit, then revealed together. " +
-              "CONSTRAINT: every effect reachable from this grammar must target only the acting player's own " +
-              "state (own properties, own inventories, own gamepieces). " +
-              "Effects on game-scoped inventories, other players' state, or shared board positions are not " +
-              "allowed here — place them in the node's onEnter or onComplete hooks instead. " +
-              "This constraint guarantees that all players' writes commute (order-independent), " +
-              "which is required for the engine's fork-join execution model. " +
-              "Common patterns: deal cards in onEnter, players privately arrange their own hand in the grammar, " +
-              "resolve/compare in onComplete. RNG inside the grammar is limited to player-local entropy " +
-              "(shuffling own inventory, rolling own dice).",
+            "What each actor does, independently and without seeing the others' choices; " +
+              "outcomes stay hidden until all actors submit, then are revealed together. " +
+              "CONSTRAINT: every effect reachable from this grammar may target only the acting " +
+              "player's own state (own properties, inventories, gamepieces). Shared or other players' " +
+              "state belongs in the node's onEnter/onComplete hooks. " +
+              "RNG here is limited to player-local entropy (shuffling own inventory, rolling own dice). " +
+              "See `chaincraft docs guide flow`.",
           ),
           endCondition: FlowEndConditionSchema.optional().describe(
             "Exit condition. Infix expression over game state, or 'until-pass' (exit when all actors pass). " +
@@ -795,9 +785,7 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
         .describe(
           "All actors submit simultaneously and independently, then outcomes are revealed together. " +
             "Use for blind bidding, rock-paper-scissors, simultaneous night actions, or ready-checks. " +
-            "Each actor runs an independent sub-engine over the grammar; all outputs are deferred-visible " +
-            "until the join point (end of phase). Grammar actions must be actor-local (own state only) — " +
-            "shared-state operations belong in hooks. Passive/reactive effects are disabled during the phase.",
+            "Passive/reactive effects are disabled during the phase.",
         ),
     ])
     .describe("A flow tree node. Three kinds: loop, turn, simultaneous."),
@@ -855,13 +843,13 @@ export type FlowNode =
  * ```yaml
  * kind: turn
  * id: attackTurn
- * actor: all-players
+ * actor: all
  * grammar: { kind: action, ref: attack }
  * interruptWindows:
  *   - id: counterSpell
  *     trigger: dealDamage
  *     timing: before
- *     eligiblePlayers: opponents
+ *     eligiblePlayers: all-other
  *     actions: [counterSpell]
  *     timeout: 10000
  * ```
@@ -879,7 +867,7 @@ export type FlowNode =
  * ```
  */
 export const InterruptWindowSchema = z
-  .object({
+  .strictObject({
     id: z
       .string()
       .describe(
@@ -905,15 +893,12 @@ export const InterruptWindowSchema = z
       .union([
         z.literal("all").describe("All players may respond."),
         z
-          .literal("opponents")
+          .literal("all-other")
           .describe(
             "All players except the one whose action triggered the effect.",
           ),
         z
-          .literal("non-active")
-          .describe("All players who are not the current active player."),
-        z
-          .object({
+          .strictObject({
             roles: z
               .array(z.string())
               .min(1)
@@ -957,11 +942,9 @@ export const InterruptWindowSchema = z
 
 const onVictoryField = {
   onVictory: EffectCallsSchema.optional().describe(
-    "Effect calls to execute when this condition determines the winners. " +
-      "Fires after winConditions are evaluated and before the game session tears down. " +
-      "The reserved path 'game.winners' is populated with the winning player IDs " +
-      "before these hooks execute — use it to announce, narrate, or reward the winners. " +
-      "Omit for conditions that require no ceremony.",
+    "Effect calls to execute when this condition determines the winners, after winConditions " +
+      "are evaluated. The reserved path 'game.winners' holds the winning player IDs when they run. " +
+      "Omit if no ceremony is needed.",
   ),
 };
 
@@ -984,7 +967,7 @@ const onVictoryField = {
  *     order: lowest
  * ```
  */
-const RankingWinConditionSchema = z.object({
+export const RankingWinConditionSchema = z.strictObject({
   rule: z.literal("ranking"),
   property: z
     .string()
@@ -1028,13 +1011,13 @@ const RankingWinConditionSchema = z.object({
  *     condition: "player.property.roundWins >= 3"
  * ```
  */
-const ConditionWinConditionSchema = z.object({
+export const ConditionWinConditionSchema = z.strictObject({
   rule: z.literal("condition"),
   condition: ConditionExpressionSchema.describe(
     "Infix expression evaluated once per player when the game ends; 'player.*' is the " +
-      "player being evaluated. 'actor.*' is INVALID here — no turn is in progress at game end. " +
-      "Available paths: 'player.property.<id>', 'count(player.inventory.<id>)', 'game.property.<id>'. " +
-      "All players for whom this evaluates to true are declared winners. " +
+      "player being evaluated, and every player for whom it is true wins. " +
+      "'actor.*' is INVALID here — no turn is in progress at game end. " +
+      "Paths: 'player.property.<id>', 'count(player.inventory.<id>)', 'game.property.<id>'. " +
       "Example: 'not player.property.eliminated'",
   ),
   ...onVictoryField,
@@ -1061,7 +1044,7 @@ const ConditionWinConditionSchema = z.object({
  *       - effectRef: villagers-win-ceremony
  * ```
  */
-const RoleConditionWinConditionSchema = z.object({
+export const RoleConditionWinConditionSchema = z.strictObject({
   rule: z.literal("role-condition"),
   condition: ConditionExpressionSchema.describe(
     "Infix expression evaluated against game state when the game ends. " +
@@ -1070,7 +1053,7 @@ const RoleConditionWinConditionSchema = z.object({
       "Example: 'game.property.wolfCount >= game.property.villagerCount'",
   ),
   winners: z
-    .object({
+    .strictObject({
       roles: z
         .array(z.string())
         .min(1)
@@ -1091,9 +1074,7 @@ export const WinConditionSchema = z
   ])
   .describe(
     "A single win-determination rule evaluated when the game ends. " +
-      "Multiple conditions are evaluated in order; all matching conditions apply. " +
-      "Use onVictory on each condition for per-outcome ceremonies — " +
-      "'game.winners' is populated with matching player IDs before onVictory fires.",
+      "Multiple conditions are evaluated in order; all matching conditions apply.",
   );
 
 // ---------------------------------------------------------------------------
@@ -1126,11 +1107,11 @@ export const WinConditionSchema = z
  *           - effectRef: roll-all-dice
  *       children:
  *         - kind: turn
- *           actor: all-players
+ *           actor: all
  * ```
  */
 export const GameRootSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("game"),
     label: z
       .string()
@@ -1160,13 +1141,10 @@ export const GameRootSchema = z
       .array(WinConditionSchema)
       .optional()
       .describe(
-        "Declarative rules for determining the winner(s) when the game ends. " +
-          "Evaluated after all children complete (i.e. after the last loop exits). " +
-          "'ranking': player with best property value wins. " +
-          "'condition': per-player check — all matching players win. " +
-          "'role-condition': game-level check — winning roles declared. " +
-          "Multiple conditions are evaluated in order; all that match contribute winners. " +
-          "Omit for games where outcome is purely narrative or tracked via custom effects.",
+        "Rules that determine the winner(s) when the game ends, evaluated in order after the " +
+          "last child completes; every matching rule contributes winners. " +
+          "Omit for games whose outcome is purely narrative or tracked via custom effects. " +
+          "Declare these alongside the loop endCondition: see `chaincraft docs guide game-end`.",
       ),
   })
   .describe(
@@ -1179,7 +1157,7 @@ export const GameRootSchema = z
 // ---------------------------------------------------------------------------
 
 export const FlowModuleSchema = z
-  .object({
+  .strictObject({
     root: GameRootSchema.describe(
       "The root of the game's flow tree. Always 'kind: game'. " +
         "Runs once: onEnter for setup, children for the game structure. " +

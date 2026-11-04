@@ -13,7 +13,7 @@ const META = { name: "Test Game", playerCount: { min: 2, max: 2 } };
 
 const DUMMY_TURN = {
   kind: "turn",
-  actor: "all-players",
+  actor: "all",
   grammar: { kind: "action", ref: "dummy" },
 };
 

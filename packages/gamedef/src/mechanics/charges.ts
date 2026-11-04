@@ -69,7 +69,7 @@
 import { z } from "zod";
 
 export const ChargesMechanicSchema = z
-  .object({
+  .strictObject({
     kind: z.literal("chaincraft:charges"),
     slotId: z
       .string()
@@ -78,11 +78,9 @@ export const ChargesMechanicSchema = z
         "mechanic-generated slot IDs must be namespaced (e.g., 'mygame:energy-ability')",
       )
       .describe(
-        "The namespaced action slot ID this mechanic generates. Format: 'namespace:name'. " +
-          "Use your game or registry namespace as the prefix (e.g., 'mygame:tap-ability'). " +
-          "Referenced by flow and catalog just like explicit actionSlots[]. " +
-          "Do NOT also declare this id in actionSlots[] — the mechanic creates the slot. " +
-          "Must be unique among all slots (explicit + mechanic-generated) on this type.",
+        "The namespaced action slot ID this mechanic generates, as 'namespace:name' " +
+          "(e.g., 'mygame:tap-ability'). Referenced by flow and catalog like an explicit actionSlots[] entry. " +
+          "Do NOT also declare it in actionSlots[]; it must be unique among all slots on this type.",
       ),
     label: z
       .string()

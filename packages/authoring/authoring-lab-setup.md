@@ -196,12 +196,22 @@ Rules:
 ```
 date,agent,model,plan_assumed,brief,scenario,engine_version,
 agent_requests,premium_requests,tokens_in,tokens_out,cost_usd,
-gate_calls,compiled,playtest_passed,interventions,wall_minutes,outcome,notes
+gate_calls,usage_errors,compiled,playtest_passed,interventions,wall_minutes,outcome,notes
 ```
+- `gate_calls`: number of `validate` and `compile` entries in `.chaincraft/log.jsonl`.
+  `init` and `help` are not gates (`help` is not logged at all).
+- `usage_errors`: number of entries with `exitCode` 2 (bad flags, unknown commands, `--help`).
 - `plan_assumed`: which plan this run emulates (e.g. "Free", "Pro", "Pro+") and the quota
   numbers you assumed — plans change, so record what was true on the run date.
 - `scenario`: `create` or `edit`.
 - `outcome`: `pass` / `blocked` / `quota-exhausted` / `gave-up`.
+
+```bash
+# gate_calls
+jq -s '[.[] | select(.command=="validate" or .command=="compile")] | length' .chaincraft/log.jsonl
+# usage_errors
+jq -s '[.[] | select(.exitCode==2)] | length' .chaincraft/log.jsonl
+```
 
 ---
 
