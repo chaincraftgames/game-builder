@@ -257,7 +257,8 @@ export const TurnOrderSchema = z
         direction: z
           .enum(["clockwise", "counter-clockwise"])
           .describe(
-            "Direction around the table after the starting player acts.",
+            "Direction around the table after the starting player acts. " +
+              "counter-clockwise is not supported by the compiler yet.",
           ),
         startingPlayer: PlayerSelectorSchema.optional().describe(
           "Who acts first. Defaults to seat 1. Evaluated once when the turn node starts; " +
@@ -288,7 +289,8 @@ export const TurnOrderSchema = z
       })
       .describe(
         "Players ordered by a per-player state value. " +
-          "Use for auction results, bidding order, score-based priority, etc.",
+          "Use for auction results, bidding order, score-based priority, etc. " +
+          "Not supported by the compiler yet.",
       ),
 
     z
@@ -303,7 +305,8 @@ export const TurnOrderSchema = z
       })
       .describe(
         "Fixed explicit turn order. The same list is used every round. " +
-          "Use for games with named seats or a permanently fixed player sequence.",
+          "Use for games with named seats or a permanently fixed player sequence. " +
+          "Not supported by the compiler yet.",
       ),
   ])
   .describe(
@@ -335,7 +338,8 @@ export const ActorSpecSchema = z
           ),
       })
       .describe(
-        "Only players holding at least one of the listed roles act in this node.",
+        "Only players holding at least one of the listed roles act in this node. " +
+          "Not supported by the compiler yet.",
       ),
     z
       .strictObject({
@@ -347,7 +351,10 @@ export const ActorSpecSchema = z
             "means out of the game and affects end conditions.",
         ),
       })
-      .describe("Only players for whom the expression is true act in this node."),
+      .describe(
+        "Only players for whom the expression is true act in this node. " +
+          "Not supported by the compiler yet.",
+      ),
     z
       .strictObject({
         player: PlayerSelectorSchema.describe(
@@ -470,7 +477,8 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
         })
         .describe(
           "Offer the player activation of a named slot on gamepieces in an inventory. " +
-            "Used for card-play, ability activation, and gamepiece-bound actions.",
+            "Used for card-play, ability activation, and gamepiece-bound actions. " +
+            "Not supported by the compiler yet.",
         ),
 
       // --- sequence: ordered steps, all taken ---
@@ -481,7 +489,8 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
             .array(TurnGrammarNodeSchema)
             .min(2)
             .describe(
-              "Ordered steps. Each step must be completed before the next begins.",
+              "Ordered steps. Each step must be completed before the next begins. " +
+                "The compiler supports only `kind: action` steps for now.",
             ),
         })
         .describe(
@@ -496,7 +505,10 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
           options: z
             .array(TurnGrammarNodeSchema)
             .min(1)
-            .describe("Available options the player may choose from."),
+            .describe(
+              "Available options the player may choose from. " +
+                "The compiler supports only `kind: action` options for now.",
+            ),
           pick: z
             .number()
             .int()
@@ -504,7 +516,8 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
             .optional()
             .describe(
               "Number of options the player must pick. Defaults to 1. " +
-                "Set to 2+ for 'choose two actions' patterns.",
+                "Set to 2+ for 'choose two actions' patterns. " +
+                "Values above 1 are not supported by the compiler yet.",
             ),
           passable: z
             .boolean()
@@ -521,11 +534,13 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
             "Set passable: true to offer an implicit pass/skip option.",
         ),
 
-      // --- repeat: N times or until-pass ---
+      // --- repeat: N times, until a rule holds, or until-pass ---
       z
         .strictObject({
           kind: z.literal("repeat"),
-          body: TurnGrammarNodeSchema.describe("The grammar node to repeat."),
+          body: TurnGrammarNodeSchema.describe(
+            "The grammar node to repeat. A repeat nested inside a repeat is not supported by the compiler yet.",
+          ),
           count: z
             .union([
               z
@@ -539,6 +554,26 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
                   "The body should include a pass option when max > min.",
               ),
               z
+                .strictObject({
+                  until: ConditionExpressionSchema.describe(
+                    "Infix expression; the repeat ends when it is true.",
+                  ),
+                  max: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .optional()
+                    .describe(
+                      "Upper bound on iterations; ends the repeat even if 'until' is false.",
+                    ),
+                })
+                .describe(
+                  "Repeat while a rule holds. 'until' is checked after each iteration, once the " +
+                    "action's effects have run, with the acting player bound as `actor` " +
+                    "(e.g. \"actor.property.acted >= 3\"). The body always runs at least once and " +
+                    "the player cannot pass. Only valid on a turn's top-level grammar node.",
+                ),
+              z
                 .literal("until-pass")
                 .describe(
                   "Repeat until the player passes. " +
@@ -548,12 +583,13 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
                 ),
             ])
             .describe(
-              "How many times to repeat: exact count, inclusive range, or 'until-pass'.",
+              "How many times to repeat: exact count, inclusive range, { until, max? } (rule-driven), or 'until-pass'.",
             ),
         })
         .describe(
-          "Repeat a grammar node a fixed number of times or until the player passes. " +
-            "For unlimited-actions-until-pass turns, use count: 'until-pass' with a passable choice body.",
+          "Repeat a grammar node a fixed number of times, until a rule holds, or until the player passes. " +
+            "For unlimited-actions-until-pass turns, use count: 'until-pass' with a passable choice body. " +
+            "For 'keep acting while a rule says so' turns, use count: { until: <expression> }.",
         ),
     ])
     .describe(
@@ -582,7 +618,11 @@ export type TurnGrammarNode =
   | {
       kind: "repeat";
       body: TurnGrammarNode;
-      count: number | { min?: number; max?: number } | "until-pass";
+      count:
+        | number
+        | { min?: number; max?: number }
+        | { until: string; max?: number }
+        | "until-pass";
     };
 
 // "until-pass": end when all eligible players have consecutively passed
@@ -592,7 +632,8 @@ export const FlowEndConditionSchema = z.union([
     .literal("until-pass")
     .describe(
       "End when all eligible players have consecutively passed. " +
-        "Each turn grammar should include passable choices so players can signal pass.",
+        "Each turn grammar should include passable choices so players can signal pass. " +
+        "Not supported by the compiler yet.",
     ),
 ]);
 
@@ -643,7 +684,8 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
           endCondition: FlowEndConditionSchema.optional().describe(
             "Infix expression; the loop exits when true. When it is evaluated is set by 'checkAfter'. " +
               "Paths: game.property.<id>, count(game.inventory.<id>); actor.property.<id> only with checkAfter: turn. " +
-              "Or 'until-pass' to exit when all players consecutively pass. " +
+              "Or 'until-pass' to exit when all players consecutively pass " +
+              "(not supported by the compiler yet). " +
               "Exclusive with 'count'. Example: 'count(game.inventory.deck) == 0'. " +
               "See `chaincraft docs guide game-end`.",
           ),
@@ -686,7 +728,7 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
             .describe(
               "Interrupt/reaction windows active during this loop and all its children. " +
                 "Inherited by child nodes — outer windows fire throughout; inner windows fire only " +
-                "while their containing node is active.",
+                "while their containing node is active. Not supported by the compiler yet.",
             ),
           hooks: FlowHooksSchema.optional(),
         })
@@ -723,14 +765,16 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
             .min(0)
             .optional()
             .describe(
-              "Time limit in milliseconds per turn. Engine enforces auto-pass on timeout.",
+              "Time limit in milliseconds per turn. Engine enforces auto-pass on timeout. " +
+                "Not supported by the compiler yet.",
             ),
           interruptWindows: z
             .array(InterruptWindowSchema)
             .optional()
             .describe(
               "Interrupt/reaction windows active only during this turn node. " +
-                "Use for windows that should only be available during a specific named turn.",
+                "Use for windows that should only be available during a specific named turn. " +
+                "Not supported by the compiler yet.",
             ),
           hooks: FlowHooksSchema.optional(),
         })
@@ -772,20 +816,23 @@ export const FlowNodeSchema: z.ZodType<FlowNode> = z.lazy(() =>
             .min(0)
             .optional()
             .describe(
-              "Per-actor time limit in milliseconds. Engine auto-submits pass on timeout.",
+              "Per-actor time limit in milliseconds. Engine auto-submits pass on timeout. " +
+                "Not supported by the compiler yet.",
             ),
           interruptWindows: z
             .array(InterruptWindowSchema)
             .optional()
             .describe(
-              "Interrupt/reaction windows active only during this simultaneous node.",
+              "Interrupt/reaction windows active only during this simultaneous node. " +
+                "Not supported by the compiler yet.",
             ),
           hooks: FlowHooksSchema.optional(),
         })
         .describe(
           "All actors submit simultaneously and independently, then outcomes are revealed together. " +
             "Use for blind bidding, rock-paper-scissors, simultaneous night actions, or ready-checks. " +
-            "Passive/reactive effects are disabled during the phase.",
+            "Passive/reactive effects are disabled during the phase. " +
+            "Not supported by the compiler yet.",
         ),
     ])
     .describe("A flow tree node. Three kinds: loop, turn, simultaneous."),
@@ -933,7 +980,8 @@ export const InterruptWindowSchema = z
   .describe(
     "An interrupt window in the orthogonal event layer. Opens when a named effect fires, " +
       "pauses normal flow, and offers eligible players a chance to respond. " +
-      "After all eligible players have acted or passed (or timeout expires), flow resumes.",
+      "After all eligible players have acted or passed (or timeout expires), flow resumes. " +
+      "Not supported by the compiler yet.",
   );
 
 // ---------------------------------------------------------------------------
@@ -1064,7 +1112,7 @@ export const RoleConditionWinConditionSchema = z.strictObject({
     })
     .describe("Who wins when the condition is satisfied."),
   ...onVictoryField,
-});
+}).describe("Role-based win rule. Not supported by the compiler yet.");
 
 export const WinConditionSchema = z
   .discriminatedUnion("rule", [

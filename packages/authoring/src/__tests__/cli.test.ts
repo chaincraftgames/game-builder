@@ -242,6 +242,29 @@ describe("validate / compile", () => {
     expect(JSON.parse(r.stdout).diagnostics[0]).toMatchObject({ code: "invalid-manifest", file: "chaincraft.yaml" });
   });
 
+  it("an unsupported form fails validate, validate --draft and compile with code unsupported", () => {
+    writeSpec((spec) => {
+      const turn = (spec.flow.root as { children: Array<{ children: Array<Record<string, unknown>> }> }).children[0]
+        .children[0];
+      turn.turnOrder = {
+        kind: "seat",
+        direction: "clockwise",
+        startingPlayer: { stateRef: "game.property.roundWinner", offset: 1 },
+      };
+    });
+    for (const args of [["validate"], ["validate", "--draft"], ["compile"]]) {
+      const r = cc([...args, "--json"]);
+      expect(r.status).toBe(1);
+      expect(JSON.parse(r.stdout).diagnostics).toEqual([
+        expect.objectContaining({
+          code: "unsupported",
+          file: "spec/high-card.yaml",
+          path: "flow.root.children[0].children[0].turnOrder.startingPlayer",
+        }),
+      ]);
+    }
+  });
+
   it("appends one log line per call", () => {
     writeSpec();
     cc(["validate"]);

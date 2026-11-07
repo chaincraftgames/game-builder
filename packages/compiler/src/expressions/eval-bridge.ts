@@ -8,6 +8,7 @@
 import type { GameSession } from "@chaincraft/runtime";
 import type { EvalContext } from "#compiler/expressions/types.js";
 import { compilePredicate } from "#compiler/expressions/index.js";
+import type { ExprRoot } from "#compiler/expressions/index.js";
 
 /** Converts a GameSession into an EvalContext. */
 export function sessionToEvalContext(
@@ -54,13 +55,14 @@ export function sessionToEvalContext(
 /** Compile a piece-filter expression into the runtime's (session, pieceId, actorId?, inputs?) => boolean shape. */
 export function compilePieceFilter(
   expr: string,
+  roots: readonly ExprRoot[],
 ): (
   session: GameSession,
   pieceId: string,
   actorId?: string,
   inputs?: Readonly<Record<string, unknown>>,
 ) => boolean {
-  const predicate = compilePredicate(expr);
+  const predicate = compilePredicate(expr, roots);
   return (session, pieceId, actorId, inputs) =>
     predicate(
       sessionToEvalContext(session, actorId, inputs, undefined, pieceId),
@@ -70,13 +72,14 @@ export function compilePieceFilter(
 /** Compile a player-filter expression into the runtime's (session, playerId, actorId?, inputs?) => boolean shape. */
 export function compilePlayerFilter(
   expr: string,
+  roots: readonly ExprRoot[],
 ): (
   session: GameSession,
   playerId: string,
   actorId?: string,
   inputs?: Readonly<Record<string, unknown>>,
 ) => boolean {
-  const predicate = compilePredicate(expr);
+  const predicate = compilePredicate(expr, roots);
   return (session, playerId, actorId, inputs) =>
     predicate({
       ...sessionToEvalContext(session, actorId, inputs),
@@ -92,7 +95,7 @@ export function compileInputValidation(
   actorId: string,
   inputs: Readonly<Record<string, unknown>>,
 ) => boolean {
-  const predicate = compilePredicate(expr);
+  const predicate = compilePredicate(expr, ["game", "actor", "input"]);
   return (session, actorId, inputs) =>
     predicate(sessionToEvalContext(session, actorId, inputs));
 }
@@ -107,7 +110,12 @@ export function compileSelectionFilter(
   actorId: string,
   inputs: Readonly<Record<string, unknown>>,
 ) => boolean {
-  const predicate = compilePredicate(expr);
+  const predicate = compilePredicate(
+    expr,
+    kind === "gamepiece-select"
+      ? ["game", "actor", "input", "piece", "target"]
+      : ["game", "actor", "input", "player"],
+  );
   return (session, actorId, inputs) => {
     const candidate = inputs[inputId] as string;
     return kind === "gamepiece-select"
@@ -123,7 +131,7 @@ export function compileSelectionFilter(
 export function compilePrecondition(
   expr: string,
 ): (session: GameSession, actorId: string) => boolean {
-  const predicate = compilePredicate(expr);
+  const predicate = compilePredicate(expr, ["game", "actor"]);
   return (session, actorId) =>
     predicate(sessionToEvalContext(session, actorId));
 }

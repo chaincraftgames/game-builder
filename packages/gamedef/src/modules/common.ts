@@ -99,13 +99,30 @@ export type IntRange = z.infer<typeof IntRangeSchema>;
  * - `player.inventory.<id>`       — the candidate player's inventory (aggregators only)
  * - `input.<id>`                  — an earlier input's answer (`player-select.filter` only)
  *
- * **Gamepiece filter** (`gamepiece-select.filter`):
+ * **Gamepiece filter** (`gamepiece-select.filter`, and the selector `filter` of effects):
  * - `piece.id`                    — the candidate piece's id
  * - `piece.property.<id>`         — the candidate piece's property
  * - `piece.typeId`                — the candidate piece's type ID
  * - `piece.faceValue`             — the face the piece is showing (pieces with a face table)
  * - `piece.faceUp`                — whether the piece is face-up
- * - `input.<id>`                  — an earlier input's answer
+ * - `target.property.<id>`        — also the candidate piece (only `.property.<id>` is supported on `target`)
+ * - `input.<id>`                  — an earlier input's answer (selector filters: the enclosing action's inputs)
+ * - `actor.*`, `game.*`           — as for preconditions
+ *
+ * **Effect values** (`{ expr }` in `set-state` / `update` values and `delta` / `mult`):
+ * - `actor.*`, `game.*`, `input.<id>` — as for preconditions and input validation
+ * - `source.property.<id>`        — the effect's `source` piece (requires a `source` field)
+ * - `target.property.<id>`         — the piece the effect is currently applying to (`update` only)
+ * - `trigger.<field>`             — the triggering write (passives only)
+ *
+ * ## `piece`, `player` and `target`
+ *
+ * `piece` and `player` are bound per item by an aggregator over an inventory or `players`; outside an
+ * aggregator `piece` falls back to `target`. `target` is NOT bound by aggregators: the evaluation
+ * context sets it (the candidate piece in a gamepiece filter, the piece being updated in an `update`
+ * value) and it keeps that meaning inside aggregators. Outside the contexts above `target.*` is an
+ * error. Inside a gamepiece filter, `count(actor.inventory.hand, piece.property.value ==
+ * target.property.value)` counts the pieces in hand that share the candidate's value.
  *
  * ## Built-in functions
  *
@@ -166,7 +183,9 @@ export const ConditionExpressionSchema = z.string().describe(
     "Paths: game.property.<id>, actor.id, actor.property.<id>, " +
     "player.id / player.property.<id> (player-filter context or inside an aggregator over players), " +
     "piece.id / piece.property.<id> / piece.typeId / piece.faceValue / piece.faceUp (gamepiece-filter context or inside an aggregator over an inventory), " +
-    "input.<id> (input validation and selection filters only). " +
+    "target.property.<id> (only where the context supplies a target piece: the candidate in a gamepiece filter, the piece being updated in an update value; " +
+    "aggregators never rebind it, so inside count(...) it is still the candidate), " +
+    "input.<id> (input validation, selection filters and effect selector filters inside an action). " +
     "Inventories (game.inventory.<id>, actor.inventory.<id>, player.inventory.<id>) are collections: " +
     "use them only inside aggregators, never with a '.count' suffix. " +
     "Aggregators take a collection ('players' or an inventory path) and an optional per-item " +
@@ -314,7 +333,8 @@ export const PlayerStateRefSchema = z
 const OffsetField = {
   offset: z.number().int().min(1).optional().describe(
     "Step this many non-eliminated players past the selected player in turn direction. " +
-      "offset: 1 = the player to the selected player's left (e.g. dealer's left).",
+      "offset: 1 = the player to the selected player's left (e.g. dealer's left). " +
+      "Not supported by the compiler yet.",
   ),
 };
 
@@ -332,25 +352,31 @@ const OffsetField = {
  */
 export const PlayerSelectorSchema = z
   .union([
-    z.literal("first").describe("Seat 1."),
-    z.literal("random").describe("A random non-eliminated player."),
+    z.literal("first").describe(
+      "Seat 1. The compiler supports it only as a turn order's startingPlayer, " +
+        "not as actor { player }.",
+    ),
+    z.literal("random").describe("A random non-eliminated player. Not supported by the compiler yet."),
     z.strictObject({ stateRef: z.string(), ...OffsetField }).describe(
       "The player whose ID is stored at this game property (e.g. game.property.roundLoser). " +
         "If that player is eliminated, the next non-eliminated player in turn direction is used. " +
         "Empty value = seat 1.",
     ),
     z.strictObject({ role: z.string(), ...OffsetField }).describe(
-      "The first non-eliminated player in seat order holding this role.",
+      "The first non-eliminated player in seat order holding this role. Not supported by the compiler yet.",
     ),
     z.strictObject({ where: ConditionExpressionSchema, ...OffsetField }).describe(
       "The first non-eliminated player in seat order for whom this expression is true, " +
-        "with the candidate bound as `player`. Example: \"count(player.inventory.firstPlayerMarker) > 0\".",
+        "with the candidate bound as `player`. Example: \"count(player.inventory.firstPlayerMarker) > 0\". " +
+        "Not supported by the compiler yet.",
     ),
     z.strictObject({ highest: PlayerStateRefSchema, ...OffsetField }).describe(
-      "The non-eliminated player with the highest value; ties go to the earliest seat.",
+      "The non-eliminated player with the highest value; ties go to the earliest seat. " +
+        "Not supported by the compiler yet.",
     ),
     z.strictObject({ lowest: PlayerStateRefSchema, ...OffsetField }).describe(
-      "The non-eliminated player with the lowest value; ties go to the earliest seat.",
+      "The non-eliminated player with the lowest value; ties go to the earliest seat. " +
+        "Not supported by the compiler yet.",
     ),
   ])
   .describe("Selects exactly one player. Falls back to seat 1 when nothing matches. Eliminated players are never selected.");

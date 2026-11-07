@@ -47,7 +47,7 @@ The tarballs come from two repos, cloned **side by side**:
 | Repo | URL | Version |
 |---|---|---|
 | game-builder | (your existing checkout) | branch `dev-preview` |
-| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `8b60bb8` |
+| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `0ad09c3` |
 
 ```bash
 # from the folder that contains game-builder/

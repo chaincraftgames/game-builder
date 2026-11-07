@@ -286,7 +286,14 @@ export const GamepieceSelectorSchema = z
       ),
     filter: ConditionExpressionSchema.optional().describe(
       "Infix expression to filter eligible pieces. " +
-        "Evaluated per-piece after 'ofType'. Available paths: 'piece.property.<id>', 'piece.typeId'. " +
+        "Evaluated per-piece after 'select'/'count' and 'ofType', so it only narrows the pieces already picked: " +
+        "use select: all to keep every matching piece in the inventory. " +
+        "Every candidate is checked against the inventory as it was before the effect runs, so aggregators see all pieces, " +
+        "including the candidate itself. " +
+        "Available paths: 'piece.*' (the candidate, e.g. 'piece.property.<id>', 'piece.typeId'), " +
+        "'target.property.<id>' (also the candidate), 'actor.*', 'game.*', and 'input.<id>' inside an action. " +
+        "Inside count()/sum()/all()/any(), 'piece' is the aggregated item and 'target' is still the candidate, e.g. " +
+        "'count(actor.inventory.hand, piece.property.value == target.property.value) == 4'. " +
         "Example: 'piece.property.frozen == false' or 'piece.typeId == \"creature\"'.",
     ),
   })

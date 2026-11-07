@@ -89,9 +89,9 @@ export function assemblePassives(spec: ModularGameSpec): PassivePieceActivation[
       }
 
       const timing = inferTiming(effects);
-      const compiledEffects = effects.map((e) => walkEffectBody(e));
+      const compiledEffects = effects.map((e) => walkEffectBody(e, { passive: true }));
       const condition = slot.condition
-        ? compilePieceFilter(slot.condition)
+        ? compilePieceFilter(slot.condition, ["game", "piece", "target"])
         : undefined;
 
       for (const pieceId of pieceIds) {

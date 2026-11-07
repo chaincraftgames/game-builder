@@ -142,7 +142,8 @@ export const ScoreTrackMechanicSchema = z
     "Game-level mechanic: tracks player or team scores on a line-structure board. " +
       "Owns and injects the track inventory and marker piece type. " +
       "Exposes an 'advance' effect callable from actions and flow hooks. " +
-      "Optionally auto-wires a win condition onto the root flow loop.",
+      "Optionally auto-wires a win condition onto the root flow loop. " +
+      "Not supported by the compiler yet.",
   );
 
 export type ScoreTrackMechanic = z.infer<typeof ScoreTrackMechanicSchema>;

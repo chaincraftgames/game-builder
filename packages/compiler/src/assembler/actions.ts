@@ -17,6 +17,8 @@ import type {
   NumberInputType,
 } from '@chaincraft/runtime';
 import { normalizeEffectList } from '#compiler/assembler/effects.js';
+import { CompileError, compileFailure } from '#compiler/assembler/errors.js';
+import { CompileCode } from '#compiler/assembler/types.js';
 import {
   compileInputValidation,
   compilePrecondition,
@@ -61,8 +63,13 @@ function mapActionInput(step: ActionInput, dependsOn: string[]): ActionInputDef 
   };
 }
 
-function fail(actionId: string, message: string): never {
-  throw new Error(`actions assembler: action "${actionId}" ${message}`);
+/** Throws a CompileError; `assembleActions` adds the action's spec path. */
+function fail(
+  actionId: string,
+  message: string,
+  code: CompileCode = CompileCode.InvalidSpec,
+): never {
+  throw compileFailure(code, `actions assembler: action "${actionId}" ${message}`);
 }
 
 /** Earlier input ids this input's options depend on. Throws on any other reference. */
@@ -140,6 +147,7 @@ function checkActionInputs(
     fail(
       actionId,
       `has ${playerInputs.length} player-supplied inputs; at most ${MAX_PLAYER_INPUTS} are allowed`,
+      CompileCode.Limit,
     );
   }
 
@@ -154,6 +162,7 @@ function checkActionInputs(
           actionId,
           `input "${input.id}" is read by a later input but has no finite option list ` +
             "(use enum, boolean, a selection, or a whole-number range with min and max)",
+          CompileCode.Limit,
         );
       }
       const inChain =
@@ -165,6 +174,7 @@ function checkActionInputs(
         actionId,
         `dependent inputs allow ${combinations} answer combinations; at most ` +
           `${MAX_LOOKAHEAD_COMBINATIONS} are allowed`,
+        CompileCode.Limit,
       );
     }
   }
@@ -223,52 +233,68 @@ export function assembleActions(
 
   if (!spec.actions?.actions) return actions;
 
-  for (const action of spec.actions.actions) {
-    const rawSegments = buildSegments(action.id, action.steps);
-    const allEffects = normalizeEffectList(
-      rawSegments.flatMap((s) => s.effects),
-      `${action.id}._effect`,
-      effectDefs,
-    );
-
-    const earlier = new Set<string>();
-    let effectOffset = 0;
-    const segments: ActionSegmentDef[] = rawSegments.map((raw) => {
-      const inputs: ActionInputDef[] = raw.inputs.map((step) => {
-        const kind = (step.type as { kind: string }).kind;
-        if (step.validation != null && SELECTION_KINDS.has(kind)) {
-          fail(
-            action.id,
-            `input "${step.input}" is a ${kind}; use 'filter' instead of 'validation' ` +
-              "(compare identities with piece.id / player.id)",
-          );
-        }
-        const def = mapActionInput(step, inputDependencies(action.id, step, earlier));
-        earlier.add(step.input);
-        return def;
-      });
-      const effects = allEffects.slice(effectOffset, effectOffset + raw.effects.length);
-      effectOffset += raw.effects.length;
-      return { inputs, effects };
-    });
-    checkActionInputs(
-      action.id,
-      segments.map((s) => s.inputs),
-    );
-
-    const precondition =
-      typeof action.preconditions === 'string'
-        ? compilePrecondition(action.preconditions)
-        : undefined;
-
-    actions[action.id] = {
-      id: action.id,
-      label: action.label ?? action.id,
-      description: action.description ?? "",
-      segments,
-      ...(precondition != null && { precondition }),
-    };
+  for (const [index, action] of spec.actions.actions.entries()) {
+    try {
+      actions[action.id] = assembleAction(action, effectDefs);
+    } catch (err) {
+      if (err instanceof CompileError) {
+        for (const issue of err.issues) issue.path ??= `actions.actions[${index}]`;
+      }
+      throw err;
+    }
   }
 
   return actions;
+}
+
+type SpecAction = NonNullable<ModularGameSpec["actions"]>["actions"][number];
+
+function assembleAction(
+  action: SpecAction,
+  effectDefs: Record<string, Record<string, unknown>>,
+): ActionDef {
+  const rawSegments = buildSegments(action.id, action.steps);
+  const allEffects = normalizeEffectList(
+    rawSegments.flatMap((s) => s.effects),
+    `${action.id}._effect`,
+    effectDefs,
+  );
+
+  const earlier = new Set<string>();
+  let effectOffset = 0;
+  const segments: ActionSegmentDef[] = rawSegments.map((raw) => {
+    const inputs: ActionInputDef[] = raw.inputs.map((step) => {
+      const kind = (step.type as { kind: string }).kind;
+      if (step.validation != null && SELECTION_KINDS.has(kind)) {
+        fail(
+          action.id,
+          `input "${step.input}" is a ${kind}; use 'filter' instead of 'validation' ` +
+            "(compare identities with piece.id / player.id)",
+        );
+      }
+      const def = mapActionInput(step, inputDependencies(action.id, step, earlier));
+      earlier.add(step.input);
+      return def;
+    });
+    const effects = allEffects.slice(effectOffset, effectOffset + raw.effects.length);
+    effectOffset += raw.effects.length;
+    return { inputs, effects };
+  });
+  checkActionInputs(
+    action.id,
+    segments.map((s) => s.inputs),
+  );
+
+  const precondition =
+    typeof action.preconditions === 'string'
+      ? compilePrecondition(action.preconditions)
+      : undefined;
+
+  return {
+    id: action.id,
+    label: action.label ?? action.id,
+    description: action.description ?? "",
+    segments,
+    ...(precondition != null && { precondition }),
+  };
 }

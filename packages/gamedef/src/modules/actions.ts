@@ -190,9 +190,11 @@ export const ActionInputTypeSchema = z
       filter: ConditionExpressionSchema.optional().describe(
         "Infix expression to filter eligible pieces. " +
           "Evaluated per-piece. Available paths: 'piece.id', 'piece.property.<id>', 'piece.typeId', " +
-          "'input.<id>' (an EARLIER input of this action). " +
+          "'input.<id>' (an EARLIER input of this action). 'target.property.<id>' also names the candidate piece; " +
+          "inside count()/sum()/all()/any(), 'piece' is the aggregated item and 'target' is still the candidate. " +
           "Example: 'piece.property.charges > 0', 'piece.property.cost <= input.budget', " +
-          "or 'piece.id != input.attacker'. " +
+          "'piece.id != input.attacker', or " +
+          "'count(actor.inventory.hand, piece.property.value == target.property.value) >= 2'. " +
           "Runtime computes valid options and sends them to UX.",
       ),
     }).describe(
@@ -495,7 +497,8 @@ export const ActionSchema = z
         "Role IDs that the acting player must hold at least one of to take this action. " +
           "Forward references to role IDs in the players module. " +
           "Any-of semantics: player qualifies if they hold at least one listed role. " +
-          "Omit if any player may act regardless of role.",
+          "Omit if any player may act regardless of role. " +
+          "Not supported by the compiler yet.",
       ),
     availableInSubflows: z
       .array(z.string())
@@ -504,7 +507,8 @@ export const ActionSchema = z
         "Subflow IDs during which this action is available. Forward references to flow subflow IDs. " +
           "Prefer declaring availability in the flow module. Use this only when the action " +
           "spans many subflows and listing them all in flow would be excessively verbose. " +
-          "Omit when availability is fully determined by slot definitions or flow declarations.",
+          "Omit when availability is fully determined by slot definitions or flow declarations. " +
+          "Not supported by the compiler yet.",
       ),
     preconditions: ConditionExpressionSchema.optional().describe(
       "Infix expression evaluated before the action is offered. " +
@@ -523,7 +527,8 @@ export const ActionSchema = z
         "Subflow IDs during which this action may be taken outside turn order. " +
           "Forward references to flow subflow IDs. The flow module declares the interrupt " +
           "window node (timing, eligible players, timeout); this field signals which " +
-          "subflows the action is eligible for. Omit if the action is never interrupt-eligible.",
+          "subflows the action is eligible for. Omit if the action is never interrupt-eligible. " +
+          "Not supported by the compiler yet.",
       ),
     reactive: z
       .strictObject({
@@ -554,7 +559,8 @@ export const ActionSchema = z
           "The player CHOOSES whether to take this action — for automatic responses " +
           "that require no player choice, use passives on gamepiece types or roles instead. " +
           "Games using reactive actions should define triggering effects as named effects " +
-          "in the effects module so they can be referenced here.",
+          "in the effects module so they can be referenced here. " +
+          "Not supported by the compiler yet.",
       ),
     steps: z
       .array(ActionStepSchema)

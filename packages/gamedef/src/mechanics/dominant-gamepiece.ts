@@ -142,7 +142,8 @@ export const DominantRuleSchema = z
   })
   .describe(
     "Dominant-value rule: pieces whose property equals dominantValue beat all others. " +
-      "Use for dominant suits and single-dominant-type relationships.",
+      "Use for dominant suits and single-dominant-type relationships. " +
+      "Not supported by the compiler yet.",
   );
 
 /**
@@ -174,7 +175,8 @@ export const ComparisonRuleSchema = z
       .describe(
         "Explicit ordinal ranking of the property's values, from lowest to highest. " +
           "Required for non-numeric values (e.g. card ranks ['J','Q','K','A']). " +
-          "Omit for a numeric property to use natural numeric ordering.",
+          "Omit for a numeric property to use natural numeric ordering. " +
+          "Not supported by the compiler yet: omit `order`.",
       ),
     direction: z
       .enum(["highest", "lowest"])
@@ -237,7 +239,8 @@ export const MatrixRuleSchema = z
   })
   .describe(
     "Matrix rule: cyclic, non-transitive relationships (Rock-Paper-Scissors and kin). " +
-      "Declared as a beats-map rather than a raw matrix to keep it readable and authorable.",
+      "Declared as a beats-map rather than a raw matrix to keep it readable and authorable. " +
+      "Not supported by the compiler yet.",
   );
 
 export const DominantGamepieceRuleSchema = z

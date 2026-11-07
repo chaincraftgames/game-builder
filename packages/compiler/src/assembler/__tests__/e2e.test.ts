@@ -528,3 +528,233 @@ describe("Compiler e2e — Liar's Dice full game", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Rule-driven repeat: a turn that continues while `until` is false.
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — repeat count { until }", () => {
+  const SPEC = `
+metadata:
+  name: Repeat Until
+  playerCount: { min: 2, max: 2 }
+state:
+  player:
+    properties:
+      - id: acted
+        type: { kind: number, min: 0, max: 10 }
+        default: 0
+        description: Actions taken by this player.
+actions:
+  actions:
+    - id: act
+      label: Act
+      description: Confirm and count one action.
+      steps:
+        - input: confirm
+          label: Confirm
+          type: { kind: boolean }
+        - effect: set-state
+          path: player.property.acted
+          value: { delta: 1 }
+          target: actor
+flow:
+  root:
+    kind: game
+    label: Repeat Until
+    children:
+      - kind: loop
+        id: rounds
+        count: 1
+        children:
+          - kind: turn
+            id: acting
+            actor: all
+            turnOrder: { kind: seat, direction: clockwise }
+            grammar:
+              kind: repeat
+              count: { until: "actor.property.acted >= 3" }
+              body: { kind: action, ref: act }
+`;
+
+  it("keeps the same seat acting until the rule holds, then moves to the next seat", async () => {
+    const result = validate(load(SPEC));
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const controller = new GameController(assembleModule(result.spec, "repeat-until"));
+    await controller.init("until-e2e", ["alice", "bob"]);
+
+    const acted = (playerId: string) => Number(controller.getState().players[playerId].properties.acted);
+
+    for (let i = 1; i <= 3; i++) {
+      expect(controller.promptFor("alice")).toBeDefined();
+      expect(controller.promptFor("bob")).toBeUndefined();
+      await controller.processAction({ playerId: "alice", value: true });
+      expect(acted("alice")).toBe(i);
+    }
+
+    expect(acted("bob")).toBe(0);
+    expect(controller.promptFor("alice")).toBeUndefined();
+    expect(controller.promptFor("bob")).toBeDefined();
+
+    for (let i = 0; i < 3; i++) await controller.processAction({ playerId: "bob", value: true });
+    expect(acted("bob")).toBe(3);
+    expect(controller.isComplete).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Selector filters that compare the candidate piece with other pieces.
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — selector filter compares candidate with other pieces", () => {
+  const ACTIONS: Record<string, string> = {
+    collect: `
+    - id: collect
+      label: Collect
+      description: Move every piece whose value appears 4 times in hand to sets.
+      steps:
+        - input: confirm
+          label: Confirm
+          type: { kind: boolean }
+        - effect: move
+          from:
+            inventory: hand
+            select: all
+            filter: "count(actor.inventory.hand, piece.property.value == target.property.value) == 4"
+          to: { inventory: sets }
+        - effect: set-state
+          path: player.property.sets
+          value: { expr: "count(actor.inventory.sets) / 4" }
+          target: actor`,
+    pick: `
+    - id: pick
+      label: Pick
+      description: Move every piece in hand with the chosen value to sets.
+      steps:
+        - input: pick
+          label: Value
+          type: { kind: enum, values: [a, b, c] }
+        - effect: move
+          from:
+            inventory: hand
+            select: all
+            filter: "piece.property.value == input.pick"
+          to: { inventory: sets }`,
+  };
+
+  function buildSpec(counts: Record<string, number>, action: "collect" | "pick") {
+    const dealt = Object.values(counts).reduce((a, b) => a + b, 0);
+    const catalog = Object.entries(counts)
+      .map(([value, quantity]) => `    - typeId: card\n      properties: { value: ${value} }\n      quantity: ${quantity}`)
+      .join("\n");
+    return `
+metadata:
+  name: Filter Compare
+  playerCount: { min: 1, max: 1 }
+state:
+  player:
+    properties:
+      - id: sets
+        type: { kind: number, min: 0, max: 10 }
+        default: 0
+        description: Complete groups collected.
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A card with a value.
+      properties:
+        - id: value
+          label: Value
+          type: { kind: enum, values: [a, b, c] }
+          mutable: false
+          visibility: revealed
+inventories:
+  types:
+    - id: hand
+      scope: { kind: player }
+      accepts: [card]
+      visibility: owner
+      description: Cards in hand.
+    - id: sets
+      scope: { kind: player }
+      accepts: [card]
+      visibility: always
+      description: Collected cards.
+effects:
+  effects:
+    - id: deal
+      effect: distribute
+      from: { inventory: "game:unassigned", select: top, ofType: card }
+      to: { inventory: hand }
+      count: ${dealt}
+actions:
+  actions:${ACTIONS[action]}
+flow:
+  root:
+    kind: game
+    label: Filter Compare
+    hooks:
+      onEnter:
+        - effectRef: deal
+    children:
+      - kind: loop
+        id: rounds
+        count: 1
+        children:
+          - kind: turn
+            id: acting
+            actor: all
+            turnOrder: { kind: seat, direction: clockwise }
+            grammar: { kind: action, ref: ${action} }
+catalog:
+  entries:
+${catalog}
+`;
+  }
+
+  async function start(counts: Record<string, number>, action: "collect" | "pick") {
+    const result = validate(load(buildSpec(counts, action)));
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const controller = new GameController(assembleModule(result.spec, "filter-compare"));
+    await controller.init("filter-e2e", ["alice"]);
+    return controller;
+  }
+
+  function valuesIn(controller: GameController, inventoryId: string): string[] {
+    const state = controller.getState();
+    const inv = state.players.alice.inventories[inventoryId];
+    const ids = "pieceIds" in inv ? inv.pieceIds : [];
+    return ids.map((id) => String(state.gamepieces[id].properties.value)).sort();
+  }
+
+  it("moves only pieces whose value appears 4 times in hand", async () => {
+    const controller = await start({ a: 4, b: 2, c: 1 }, "collect");
+    expect(valuesIn(controller, "hand")).toEqual(["a", "a", "a", "a", "b", "b", "c"]);
+
+    await controller.processAction({ playerId: "alice", value: true });
+
+    expect(valuesIn(controller, "sets")).toEqual(["a", "a", "a", "a"]);
+    expect(valuesIn(controller, "hand")).toEqual(["b", "b", "c"]);
+    expect(Number(controller.getState().players.alice.properties.sets)).toBe(1);
+  });
+
+  it("moves two complete groups and counts them", async () => {
+    const controller = await start({ a: 4, b: 4 }, "collect");
+
+    await controller.processAction({ playerId: "alice", value: true });
+
+    expect(valuesIn(controller, "sets")).toEqual(["a", "a", "a", "a", "b", "b", "b", "b"]);
+    expect(valuesIn(controller, "hand")).toEqual([]);
+    expect(Number(controller.getState().players.alice.properties.sets)).toBe(2);
+  });
+
+  it("exposes action inputs to a move filter", async () => {
+    const controller = await start({ a: 4, b: 2, c: 1 }, "pick");
+
+    await controller.processAction({ playerId: "alice", value: "b" });
+
+    expect(valuesIn(controller, "sets")).toEqual(["b", "b"]);
+    expect(valuesIn(controller, "hand")).toEqual(["a", "a", "a", "a", "c"]);
+  });
+});
+

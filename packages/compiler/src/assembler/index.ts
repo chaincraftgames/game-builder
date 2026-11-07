@@ -21,5 +21,6 @@ export type { CatalogPieceEntry } from "#compiler/assembler/catalog.js";
 export type { ModuleBuilder } from "#compiler/assembler/types.js";
 export { assembleModule, CompileError } from "#compiler/assembler/module.js";
 export type { CompileIssue } from "#compiler/assembler/module.js";
+export { findUnsupported } from "#compiler/assembler/support.js";
 export { createSeededRng } from "@chaincraft/runtime";
 export * from "#compiler/assembler/types.js";

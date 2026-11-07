@@ -36,20 +36,11 @@ import { assemblePassives } from "#compiler/assembler/passives.js";
 import { classifyIrreversibleEffects } from "#compiler/assembler/irreversible.js";
 import { enumerateCatalogPieces } from "#compiler/assembler/catalog.js";
 import { CompileCode } from "#compiler/assembler/types.js";
+import { CompileError, type CompileIssue } from "#compiler/assembler/errors.js";
+import { findUnsupported } from "#compiler/assembler/support.js";
 
-export interface CompileIssue {
-  code: CompileCode;
-  message: string;
-  ref?: string;
-  knownIds?: string[];
-}
-
-export class CompileError extends Error {
-  constructor(readonly issues: CompileIssue[]) {
-    super(`Module link/validate failed:\n  ${issues.map((i) => i.message).join("\n  ")}`);
-    this.name = "CompileError";
-  }
-}
+export { CompileError };
+export type { CompileIssue };
 
 // ---------------------------------------------------------------------------
 // Link / validate
@@ -161,6 +152,10 @@ export function assembleModule(
   spec: ModularGameSpec,
   specId: string,
 ): CompiledGameModule {
+  // 0. Forms the schema accepts but no assembler implements yet
+  const unsupported = findUnsupported(spec);
+  if (unsupported.length > 0) throw new CompileError(unsupported);
+
   // 1. Config (immutable, no side-effects)
   const config: GameConfig = assembleConfig(spec);
 

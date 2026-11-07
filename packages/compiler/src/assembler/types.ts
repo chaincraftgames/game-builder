@@ -41,6 +41,12 @@ export const CompileCode = {
   NoExecutor: "no-executor",
   UnresolvedRef: "unresolved-ref",
   UnknownPiece: "unknown-piece",
+  /** A schema-valid form the compiler does not implement yet. */
+  Unsupported: "unsupported",
+  /** A spec the compiler rejects that the gamedef validator does not catch. */
+  InvalidSpec: "invalid-spec",
+  /** A spec that exceeds an engine limit. */
+  Limit: "limit",
 } as const;
 
 export type CompileCode = (typeof CompileCode)[keyof typeof CompileCode];

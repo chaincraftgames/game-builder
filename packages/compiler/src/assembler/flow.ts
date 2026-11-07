@@ -38,6 +38,22 @@ import type {
   GameSession,
 } from "@chaincraft/runtime";
 import { normalizeEffectList } from "#compiler/assembler/effects.js";
+import { compileFailure } from "#compiler/assembler/errors.js";
+import {
+  isActionNode,
+  isSupportedActor,
+  isSupportedFlowKind,
+  isSupportedGrammarKind,
+  isSupportedInterruptWindows,
+  isSupportedLoopEnd,
+  isSupportedPick,
+  isSupportedPlayerSelector,
+  isSupportedRepeatBody,
+  isSupportedTimeLimit,
+  isSupportedTurnOrder,
+  isSupportedWinRule,
+} from "#compiler/assembler/support.js";
+import { CompileCode } from "#compiler/assembler/types.js";
 import { sessionToEvalContext, compilePlayerFilter } from "#compiler/expressions/eval-bridge.js";
 import { compilePredicate } from "#compiler/expressions/index.js";
 import type {
@@ -110,22 +126,30 @@ function unsupported(what: string): never {
 function assembleTurnOrdering(
   actor: ActorSpec,
   turnOrder: TurnOrder | undefined,
+  path: string,
 ): TurnOrdering {
   if (typeof actor === "object" && "player" in actor) {
     if (turnOrder) {
-      throw new Error(
+      throw compileFailure(
+        CompileCode.InvalidSpec,
         "flow assembler: actor { player } selects one player; turnOrder is not allowed.",
+        `${path}.turnOrder`,
       );
     }
-    if (actor.player === "first") unsupported(`actor { player: "first" }`);
+    if (!isSupportedPlayerSelector(actor.player)) {
+      unsupported(`actor { player: ${JSON.stringify(actor.player)} }`);
+    }
     return { kind: "single", actor: assemblePlayerSelector(actor.player) };
   }
-  if (actor !== "all") unsupported(`actor ${JSON.stringify(actor)}`);
+  if (!isSupportedActor(actor)) unsupported(`actor ${JSON.stringify(actor)}`);
 
   if (!turnOrder) return { kind: "round-robin" };
-  if (turnOrder.kind !== "seat") unsupported(`turnOrder kind '${turnOrder.kind}'`);
-  if (turnOrder.direction !== "clockwise") {
-    unsupported(`turnOrder direction '${turnOrder.direction}'`);
+  if (!isSupportedTurnOrder(turnOrder) || turnOrder.kind !== "seat") {
+    unsupported(
+      turnOrder.kind !== "seat"
+        ? `turnOrder kind '${turnOrder.kind}'`
+        : `turnOrder direction '${turnOrder.direction}'`,
+    );
   }
   const start = turnOrder.startingPlayer;
   if (start === undefined || start === "first") return { kind: "round-robin" };
@@ -133,8 +157,7 @@ function assembleTurnOrdering(
 }
 
 function assemblePlayerSelector(sel: SpecPlayerSelector): PlayerSelector {
-  if (typeof sel === "object" && "stateRef" in sel) {
-    if (sel.offset !== undefined) unsupported("player selector offset");
+  if (typeof sel === "object" && "stateRef" in sel && isSupportedPlayerSelector(sel)) {
     return { kind: "state-ref", path: sel.stateRef };
   }
   unsupported(`player selector ${JSON.stringify(sel)}`);
@@ -149,7 +172,7 @@ function assembleGrammar(node: TurnGrammarNode): Grammar {
     return { kind: "action", ref: node.ref };
   }
 
-  if (node.kind === "slot") {
+  if (node.kind === "slot" || !isSupportedGrammarKind(node.kind)) {
     throw new Error(
       `flow assembler: grammar kind 'slot' is not yet supported.`,
     );
@@ -157,7 +180,7 @@ function assembleGrammar(node: TurnGrammarNode): Grammar {
 
   if (node.kind === "sequence") {
     const actions = node.steps.map((step) => {
-      if (step.kind !== "action") {
+      if (!isActionNode(step)) {
         throw new Error(
           `flow assembler: sequence steps must all be 'action' nodes (got '${step.kind}').`,
         );
@@ -168,8 +191,11 @@ function assembleGrammar(node: TurnGrammarNode): Grammar {
   }
 
   if (node.kind === "choice") {
+    if (!isSupportedPick(node.pick)) {
+      throw new Error(`flow assembler: choice pick ${node.pick} is not yet supported.`);
+    }
     const actions = node.options.map((opt) => {
-      if (opt.kind !== "action") {
+      if (!isActionNode(opt)) {
         throw new Error(
           `flow assembler: choice options must all be 'action' nodes (got '${opt.kind}').`,
         );
@@ -184,11 +210,23 @@ function assembleGrammar(node: TurnGrammarNode): Grammar {
   }
 
   // repeat
-  return {
-    kind: "repeat",
-    body: assembleGrammar(node.body),
-    count: node.count,
-  };
+  if (!isSupportedRepeatBody(node.body)) {
+    throw new Error(`flow assembler: a repeat nested inside a repeat is not yet supported.`);
+  }
+  const body = assembleGrammar(node.body);
+  if (typeof node.count === "object" && "until" in node.count) {
+    const endCondition = compilePredicate(node.count.until, ["game", "actor"]);
+    return {
+      kind: "repeat",
+      body,
+      count: {
+        endCondition: (session: GameSession, actorId?: string) =>
+          endCondition(sessionToEvalContext(session, actorId)),
+        ...(node.count.max !== undefined && { max: node.count.max }),
+      },
+    };
+  }
+  return { kind: "repeat", body, count: node.count };
 }
 
 // ---------------------------------------------------------------------------
@@ -229,40 +267,53 @@ function assembleFlowNode(
   node: GamedefFlowNode,
   effectDefs: Record<string, Record<string, unknown>>,
   idFor: NodeIdFor,
+  path: string,
 ): FlowNode {
   const nodeId = idFor(node);
 
+  if (!isSupportedInterruptWindows(node.interruptWindows)) {
+    throw new Error(`flow assembler: node '${nodeId}' interruptWindows is not yet supported.`);
+  }
+
   if (node.kind === "loop") {
     if (node.count != null && node.endCondition != null) {
-      throw new Error(
+      throw compileFailure(
+        CompileCode.InvalidSpec,
         `flow assembler: loop '${nodeId}' has both 'count' and 'endCondition'; provide only one.`,
+        path,
       );
     }
-    if (node.endCondition === "until-pass") {
+    if (!isSupportedLoopEnd(node.endCondition)) {
       throw new Error(
         `flow assembler: loop '${nodeId}' endCondition 'until-pass' is not yet supported.`,
       );
     }
     const checkAfter = node.checkAfter ?? "iteration";
     if (node.finalRound && checkAfter !== "turn") {
-      throw new Error(
+      throw compileFailure(
+        CompileCode.InvalidSpec,
         `flow assembler: loop '${nodeId}' finalRound requires checkAfter: turn.`,
+        `${path}.finalRound`,
       );
     }
     const endExpr =
       typeof node.endCondition === "string" ? node.endCondition : undefined;
     if (endExpr && checkAfter === "iteration" && /\bactor\./.test(endExpr)) {
-      throw new Error(
+      throw compileFailure(
+        CompileCode.InvalidSpec,
         `flow assembler: loop '${nodeId}' endCondition references 'actor', which is only bound with checkAfter: turn.`,
+        `${path}.endCondition`,
       );
     }
-    const endPred = endExpr ? compilePredicate(endExpr) : undefined;
+    const endPred = endExpr
+      ? compilePredicate(endExpr, checkAfter === "turn" ? ["game", "actor"] : ["game"])
+      : undefined;
     const result: LoopFlowNode = {
       kind: "loop",
       id: nodeId,
       label: node.label ?? nodeId,
-      children: node.children.map((child) =>
-        assembleFlowNode(child, effectDefs, idFor),
+      children: node.children.map((child, i) =>
+        assembleFlowNode(child, effectDefs, idFor, `${path}.children[${i}]`),
       ),
       ...(node.count != null && { count: node.count }),
       ...(node.finalRound != null && { finalRound: node.finalRound }),
@@ -280,10 +331,14 @@ function assembleFlowNode(
     return result;
   }
 
-  if (node.kind === "simultaneous") {
+  if (node.kind === "simultaneous" || !isSupportedFlowKind(node.kind)) {
     throw new Error(
       `flow assembler: FlowNode kind 'simultaneous' is not yet supported. Use 'loop' or 'turn'.`,
     );
+  }
+
+  if (!isSupportedTimeLimit(node.timeLimit)) {
+    throw new Error(`flow assembler: turn '${nodeId}' timeLimit is not yet supported.`);
   }
 
   // turn
@@ -291,7 +346,7 @@ function assembleFlowNode(
     kind: "turn",
     id: nodeId,
     label: node.label ?? nodeId,
-    ordering: assembleTurnOrdering(node.actor, node.turnOrder),
+    ordering: assembleTurnOrdering(node.actor, node.turnOrder, path),
     grammar: assembleGrammar(node.grammar),
   };
   const hooks = assembleFlowHooks(node.hooks, nodeId, effectDefs);
@@ -316,14 +371,22 @@ function assembleWinConditions(
       ? normalizeEffectList(wc.onVictory, `${prefix}.onVictory`, effectDefs)
       : undefined;
 
+    if (!isSupportedWinRule(wc.rule)) {
+      throw new Error(
+        `flow assembler: winCondition[${i}] rule 'role-condition' is not yet supported.`,
+      );
+    }
+
     switch (wc.rule) {
       case "ranking": {
         const propertyPath = wc.property;
         // TODO(Phase 6.5): replace with compileExpression(propertyPath) once expressions return numeric values.
         const match = propertyPath.match(/^player\.property\.(.+)$/);
         if (!match) {
-          throw new Error(
+          throw compileFailure(
+            CompileCode.InvalidSpec,
             `flow assembler: winCondition[${i}] ranking property must be 'player.property.<key>' (got '${propertyPath}')`,
+            `flow.root.winConditions[${i}].property`,
           );
         }
         const key = match[1];
@@ -344,11 +407,13 @@ function assembleWinConditions(
       }
       case "condition": {
         if (/\bactor\./.test(wc.condition)) {
-          throw new Error(
+          throw compileFailure(
+            CompileCode.InvalidSpec,
             `flow assembler: winCondition[${i}] references 'actor', but win conditions run after the game completes with no actor. Use 'player.*' for the player being evaluated.`,
+            `flow.root.winConditions[${i}].condition`,
           );
         }
-        const playerFilter = compilePlayerFilter(wc.condition);
+        const playerFilter = compilePlayerFilter(wc.condition, ["game", "player"]);
         return {
           rule: "condition" as const,
           condition: (
@@ -403,7 +468,9 @@ export function assembleFlow(
   const gameNode: GameFlowNode = {
     kind: "game",
     id: specId,
-    children: root.children.map((child) => assembleFlowNode(child, effectDefs, idFor)),
+    children: root.children.map((child, i) =>
+      assembleFlowNode(child, effectDefs, idFor, `flow.root.children[${i}]`),
+    ),
   };
 
   const hooks = assembleFlowHooks(root.hooks, specId, effectDefs);

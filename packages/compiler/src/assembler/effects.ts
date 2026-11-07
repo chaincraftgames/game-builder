@@ -27,6 +27,7 @@ import type {
   CompiledValueFn,
 } from "@chaincraft/runtime";
 import { compileExpression } from "#compiler/expressions/index.js";
+import type { ExprRoot } from "#compiler/expressions/index.js";
 import { sessionToEvalContext, compilePieceFilter, compilePlayerFilter } from "#compiler/expressions/eval-bridge.js";
 import {
   executeDistribute,
@@ -93,10 +94,16 @@ export function buildExecutorRegistry(
  */
 export function walkEffectBody(
   effect: NamedEffect | Effect,
+  opts: { passive?: boolean } = {},
 ): Record<string, unknown> {
   const raw = effect as unknown as Record<string, unknown>;
   const kind = raw.effect as string | undefined;
   const result: Record<string, unknown> = {};
+  // actor and input stay allowed: a named effect may run from an action or a flow hook.
+  const valueRoots: ExprRoot[] = ["game", "actor", "input"];
+  if (opts.passive || raw.source != null) valueRoots.push("source");
+  if (kind === "update") valueRoots.push("target", "piece");
+  if (opts.passive) valueRoots.push("trigger");
 
   for (const [key, value] of Object.entries(raw)) {
     if (key === "id") continue; // strip the name — stored as the effectDefs key
@@ -104,11 +111,11 @@ export function walkEffectBody(
     if (key === "effect") {
       result.kind = value;
     } else if (selectorFields?.includes(key)) {
-      result[key] = walkSelector(value);
+      result[key] = walkSelector(value, valueRoots);
     } else if (PLAYER_TARGET_FIELDS.includes(key) && isWhereTarget(value)) {
-      result[key] = { where: compilePlayerFilter(value.where) };
+      result[key] = { where: compilePlayerFilter(value.where, PLAYER_WHERE_ROOTS) };
     } else {
-      result[key] = walkValue(value);
+      result[key] = walkValue(value, valueRoots);
     }
   }
 
@@ -117,6 +124,12 @@ export function walkEffectBody(
 
 /** Effect fields that hold a PlayerTarget (set-state `target`; message/reveal `to`). */
 const PLAYER_TARGET_FIELDS = ["target", "to"];
+
+/** A PlayerTarget `where` sees the candidate player and the actor, but not action inputs. */
+const PLAYER_WHERE_ROOTS: ExprRoot[] = ["game", "actor", "player"];
+
+/** A selector filter sees the candidate piece as `piece`/`target`. */
+const SELECTOR_FILTER_ROOTS: ExprRoot[] = ["game", "actor", "input", "piece", "target"];
 
 function isWhereTarget(value: unknown): value is { where: string } {
   return (
@@ -140,19 +153,19 @@ const GAMEPIECE_SELECTOR_FIELDS: Record<string, string[]> = {
 };
 
 /** Walk a GamepieceSelector, compiling its filter expression if present. */
-function walkSelector(value: unknown): unknown {
+function walkSelector(value: unknown, valueRoots: readonly ExprRoot[]): unknown {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
-    return walkValue(value);
+    return walkValue(value, valueRoots);
   }
   const sel = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(sel)) {
     if (k === "filter" && typeof v === "string") {
-      result[k] = compilePieceFilter(v);
+      result[k] = compilePieceFilter(v, SELECTOR_FILTER_ROOTS);
     } else if (k === "player" && isWhereTarget(v)) {
-      result[k] = { where: compilePlayerFilter(v.where) };
+      result[k] = { where: compilePlayerFilter(v.where, PLAYER_WHERE_ROOTS) };
     } else {
-      result[k] = walkValue(v);
+      result[k] = walkValue(v, valueRoots);
     }
   }
   return result;
@@ -185,15 +198,15 @@ export function normalizeEffectList(
  * Recursively walk a value, compiling { expr } nodes when encountered.
  * For now, { expr } is passed through unchanged.
  */
-function walkValue(value: unknown): unknown {
+function walkValue(value: unknown, roots: readonly ExprRoot[]): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(walkValue);
+  if (Array.isArray(value)) return value.map((v) => walkValue(v, roots));
 
   const obj = value as Record<string, unknown>;
 
   if ("expr" in obj && typeof obj.expr === "string") {
-    const exprFn = compileExpression(obj.expr);
+    const exprFn = compileExpression(obj.expr, roots);
     const compiled: CompiledValueFn = (session, ctx) =>
       exprFn(
         sessionToEvalContext(
@@ -211,7 +224,7 @@ function walkValue(value: unknown): unknown {
   // Recurse into nested objects (from/to/target/value/etc.)
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
-    result[k] = walkValue(v);
+    result[k] = walkValue(v, roots);
   }
   return result;
 }

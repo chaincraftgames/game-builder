@@ -1,5 +1,6 @@
 import { validate as validateSpec } from "@chaincraft/gamedef/validator";
 import type { ModularGameSpec } from "@chaincraft/gamedef";
+import { findUnsupported } from "@chaincraft/compiler";
 import {
   AuthoringCode,
   DRAFT_TODO_CODES,
@@ -24,6 +25,8 @@ export interface ValidateResult {
   diagnostics: Diagnostic[];
   /** The parsed spec; only present when gamedef validation passed cleanly. */
   spec?: ModularGameSpec;
+  /** Module key to project-relative file; absent when the project failed to load. */
+  moduleFiles?: Record<string, string>;
 }
 
 /**
@@ -62,6 +65,20 @@ export function validate(
     });
   }
 
+  if (result.spec) {
+    for (const issue of findUnsupported(result.spec)) {
+      diagnostics.push({
+        severity: "error",
+        code: issue.code,
+        message: issue.message,
+        ...(issue.path !== undefined && {
+          path: issue.path,
+          file: mapFile(issue.path, project.moduleFiles),
+        }),
+      });
+    }
+  }
+
   if (options.draft) {
     for (const d of diagnostics) {
       if (DRAFT_TODO_CODES.has(d.code)) d.severity = "todo";
@@ -69,5 +86,10 @@ export function validate(
   }
 
   const ok = diagnostics.every((d) => d.severity !== "error");
-  return { ok, diagnostics, ...(result.spec ? { spec: result.spec } : {}) };
+  return {
+    ok,
+    diagnostics,
+    moduleFiles: project.moduleFiles,
+    ...(result.spec ? { spec: result.spec } : {}),
+  };
 }

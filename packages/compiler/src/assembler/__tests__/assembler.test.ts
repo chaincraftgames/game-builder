@@ -820,6 +820,52 @@ describe('assembleFlow — turn ordering', () => {
   });
 });
 
+describe('assembleFlow — repeat until', () => {
+  const body = { kind: 'choice', options: [{ kind: 'action', ref: 'playCard' }] };
+
+  /** High Card with the playTrick turn's grammar replaced. */
+  function assembleWithGrammar(grammar: Record<string, unknown>) {
+    const spec = loadHighCardSpec();
+    const root = spec.flow!.root as unknown as { children: { children: Record<string, unknown>[] }[] };
+    root.children[0].children[0].grammar = grammar;
+    const loop = assembleFlow(spec, 'high-card', {}).children[0];
+    if (loop.kind !== 'loop') throw new Error('expected loop');
+    const node = loop.children[0];
+    if (node.kind !== 'turn') throw new Error('expected turn');
+    return { spec, grammar: node.grammar };
+  }
+
+  it('compiles until to a predicate evaluated with the actor bound; max is preserved', () => {
+    const { spec, grammar } = assembleWithGrammar({
+      kind: 'repeat', body, count: { until: 'actor.property.score >= 1', max: 4 },
+    });
+    if (grammar.kind !== 'repeat' || typeof grammar.count !== 'object' || !('endCondition' in grammar.count)) {
+      throw new Error('expected a repeat with an endCondition count');
+    }
+    expect(grammar.count.max).toBe(4);
+
+    const session = assembleSession(spec, 'high-card').createSession('g1', ['alice', 'bob']);
+    session.state.players.alice.properties.score = 1;
+    session.state.players.bob.properties.score = 0;
+    expect(grammar.count.endCondition(session, 'alice')).toBe(true);
+    expect(grammar.count.endCondition(session, 'bob')).toBe(false);
+  });
+
+  it('omits max when the spec has none', () => {
+    const { grammar } = assembleWithGrammar({ kind: 'repeat', body, count: { until: 'game.property.done == true' } });
+    if (grammar.kind !== 'repeat' || typeof grammar.count !== 'object' || !('endCondition' in grammar.count)) {
+      throw new Error('expected a repeat with an endCondition count');
+    }
+    expect('max' in grammar.count).toBe(false);
+  });
+
+  it('rejects a repeat nested inside another repeat', () => {
+    const inner = { kind: 'repeat', body, count: { until: 'game.property.done == true' } };
+    expect(() => assembleWithGrammar({ kind: 'repeat', body: inner, count: 2 }))
+      .toThrow('a repeat nested inside a repeat is not yet supported');
+  });
+});
+
 describe('assembleFlow — condition win conditions', () => {
   it('binds player.* to each evaluated player', () => {
     const spec = loadHighCardSpec();
@@ -1043,7 +1089,7 @@ describe('walkEffectBody — { expr } compilation', () => {
       target: 'game',
       property: 'lastAttack',
       value: { expr: 'source.property.attack' },
-    } as never);
+    } as never, { passive: true });
 
     const mockSession = {
       players: [],
@@ -1115,5 +1161,62 @@ describe('walkEffectBody — { expr } compilation', () => {
       template: 'hi',
     } as never);
     expect(typeof (body.to as { where: unknown }).where).toBe('function');
+  });
+});
+
+describe("walkEffectBody — expression roots", () => {
+  it("allows target in an update value and rejects it in a set-state value", () => {
+    expect(() =>
+      walkEffectBody({
+        effect: "update",
+        pieces: { inventory: "board", select: "all" },
+        property: "power",
+        value: { expr: "target.property.power + 1" },
+      } as never),
+    ).not.toThrow();
+    expect(() =>
+      walkEffectBody({
+        effect: "set-state",
+        path: "game.property.x",
+        value: { expr: "target.property.power" },
+      } as never),
+    ).toThrow("'target' is not available");
+  });
+
+  it("allows source only when the effect declares a source or is a passive", () => {
+    const effect = { effect: "set-state", path: "game.property.x", value: { expr: "source.property.attack" } };
+    expect(() => walkEffectBody(effect as never)).toThrow("'source' is not available");
+    expect(() => walkEffectBody({ ...effect, source: { param: "attacker" } } as never)).not.toThrow();
+    expect(() => walkEffectBody(effect as never, { passive: true })).not.toThrow();
+  });
+
+  it("allows trigger only in passives", () => {
+    const effect = { effect: "set-state", path: "game.property.x", value: { expr: "trigger.delta" } };
+    expect(() => walkEffectBody(effect as never)).toThrow("'trigger' is not available");
+    expect(() => walkEffectBody(effect as never, { passive: true })).not.toThrow();
+  });
+
+  it("binds the candidate as target in a selector filter", () => {
+    expect(() =>
+      walkEffectBody({
+        effect: "move",
+        from: {
+          inventory: "hand",
+          select: "all",
+          filter: "count(actor.inventory.hand, piece.property.rank == target.property.rank) == 4",
+        },
+        to: { inventory: "books" },
+      } as never),
+    ).not.toThrow();
+  });
+
+  it("rejects input in a player { where }, which has no action inputs", () => {
+    expect(() =>
+      walkEffectBody({
+        effect: "message",
+        to: { where: "player.id == input.target" },
+        template: "hi",
+      } as never),
+    ).toThrow("'input' is not available");
   });
 });

@@ -701,6 +701,64 @@ describe('trigger paths', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Compile-time root checks
+// ---------------------------------------------------------------------------
+
+describe("context roots", () => {
+  it("accepts roots the context binds", () => {
+    expect(() => compilePredicate("game.property.x > 0 and actor.property.y > 0", ["game", "actor"])).not.toThrow();
+  });
+
+  it("rejects a root the context does not bind, naming the available roots", () => {
+    expect(() => compilePredicate("target.property.x > 0", ["game", "actor"])).toThrow(
+      "'target' is not available in this context; available roots: game, actor",
+    );
+  });
+
+  it("checks branches that short-circuiting or if() would skip at runtime", () => {
+    expect(() => compilePredicate("false and trigger.delta > 0", ["game"])).toThrow("'trigger'");
+    expect(() => compileExpression("if(true, 1, source.property.x)", ["game"])).toThrow("'source'");
+  });
+
+  it("checks param as its alias input", () => {
+    expect(() => compilePredicate("param.qty > 0", ["game"])).toThrow("'input'");
+    expect(() => compilePredicate("param.qty > 0", ["game", "input"])).not.toThrow();
+  });
+
+  it("binds player inside an aggregator over players only", () => {
+    expect(() => compilePredicate("any(players, player.property.score > 1)", ["game"])).not.toThrow();
+    expect(() => compilePredicate("player.property.score > 1", ["game"])).toThrow("'player'");
+  });
+
+  it("binds piece inside an aggregator over an inventory only", () => {
+    expect(() =>
+      compilePredicate("count(actor.inventory.hand, piece.property.rank == target.property.rank) == 4", [
+        "actor",
+        "target",
+      ]),
+    ).not.toThrow();
+    expect(() => compilePredicate("piece.property.rank == 1", ["game", "actor"])).toThrow("'piece'");
+  });
+
+  it("does not leak an aggregator binding outside its arguments", () => {
+    expect(() =>
+      compilePredicate("count(game.inventory.deck, piece.property.v > 0) > piece.property.v", ["game"]),
+    ).toThrow("'piece'");
+  });
+
+  it("checks the collection itself against the outer scope", () => {
+    expect(() => compilePredicate("count(actor.inventory.hand) > 0", ["game"])).toThrow("'actor'");
+    expect(() => compilePredicate("sum(players, count(player.inventory.hand))", ["game"])).not.toThrow();
+  });
+
+  it("rejects 'players' outside an aggregator's collection", () => {
+    expect(() => compilePredicate("players == 2", ["game"])).toThrow(
+      "'players' is only valid as the first argument of an aggregator",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AST inspection (parseExpression)
 // ---------------------------------------------------------------------------
 

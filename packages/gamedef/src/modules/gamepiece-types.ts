@@ -385,7 +385,8 @@ export const GamepieceTypeSchema = z
           "The catalog instance fills in which action occupies each slot. " +
           "Omit for piece types that have no actions of their own " +
           "(e.g., tokens, resources used only as targets). " +
-          "Do not duplicate slot IDs declared by mechanics[].",
+          "Do not duplicate slot IDs declared by mechanics[]. " +
+          "Not supported by the compiler yet.",
       ),
     mechanics: z
       .array(PieceMechanicSchema)
@@ -393,7 +394,8 @@ export const GamepieceTypeSchema = z
       .describe(
         "Piece-scoped mechanic declarations. Each generates action slots, preconditions, " +
           "or lifecycle hooks from a compact declaration. " +
-          "Generated slot IDs share the namespace with actionSlots[] and must be unique.",
+          "Generated slot IDs share the namespace with actionSlots[] and must be unique. " +
+          "Not supported by the compiler yet.",
       ),
     passiveSlots: z
       .array(PassiveSlotSchema)
@@ -411,7 +413,8 @@ export const GamepieceTypeSchema = z
         "Named binding points for piece-instance reactive effects. " +
           "The catalog entry fills in which reactive (by ID reference or inline definition) " +
           "occupies each slot — so different instances of the same type can have different reactives. " +
-          "Omit for piece types that never carry player-choice reactive effects.",
+          "Omit for piece types that never carry player-choice reactive effects. " +
+          "Not supported by the compiler yet.",
       ),
     hasFaceState: z
       .boolean()

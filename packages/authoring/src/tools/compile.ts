@@ -1,6 +1,14 @@
-import { assembleModule, CompileError, ExpressionError } from "@chaincraft/compiler";
+import {
+  assembleModule,
+  CompileError,
+  ExpressionError,
+} from "@chaincraft/compiler";
 import type { FlowNode } from "@chaincraft/runtime";
-import { AuthoringCode, type Diagnostic } from "../diagnostics.js";
+import {
+  AuthoringCode,
+  mapFile,
+  type Diagnostic,
+} from "#authoring/diagnostics.js";
 import { readManifest } from "../project.js";
 import { validate } from "./validate.js";
 
@@ -59,6 +67,10 @@ export function compile(root: string): CompileResult {
           severity: "error",
           code: issue.code,
           message: issue.message,
+          ...(issue.path !== undefined && {
+            path: issue.path,
+            file: mapFile(issue.path, validation.moduleFiles ?? {}),
+          }),
           ...(issue.knownIds ? { knownIds: issue.knownIds } : {}),
         })),
       };
@@ -66,7 +78,13 @@ export function compile(root: string): CompileResult {
     if (err instanceof ExpressionError) {
       return {
         ok: false,
-        diagnostics: [{ severity: "error", code: AuthoringCode.Expression, message: err.message }],
+        diagnostics: [
+          {
+            severity: "error",
+            code: AuthoringCode.Expression,
+            message: err.message,
+          },
+        ],
       };
     }
     return {

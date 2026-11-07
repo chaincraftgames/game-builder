@@ -110,6 +110,51 @@ describe("validate", () => {
 });
 
 describe("compile", () => {
+  const turnNode = (spec: Spec) =>
+    ((spec.flow.root as { children: Array<{ children: Array<Record<string, unknown>> }> }).children[0].children[0]);
+  const UNSUPPORTED = {
+    severity: "error",
+    code: "unsupported",
+    file: "spec/flow.yaml",
+    path: "flow.root.children[0].children[0].turnOrder.startingPlayer",
+  };
+  const withOffset = (spec: Spec) => {
+    turnNode(spec).turnOrder = {
+      kind: "seat",
+      direction: "clockwise",
+      startingPlayer: { stateRef: "game.property.roundWinner", offset: 1 },
+    };
+  };
+
+  it("validate reports an unsupported form with file and path, in strict and draft mode", () => {
+    splitExample("high-card", withOffset);
+    for (const draft of [false, true]) {
+      const result = validate(dir, { draft });
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics).toEqual([expect.objectContaining(UNSUPPORTED)]);
+      expect(result.diagnostics[0].message).toContain("is not supported by the compiler yet.");
+    }
+  });
+
+  it("compile reports the unsupported form from validation, never internal", () => {
+    splitExample("high-card", withOffset);
+    const result = compile(dir);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual([expect.objectContaining(UNSUPPORTED)]);
+  });
+
+  it("reports a spec error the validator misses with its code, file and path", () => {
+    splitExample("high-card", (spec) => {
+      (spec.flow.root as { children: Array<Record<string, unknown>> }).children[0].endCondition = "true";
+    });
+    expect(validate(dir).ok).toBe(true);
+    const result = compile(dir);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: "invalid-spec", file: "spec/flow.yaml", path: "flow.root.children[0]" }),
+    ]);
+  });
+
   it("reports a flow hook ref that passes gamedef but fails the compiler", () => {
     splitExample("high-card", (spec) => {
       (spec.effects.effects as Array<{ id: string }>).find((e) => e.id === "fillDeck")!.id = "fillDecc";

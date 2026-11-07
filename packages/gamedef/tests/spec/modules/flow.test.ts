@@ -417,6 +417,30 @@ describe("FlowModuleSchema — Turn Grammar", () => {
     }));
     expect((result.root as any).children[0].grammar.count).toBe("until-pass");
   });
+
+  it("parses repeat with count: { until }", () => {
+    const result = ok(baseLoop({
+      kind: "turn", actor: "all",
+      grammar: {
+        kind: "repeat",
+        count: { until: "actor.property.acted >= 3" },
+        body: { kind: "choice", options: [{ kind: "action", ref: "playCard" }] },
+      },
+    }));
+    expect((result.root as any).children[0].grammar.count).toEqual({ until: "actor.property.acted >= 3" });
+  });
+
+  it("parses repeat with count: { until, max }", () => {
+    const result = ok(baseLoop({
+      kind: "turn", actor: "all",
+      grammar: {
+        kind: "repeat",
+        count: { until: "actor.property.acted >= 3", max: 5 },
+        body: { kind: "choice", options: [{ kind: "action", ref: "playCard" }] },
+      },
+    }));
+    expect((result.root as any).children[0].grammar.count.max).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -481,6 +505,20 @@ describe("FlowModuleSchema — Rejection cases", () => {
     fail(baseLoop({
       kind: "turn", actor: "all",
       grammar: { kind: "repeat", count: 0, body: { kind: "action", ref: "noop" } },
+    }));
+  });
+
+  it("rejects repeat with count: { until, min }", () => {
+    fail(baseLoop({
+      kind: "turn", actor: "all",
+      grammar: { kind: "repeat", count: { until: "game.property.done == true", min: 1 }, body: { kind: "action", ref: "noop" } },
+    }));
+  });
+
+  it("rejects repeat with count: { until, max: 0 }", () => {
+    fail(baseLoop({
+      kind: "turn", actor: "all",
+      grammar: { kind: "repeat", count: { until: "game.property.done == true", max: 0 }, body: { kind: "action", ref: "noop" } },
     }));
   });
 

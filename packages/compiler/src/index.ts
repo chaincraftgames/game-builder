@@ -19,6 +19,7 @@ export {
   assembleInitialState, 
   assembleModule,
   assembleSession,
+  findUnsupported,
   CompileError,
   CompileCode,
 } from '#compiler/assembler/index.js';

@@ -40,6 +40,7 @@ export const EXPRESSION_EXAMPLES: readonly string[] = [
   "any(players, player.property.score >= 50)",
   "count(actor.inventory.hand, piece.property.suit == \"hearts\") >= 2",
   "sum(actor.inventory.hand, piece.property.rank) > 21",
+  "count(actor.inventory.hand, piece.property.value == target.property.value) == 4",
   "if(actor.property.coins > 0, actor.property.coins * 2, 0)",
   "not (game.property.round == 1 or game.property.round == 2)",
 ];
@@ -80,6 +81,10 @@ export function expressionDoc(): string {
     "",
     "A collection argument is `players` or an inventory path `<game|actor|player>.inventory.<id>`. Inside the",
     "per-item argument the current item is `player` (over `players`) or `piece` (over an inventory).",
+    "In a piece filter (a selector `filter`, or a `gamepiece-select` input `filter`) the candidate piece is both `piece`",
+    "and `target` (`target.property.<id>` only); aggregators rebind `piece` but never `target`, so",
+    "`count(actor.inventory.hand, piece.property.value == target.property.value) == 4` keeps candidates whose value",
+    "appears four times in the hand.",
     "",
     ...EXPRESSION_FUNCTIONS.map((name) => `- \`${FUNCTION_DOCS[name].signature}\` — ${FUNCTION_DOCS[name].description}`),
     "",
