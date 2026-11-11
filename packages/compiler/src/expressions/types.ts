@@ -26,6 +26,9 @@
 //   if(condition, then, else)         → then or else, evaluating only the chosen branch
 // ---------------------------------------------------------------------------
 
+import { GameRuntimeError } from "@chaincraft/runtime";
+import type { FaultCode } from "@chaincraft/runtime";
+
 // --- AST node types ---------------------------------------------------------
 /** Comparison operators. */
 export type CompareOp = "==" | "!=" | ">=" | "<=" | ">" | "<";
@@ -112,14 +115,16 @@ export interface EvalContext {
 }
 
 // --- Error types -----------------------------------------------------------
-/** Error thrown during expression evaluation. */
-export class ExpressionError extends Error {
+/** Error thrown while compiling or evaluating an expression; compile-time errors keep the default code. */
+export class ExpressionError extends GameRuntimeError {
   constructor(
     message: string,
     public readonly pos: number,
     public readonly source?: string,
+    code: FaultCode = "expression-invalid",
   ) {
     super(
+      code,
       source
         ? `${message} at position ${pos} in "${source}"`
         : `${message} at position ${pos}`,

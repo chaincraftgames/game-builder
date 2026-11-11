@@ -299,14 +299,7 @@
             "rule": "ranking",
             "property": "player.property.score",
             "order": "highest",
-            "tiebreak": "all-win",
-            "onVictory": [
-              {
-                "effect": "message",
-                "to": "all",
-                "template": "The winner is {{game.winners[0]}}!"
-              }
-            ]
+            "tiebreak": "all-win"
           }
         ]
       }

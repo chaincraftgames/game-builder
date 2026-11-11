@@ -5,7 +5,8 @@
 // This adapter builds one from a live GameSession at call time.
 // ---------------------------------------------------------------------------
 
-import type { GameSession } from "@chaincraft/runtime";
+import { getGameState, getPlayerState } from "@chaincraft/runtime";
+import type { GameSession, GameStateBase, PlayerStateBase } from "@chaincraft/runtime";
 import type { EvalContext } from "#compiler/expressions/types.js";
 import { compilePredicate } from "#compiler/expressions/index.js";
 import type { ExprRoot } from "#compiler/expressions/index.js";
@@ -23,7 +24,8 @@ export function sessionToEvalContext(
   for (const pid of session.players) {
     const ps = session.state.players[pid];
     players[pid] = {
-      properties: ps.properties,
+      // The accessor overlays computed properties, which are never stored.
+      properties: getPlayerState<PlayerStateBase & Record<string, unknown>>(session, pid),
       inventories: ps.inventories,
     };
   }
@@ -39,7 +41,7 @@ export function sessionToEvalContext(
   }
 
   return {
-    gameProperties: session.state.gameProperties,
+    gameProperties: getGameState<GameStateBase & Record<string, unknown>>(session),
     gameInventories: session.state.gameInventories,
     players,
     gamepieces,

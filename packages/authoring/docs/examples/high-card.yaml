@@ -175,10 +175,6 @@ flow:
       - rule: ranking
         property: player.property.score
         order: highest
-        onVictory:
-          - effect: message
-            to: all
-            template: "The winner is {{game.winners[0]}}!"
     children:
       - kind: loop
         id: tricks

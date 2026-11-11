@@ -446,10 +446,6 @@ flow:
       - rule: ranking
         property: player.property.life
         order: highest
-        onVictory:
-          - effect: message
-            to: all
-            template: "{{game.winners[0]}} wins with the most life remaining."
     children:
       - kind: loop
         id: rounds

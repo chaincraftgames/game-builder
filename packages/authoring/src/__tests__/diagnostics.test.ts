@@ -56,7 +56,13 @@ describe("sortDiagnostics / countDiagnostics", () => {
     expect(sorted.map((d) => d.message)).toEqual(["boom", "e2", "t"]);
   });
 
+  it("orders errors, then warnings, then todos", () => {
+    const warning: Diagnostic = { ...base, severity: "warning", message: "w" };
+    expect(sortDiagnostics([todo, warning, base]).map((d) => d.message)).toEqual(["boom", "w", "t"]);
+  });
+
   it("counts by severity", () => {
-    expect(countDiagnostics([todo, base, error2])).toEqual({ errors: 2, todos: 1 });
+    const warning: Diagnostic = { ...base, severity: "warning", message: "w" };
+    expect(countDiagnostics([todo, base, error2, warning])).toEqual({ errors: 2, warnings: 1, todos: 1 });
   });
 });

@@ -137,7 +137,7 @@ function checkAggregatorArity(fn: string, argCount: number): void {
 function toFiniteNumber(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) {
-    throw new ExpressionError("sum() item value is not a number", 0);
+    throw new ExpressionError("sum() item value is not a number", 0, undefined, "expression-not-a-number");
   }
   return n;
 }

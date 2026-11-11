@@ -44,7 +44,7 @@ function countFlowNodes(node: FlowNode): number {
 export function compile(root: string): CompileResult {
   const validation = validate(root, { draft: false });
   if (!validation.ok || !validation.spec) {
-    return { ok: false, diagnostics: validation.diagnostics };
+    return { ok: false, diagnostics: validation.diagnostics.filter((d) => d.severity !== "warning") };
   }
 
   const { id } = readManifest(root);

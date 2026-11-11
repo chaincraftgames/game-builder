@@ -19,6 +19,7 @@ export {
   assembleInitialState, 
   assembleModule,
   assembleSession,
+  flowNodePaths,
   findUnsupported,
   CompileError,
   CompileCode,

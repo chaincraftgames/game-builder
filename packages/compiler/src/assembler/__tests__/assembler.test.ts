@@ -18,13 +18,14 @@ import { fileURLToPath } from 'url';
 import { join, dirname } from 'path';
 import { load } from 'js-yaml';
 import { validate } from '@chaincraft/gamedef/validator';
-import { GameController } from '@chaincraft/runtime';
+import { GameController, createSeededRng } from '@chaincraft/runtime';
+import type { BagInventoryData, GameSession } from '@chaincraft/runtime';
 import {
   assembleConfig, assembleInitialState, assembleSession,
   buildExecutorRegistry, assembleEffectDefs, assembleActions,
   assembleFlow, assembleModule, walkEffectBody,
   CompileError,
-  UNASSIGNED_INVENTORY_ID,
+  UNASSIGNED_INVENTORY_ID, FIXED_TEST_SEED,
 } from '../index.js';
 import { linkAndValidate } from '../module.js';
 
@@ -188,6 +189,41 @@ describe('assembleSession — High Card', () => {
     const s1 = createSession('g1', ['alice', 'bob']);
     const s2 = createSession('g2', ['alice', 'bob']); // different gameId, same fixed seed
     expect(s1.rng.nextFloat()).toBe(s2.rng.nextFloat());
+  });
+
+  it('options.seed overrides the fixed seed: different seeds give different rng streams', () => {
+    const { createSession } = assembleSession(spec, 'high-card');
+    const a = createSession('g1', ['alice', 'bob'], { seed: 1 });
+    const b = createSession('g1', ['alice', 'bob'], { seed: 2 });
+    const a2 = createSession('g1', ['alice', 'bob'], { seed: 1 });
+    const draw = (s: GameSession) => Array.from({ length: 5 }, () => s.rng.nextFloat());
+    expect(draw(a)).not.toEqual(draw(b));
+    expect(draw(a2)).toEqual(draw(createSession('g2', ['alice', 'bob'], { seed: 1 })));
+  });
+
+  it('without options.seed, seedSource: fixed still uses FIXED_TEST_SEED', () => {
+    const { createSession } = assembleSession(spec, 'high-card');
+    const session = createSession('g1', ['alice', 'bob']);
+    const expected = createSeededRng(FIXED_TEST_SEED);
+    expect(session.rng.nextFloat()).toBe(expected.nextFloat());
+  });
+
+  it('options.seed changes the deal under seedSource: fixed; same seed repeats it', async () => {
+    const mod = assembleModule(spec, 'high-card');
+    const dealWith = async (seed?: number) => {
+      const controller = new GameController(mod, { events: {} });
+      await controller.init('g1', ['alice', 'bob'], seed === undefined ? undefined : { seed });
+      const state = controller.getState();
+      const hand = (pid: string) => {
+        const inv = state.players[pid].inventories.hand;
+        return 'pieceIds' in inv ? inv.pieceIds : [];
+      };
+      return [hand('alice'), hand('bob')];
+    };
+    const deals = [await dealWith(1), await dealWith(2), await dealWith(3), await dealWith(4)];
+    expect(new Set(deals.map((d) => JSON.stringify(d))).size).toBeGreaterThan(1);
+    expect(await dealWith(1)).toEqual(deals[0]);
+    expect(await dealWith()).toEqual(await dealWith());
   });
 
   it('config is shared (not re-derived) across createSession calls', () => {
@@ -889,6 +925,69 @@ describe('assembleFlow — condition win conditions', () => {
   });
 });
 
+describe('computed state properties', () => {
+  // Computed properties are never stored; every read path must go through the accessors.
+  function specWithComputed() {
+    const spec = loadHighCardSpec();
+    const state = spec.state as unknown as {
+      game: { properties: unknown[] };
+      player: { properties: unknown[] };
+    };
+    state.player.properties.push({ id: 'handSize', type: { kind: 'number' }, computed: { inventory: 'hand', aggregate: 'count' } });
+    state.game.properties.push({ id: 'tableSize', type: { kind: 'number' }, computed: { inventory: 'table', aggregate: 'count' } });
+    return spec;
+  }
+
+  function setWinConditions(spec: ReturnType<typeof specWithComputed>, winConditions: unknown[]) {
+    (spec.flow!.root as unknown as { winConditions?: unknown[] }).winConditions = winConditions;
+  }
+
+  function sessionWithCards(spec: ReturnType<typeof specWithComputed>): GameSession {
+    const session = assembleSession(spec, 'high-card').createSession('g1', ['alice', 'bob']);
+    const hand = (id: string) => session.state.players[id].inventories.hand as BagInventoryData;
+    hand('alice').pieceIds.push('card1', 'card2');
+    hand('bob').pieceIds.push('card3');
+    (session.state.gameInventories.table as BagInventoryData).pieceIds.push('card4');
+    return session;
+  }
+
+  it('resolves a computed player property in an expression', () => {
+    const spec = specWithComputed();
+    setWinConditions(spec, [{ rule: 'condition', condition: 'player.property.handSize >= 2' }]);
+    const wc = assembleFlow(spec, 'high-card', {}).winConditions![0];
+    if (wc.rule !== 'condition') throw new Error('expected condition rule');
+    const session = sessionWithCards(spec);
+    expect(wc.condition(session, 'alice')).toBe(true);
+    expect(wc.condition(session, 'bob')).toBe(false);
+  });
+
+  it('sums a computed player property over players', () => {
+    const spec = specWithComputed();
+    setWinConditions(spec, [{ rule: 'condition', condition: 'sum(players, player.property.handSize) == 3' }]);
+    const wc = assembleFlow(spec, 'high-card', {}).winConditions![0];
+    if (wc.rule !== 'condition') throw new Error('expected condition rule');
+    expect(wc.condition(sessionWithCards(spec), 'alice')).toBe(true);
+  });
+
+  it('resolves a computed game property in an expression', () => {
+    const spec = specWithComputed();
+    setWinConditions(spec, [{ rule: 'condition', condition: 'game.property.tableSize == 1' }]);
+    const wc = assembleFlow(spec, 'high-card', {}).winConditions![0];
+    if (wc.rule !== 'condition') throw new Error('expected condition rule');
+    expect(wc.condition(sessionWithCards(spec), 'alice')).toBe(true);
+  });
+
+  it('ranks players by a computed player property', () => {
+    const spec = specWithComputed();
+    setWinConditions(spec, [{ rule: 'ranking', property: 'player.property.handSize', order: 'highest' }]);
+    const wc = assembleFlow(spec, 'high-card', {}).winConditions![0];
+    if (wc.rule !== 'ranking') throw new Error('expected ranking rule');
+    const session = sessionWithCards(spec);
+    expect(wc.value(session, 'alice')).toBe(2);
+    expect(wc.value(session, 'bob')).toBe(1);
+  });
+});
+
 describe('assembleModule — High Card', () => {
   const spec = loadHighCardSpec();
   const mod = assembleModule(spec, 'high-card');
@@ -1070,6 +1169,7 @@ describe('walkEffectBody — { expr } compilation', () => {
 
     const mockSession = {
       players: ['alice'],
+      config: { gameProperties: {}, playerProperties: {} },
       state: {
         gameProperties: { score: 5 },
         gameInventories: {},
@@ -1093,6 +1193,7 @@ describe('walkEffectBody — { expr } compilation', () => {
 
     const mockSession = {
       players: [],
+      config: { gameProperties: {}, playerProperties: {} },
       state: {
         gameProperties: {},
         gameInventories: {},
@@ -1127,6 +1228,7 @@ describe('walkEffectBody — { expr } compilation', () => {
 
     const mockSession = {
       players: ['alice', 'bob'],
+      config: { gameProperties: {}, playerProperties: {} },
       state: {
         gameProperties: {},
         gameInventories: {},

@@ -12,7 +12,7 @@ export {
   walkEffectBody,
 } from "#compiler/assembler/effects.js";
 export { assembleActions } from "#compiler/assembler/actions.js";
-export { assembleFlow } from "#compiler/assembler/flow.js";
+export { assembleFlow, flowNodePaths } from "#compiler/assembler/flow.js";
 export { applyMechanics } from "#compiler/assembler/mechanics.js";
 export { assemblePassives } from "#compiler/assembler/passives.js";
 export { classifyIrreversibleEffects } from "#compiler/assembler/irreversible.js";

@@ -86,19 +86,19 @@ function formatText(outcome: Outcome, versions: Versions): string {
     blocks.push(outcome.created.map((p) => `  created ${p}`).join("\n"));
   blocks.push(...sortDiagnostics(outcome.diagnostics).map(formatDiagnostic));
 
-  const { errors, todos } = countDiagnostics(outcome.diagnostics);
+  const { errors, warnings, todos } = countDiagnostics(outcome.diagnostics);
   /** Formats a count with a naive English plural, e.g. "1 error", "2 errors". */
   const plural = (n: number, word: string) =>
     `${n} ${word}${n === 1 ? "" : "s"}`;
   if (errors === 0 && todos === 0) {
     const s = outcome.summary;
-    blocks.push(
-      s
-        ? `OK (${s.actions} actions, ${s.effectDefs} effects, ${s.flowNodes} flow nodes)`
-        : "OK",
-    );
+    const ok = s
+      ? `OK (${s.actions} actions, ${s.effectDefs} effects, ${s.flowNodes} flow nodes)`
+      : "OK";
+    blocks.push(warnings > 0 ? `${ok}, ${plural(warnings, "warning")}` : ok);
   } else {
-    blocks.push(`${plural(errors, "error")}, ${plural(todos, "todo")}`);
+    const counts = [plural(errors, "error"), ...(warnings > 0 ? [plural(warnings, "warning")] : []), plural(todos, "todo")];
+    blocks.push(counts.join(", "));
     const pointer = schemaPointer(outcome.diagnostics, moduleKeys());
     if (pointer) blocks.push(pointer);
   }

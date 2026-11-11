@@ -222,6 +222,22 @@ describe("validate / compile", () => {
     expect(out.summary.actions).toBeGreaterThan(0);
   });
 
+  it("dead content is a warning: exit 0, footer counts it, --json and trace carry it", () => {
+    writeSpec((spec) => {
+      const effects = spec.effects.effects as Array<Record<string, unknown>>;
+      effects.push({ ...effects[0], id: "orphanFx" });
+    });
+    const text = cc(["validate"]);
+    expect(text.status).toBe(0);
+    expect(text.stdout).toContain("warning unused-effect");
+    expect(text.stdout).toMatch(/\nOK, 1 warning$/m);
+
+    const json = JSON.parse(cc(["validate", "--json"]).stdout);
+    expect(json.ok).toBe(true);
+    expect(json.diagnostics).toEqual([expect.objectContaining({ severity: "warning", code: "unused-effect" })]);
+    expect(logLines().at(-1)).toMatchObject({ exitCode: 0, counts: { errors: 0, warnings: 1, todos: 0 } });
+  });
+
   it("finds the project root from a nested directory", () => {
     writeSpec();
     expect(cc(["validate"], join(dir, "spec")).status).toBe(0);

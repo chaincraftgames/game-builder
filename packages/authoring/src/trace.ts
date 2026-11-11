@@ -15,7 +15,7 @@ export interface TraceEntry {
   versions: Versions;
   durationMs: number;
   exitCode: number;
-  counts: { errors: number; todos: number };
+  counts: { errors: number; warnings: number; todos: number };
   diagnostics: Diagnostic[];
 }
 

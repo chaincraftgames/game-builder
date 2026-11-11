@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ModularGameSpec } from "@chaincraft/gamedef";
+import type { CreateSessionOptions } from "@chaincraft/runtime";
 import {
   createSeededRng,
   EffectBus,
@@ -39,7 +40,11 @@ export function resolveSeed(
 
 export interface AssembledSessionFactory {
   config: GameConfig;
-  createSession: (gameId: string, players: string[]) => GameSession;
+  createSession: (
+    gameId: string,
+    players: string[],
+    options?: CreateSessionOptions,
+  ) => GameSession;
 }
 
 /**
@@ -57,7 +62,11 @@ export function assembleSession(
 ): AssembledSessionFactory {
   const config = assembleConfig(spec);
 
-  const createSession = (gameId: string, players: string[]): GameSession => {
+  const createSession = (
+    gameId: string,
+    players: string[],
+    options?: CreateSessionOptions,
+  ): GameSession => {
     const bus = new EffectBus();
     const session: GameSession = {
       gameId,
@@ -66,7 +75,9 @@ export function assembleSession(
       state: assembleInitialState(spec, config, players),
       players,
       outbox: [],
-      rng: createSeededRng(resolveSeed(spec.metadata?.rng?.seedSource, gameId)),
+      rng: createSeededRng(
+        options?.seed ?? resolveSeed(spec.metadata?.rng?.seedSource, gameId),
+      ),
       events: new GameEventEmitter(),
       bus,
       _inventoryCache: new Map(),

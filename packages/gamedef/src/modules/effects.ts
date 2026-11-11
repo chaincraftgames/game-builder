@@ -1025,10 +1025,12 @@ export const MessageEffectSchema = z
     template: z
       .string()
       .describe(
-        "Handlebars template string for the message body. " +
-          "Available references: {{input.<id>}} for action inputs, " +
+        "Message body with {{path}} substitution. " +
+          "Supported paths: {{input.<id>}} for action inputs, " +
           "{{state.game.property.<id>}} and {{state.players.<playerId>.property.<id>}} " +
-          "for game state. The engine resolves templates at execution time.",
+          "for stored state properties (not computed ones). " +
+          "Values are substituted as written; there are no helpers or conditionals " +
+          "(no {{#if}}), so write one message per case. Any other token is rejected by validation.",
       ),
   })
   .describe(
@@ -2094,9 +2096,9 @@ export const EffectsModuleSchema = z
       .array(PassiveEffectSchema)
       .optional()
       .describe(
-        "Named passive effect declarations available to be bound to gamepiece passive slots " +
-          "or role passives. Each passive has a unique id referenced by catalog passiveBindings " +
-          "or role passives[]. Omit if the game has no passive effects.",
+        "Named passive effect declarations available to be bound to gamepiece passive slots. " +
+          "Each passive has a unique id referenced by catalog passiveBindings. Role passives are " +
+          "declared inline on the role, not here. Omit if the game has no passive effects.",
       ),
     reactives: z
       .array(ReactiveEffectSchema)

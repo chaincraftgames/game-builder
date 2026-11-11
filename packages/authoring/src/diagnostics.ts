@@ -27,8 +27,8 @@ export const DRAFT_TODO_CODES: ReadonlySet<DiagnosticCode> = new Set<DiagnosticC
   AuthoringCode.MissingModule,
 ]);
 
-/** `error` fails a command; `todo` is a draft-mode placeholder that does not. */
-export type Severity = "error" | "todo";
+/** `error` fails a command; `warning` (dead content) and `todo` (draft-mode placeholder) do not. */
+export type Severity = "error" | "warning" | "todo";
 
 /** A single problem reported to the user or agent. */
 export interface Diagnostic {
@@ -62,14 +62,16 @@ export function mapFile(path: string, moduleFiles: Record<string, string>): stri
 const MAX_KNOWN_IDS = 30;
 
 /** Counts diagnostics by severity. */
-export function countDiagnostics(diagnostics: readonly Diagnostic[]): { errors: number; todos: number } {
-  const errors = diagnostics.filter((d) => d.severity === "error").length;
-  return { errors, todos: diagnostics.length - errors };
+export function countDiagnostics(diagnostics: readonly Diagnostic[]): { errors: number; warnings: number; todos: number } {
+  const count = (severity: Severity) => diagnostics.filter((d) => d.severity === severity).length;
+  return { errors: count("error"), warnings: count("warning"), todos: count("todo") };
 }
 
-/** Returns a copy with errors first, then todos; order within each severity is preserved. */
+const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, todo: 2 };
+
+/** Returns a copy with errors first, then warnings, then todos; order within each severity is preserved. */
 export function sortDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
-  return [...diagnostics].sort((a, b) => Number(b.severity === "error") - Number(a.severity === "error"));
+  return [...diagnostics].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
 }
 
 /**

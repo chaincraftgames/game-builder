@@ -46,14 +46,21 @@ export function validate(
   }
 
   const result = validateSpec(project.spec);
-  const diagnostics: Diagnostic[] = result.errors.map((e) => ({
-    severity: "error",
+  const toDiagnostic = (
+    e: (typeof result.errors)[number],
+    severity: "error" | "warning",
+  ): Diagnostic => ({
+    severity,
     code: e.code,
     message: e.message,
     file: mapFile(e.path, project.moduleFiles),
     path: e.path,
     ...(e.knownIds ? { knownIds: e.knownIds } : {}),
-  }));
+  });
+  const diagnostics: Diagnostic[] = [
+    ...result.errors.map((e) => toDiagnostic(e, "error")),
+    ...result.warnings.map((e) => toDiagnostic(e, "warning")),
+  ];
 
   for (const key of REQUIRED_MODULES) {
     if (Object.hasOwn(project.spec, key)) continue;

@@ -24,6 +24,11 @@ function splitExample(name: string, mutate?: (spec: Spec) => void): void {
   }
 }
 
+function addOrphanEffect(spec: Spec): void {
+  const effects = spec.effects.effects as Array<Record<string, unknown>>;
+  effects.push({ ...effects[0], id: "orphanFx" });
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "cc-tools-"));
 });
@@ -98,6 +103,27 @@ describe("validate", () => {
     const draft = validate(dir, { draft: true });
     expect(draft.ok).toBe(true);
     expect(draft.diagnostics).toEqual([expect.objectContaining({ severity: "todo", code: "missing-module" })]);
+  });
+
+  it("reports dead content as warnings that leave ok true", () => {
+    splitExample("high-card", addOrphanEffect);
+    const result = validate(dir);
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "unused-effect",
+        file: "spec/effects.yaml",
+        message: expect.stringContaining("orphanFx"),
+      }),
+    ]);
+  });
+
+  it("keeps dead-content warnings as warnings in draft mode", () => {
+    splitExample("high-card", addOrphanEffect);
+    const result = validate(dir, { draft: true });
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toEqual([expect.objectContaining({ severity: "warning", code: "unused-effect" })]);
   });
 
   it("returns loader errors without running gamedef", () => {
@@ -176,6 +202,19 @@ describe("compile", () => {
     expect(result.ok).toBe(false);
     expect(result.diagnostics.map((d) => d.code)).toEqual(["missing-module"]);
     expect(result.summary).toBeUndefined();
+  });
+
+  it("never reports dead-content warnings, whether or not validation passes", () => {
+    splitExample("high-card", addOrphanEffect);
+    expect(compile(dir)).toMatchObject({ ok: true, diagnostics: [] });
+
+    splitExample("high-card", (spec) => {
+      addOrphanEffect(spec);
+      (spec.actions.actions as Array<{ steps: unknown[] }>)[0].steps.push({ effectRef: "dela" });
+    });
+    const failed = compile(dir);
+    expect(failed.ok).toBe(false);
+    expect(failed.diagnostics.map((d) => d.severity)).toEqual(["error"]);
   });
 });
 

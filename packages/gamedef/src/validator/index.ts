@@ -13,7 +13,9 @@
  *   4. FlowIntegrity      — loop termination and flow structural rules
  *   5. FaceTables         — dice face table presence and faceCount/faces exclusivity
  *   6. ActorContext       — effects in actor-less flow hooks must name their players
- *   7. SpecVersion        — metadata.specVersion must not exceed CURRENT_SPEC_VERSION
+ *   7. MessageTemplate    — message templates may only use tokens the runtime resolves
+ *   8. SpecVersion        — metadata.specVersion must not exceed CURRENT_SPEC_VERSION
+ *   9. UnusedContent      — warnings for effects, actions and passives nothing references
  *
  * Usage:
  *   import { validate } from "@chaincraft/gamedef/validator";
@@ -30,7 +32,9 @@ import { DuplicateIdsValidator } from "#gamedef/validator/validators/duplicate-i
 import { FlowIntegrityValidator } from "#gamedef/validator/validators/flow-integrity.js";
 import { FaceTablesValidator } from "#gamedef/validator/validators/face-tables.js";
 import { ActorContextValidator } from "#gamedef/validator/validators/actor-context.js";
+import { MessageTemplateValidator } from "#gamedef/validator/validators/message-template.js";
 import { SpecVersionValidator } from "#gamedef/validator/validators/spec-version.js";
+import { UnusedContentValidator } from "#gamedef/validator/validators/unused-content.js";
 import { schemaIssues } from "#gamedef/validator/schema-issues.js";
 
 // Re-export types so consumers only need one import path.
@@ -50,7 +54,9 @@ const VALIDATORS: SpecValidator[] = [
   new FlowIntegrityValidator(),
   new FaceTablesValidator(),
   new ActorContextValidator(),
+  new MessageTemplateValidator(),
   new SpecVersionValidator(),
+  new UnusedContentValidator(),
 ];
 
 /**
@@ -68,13 +74,15 @@ export function validate(raw: unknown): import("./types.js").ValidationResult {
       message: issue.message,
       code: ValidationCode.Schema,
     }));
-    return { valid: false, errors };
+    return { valid: false, errors, warnings: [] };
   }
 
-  // Passes 2+: run all registered SpecValidators and collect every error.
-  const errors = VALIDATORS.flatMap((v) => v.validate(parsed.data));
-  if (errors.length > 0) return { valid: false, errors };
+  // Passes 2+: run all registered SpecValidators and collect every finding.
+  const findings = VALIDATORS.flatMap((v) => v.validate(parsed.data));
+  const errors = findings.filter((f) => f.severity !== "warning");
+  const warnings = findings.filter((f) => f.severity === "warning");
+  if (errors.length > 0) return { valid: false, errors, warnings };
 
-  return { valid: true, errors: [], spec: parsed.data as ModularGameSpec };
+  return { valid: true, errors: [], warnings, spec: parsed.data as ModularGameSpec };
 }
 

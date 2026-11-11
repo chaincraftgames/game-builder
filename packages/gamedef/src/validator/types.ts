@@ -17,7 +17,12 @@ export const ValidationCode = {
   FlowIntegrity: "flow-integrity",
   FaceTable: "face-table",
   ActorContext: "actor-context",
+  InvalidTemplateToken: "invalid-template-token",
   UnsupportedSpecVersion: "unsupported-spec-version",
+  UnusedEffect: "unused-effect",
+  UnusedAction: "unused-action",
+  UnboundPassive: "unbound-passive",
+  UnboundSlot: "unbound-slot",
 } as const;
 
 export type ValidationCode = (typeof ValidationCode)[keyof typeof ValidationCode];
@@ -29,6 +34,8 @@ export interface ValidationError {
   message: string;
   /** Machine-facing error class */
   code: ValidationCode;
+  /** Defaults to "error". A "warning" is reported in `ValidationResult.warnings` and never affects `valid`. */
+  severity?: "error" | "warning";
   /** For unresolved-ref errors: the ids that would have resolved. Sorted. */
   knownIds?: string[];
 }
@@ -36,6 +43,8 @@ export interface ValidationError {
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
+  /** Non-blocking findings (dead content), reported whether or not the spec is valid. */
+  warnings: ValidationError[];
   /** The parsed + coerced spec if schema validation passed, undefined otherwise */
   spec?: ModularGameSpec;
 }

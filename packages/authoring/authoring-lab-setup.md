@@ -6,7 +6,7 @@ creator's machine, not our dev monorepo.
 
 > **Status:** step 1 is in place: the `chaincraft` command (`init`, `validate`, `compile`) ships in
 > `@chaincraft/authoring` and is packed with the other tarballs by `npm run pack:packages`.
-> `playtest` and `docs` arrive in later steps.
+> `docs` is in place; `playtest` arrives in step 3.
 
 ---
 
@@ -167,11 +167,19 @@ chmod +x ~/cc-lab/new-run.sh
 
 Same opening prompt for every run (paste verbatim):
 
-> Read REQUEST.md and build the game it describes using ChainCraft. Use the `chaincraft`
-> commands to check your work. Stop when `chaincraft compile` passes, or when you are blocked
+> Read REQUEST.md and build the game it describes using ChainCraft. Use `npx chaincraft` commands to check your work. Stop when `chaincraft compile` passes, or when you are blocked
 > and need a decision from me.
 
-Until `chaincraft playtest` exists (step 2), record `playtest_passed` as `n/a` in `results.csv`.
+Until `chaincraft playtest` ships (step 3), record `playtest_passed` as `n/a`. `compiled`
+means the spec compiles, not that it plays; don't read it as "playable".
+
+**Run settings (record in `notes` or a column):** model (e.g. Sonnet 5.5), permission mode
+(auto), time box (45 minutes). Keep these fixed within a batch.
+
+**Reference-only arm:** the agent gets `chaincraft docs` and the shipped High Card example,
+and nothing else. The example stays in because without it the overall structure and the
+relationships between constructs are hard to convey. Expect the agent to copy from it
+(the Go Fish run copied `seedSource: fixed`), and read results with that in mind.
 
 Rules:
 - **One run at a time** — so usage counter deltas belong to a single run.
@@ -197,7 +205,7 @@ Rules:
 ```
 date,agent,model,plan_assumed,brief,scenario,engine_version,
 agent_requests,premium_requests,tokens_in,tokens_out,cost_usd,
-gate_calls,usage_errors,compiled,playtest_passed,interventions,wall_minutes,outcome,notes
+gate_calls,usage_errors,compiled,playtest_passed,warning_count,interventions,wall_minutes,outcome,notes
 ```
 - `gate_calls`: number of `validate` and `compile` entries in `.chaincraft/log.jsonl`.
   `init` and `help` are not gates (`help` is not logged at all).
@@ -206,6 +214,7 @@ gate_calls,usage_errors,compiled,playtest_passed,interventions,wall_minutes,outc
   numbers you assumed — plans change, so record what was true on the run date.
 - `scenario`: `create` or `edit`.
 - `outcome`: `pass` / `blocked` / `quota-exhausted` / `gave-up`.
+- `playtest_passed`: zero playtest errors; warnings are counted separately and are not a pass/fail gate.
 
 ```bash
 # gate_calls

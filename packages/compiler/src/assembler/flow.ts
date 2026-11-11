@@ -36,7 +36,9 @@ import type {
   EffectRef,
   WinConditionDef,
   GameSession,
+  PlayerStateBase,
 } from "@chaincraft/runtime";
+import { getPlayerState } from "@chaincraft/runtime";
 import { normalizeEffectList } from "#compiler/assembler/effects.js";
 import { compileFailure } from "#compiler/assembler/errors.js";
 import {
@@ -397,7 +399,7 @@ function assembleWinConditions(
             playerId: string,
           ) => {
             return Number(
-              _session.state.players[playerId]?.properties[key] ?? 0,
+              getPlayerState<PlayerStateBase & Record<string, unknown>>(_session, playerId)[key] ?? 0,
             );
           },
           order: wc.order ?? "highest",
@@ -485,4 +487,33 @@ export function assembleFlow(
   }
 
   return gameNode;
+}
+
+/**
+ * Maps each compiled flow node id to its spec path (`flow.root`,
+ * `flow.root.children[0].children[1]`). Never throws: unsupported nodes still get a path.
+ */
+export function flowNodePaths(
+  spec: ModularGameSpec,
+  specId: string,
+): Record<string, string> {
+  if (!spec.flow) return {};
+
+  const root = spec.flow.root as { children: GamedefFlowNode[] };
+  const idFor = createNodeIdFor(specId, root.children);
+  const paths: Record<string, string> = { [specId]: "flow.root" };
+
+  // Pre-order, like assembleFlowNode, so synthesized ids come out identical.
+  const walk = (nodes: GamedefFlowNode[], parentPath: string) => {
+    nodes.forEach((node, i) => {
+      const path = `${parentPath}.children[${i}]`;
+      paths[idFor(node)] = path;
+      if ("children" in node && Array.isArray(node.children)) {
+        walk(node.children, path);
+      }
+    });
+  };
+  walk(root.children, "flow.root");
+
+  return paths;
 }

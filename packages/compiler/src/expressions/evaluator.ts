@@ -114,6 +114,8 @@ function resolvePlayerPaths(
   throw new ExpressionError(
     `Unknown ${label} sub-path '${kind}'; expected 'property' or 'inventory'`,
     0,
+    undefined,
+    "expression-path-invalid",
   );
 }
 
@@ -131,6 +133,8 @@ function resolveRoot(
       throw new ExpressionError(
         `Unknown game sub-path '${kind}'; expected 'property' or 'inventory'`,
         0,
+        undefined,
+        "expression-path-invalid",
       );
     }
     case "actor": {
@@ -138,6 +142,8 @@ function resolveRoot(
         throw new ExpressionError(
           'Cannot resolve "actor" — no actorId in context',
           0,
+          undefined,
+          "expression-no-actor",
         );
       }
       const player = ctx.players[ctx.actorId];
@@ -145,6 +151,8 @@ function resolveRoot(
         throw new ExpressionError(
           `Actor '${ctx.actorId}' not found in players`,
           0,
+          undefined,
+          "expression-ref-missing",
         );
       }
       if (rest[0] === "id") return { base: { id: ctx.actorId }, skip: 0 }
@@ -156,11 +164,13 @@ function resolveRoot(
         throw new ExpressionError(
           '"player" requires boundPlayerId in context (quantifier or per-player filter)',
           0,
+          undefined,
+          "expression-unbound-root",
         );
       }
       const player = ctx.players[pid];
       if (!player) {
-        throw new ExpressionError(`Player '${pid}' not found in players`, 0);
+        throw new ExpressionError(`Player '${pid}' not found in players`, 0, undefined, "expression-ref-missing");
       }
       if (rest[0] === "id") return { base: { id: pid }, skip: 0 };
       return resolvePlayerPaths(player, "player", rest);
@@ -171,6 +181,8 @@ function resolveRoot(
         throw new ExpressionError(
           `Cannot resolve "${root}" — no action inputs in context`,
           0,
+          undefined,
+          "expression-unbound-root",
         );
       }
       return { base: ctx.params, skip: 0 };
@@ -180,17 +192,23 @@ function resolveRoot(
         throw new ExpressionError(
           '"source" requires sourcePieceId in context',
           0,
+          undefined,
+          "expression-source-invalid",
         );
       const sourcePiece = ctx.gamepieces[ctx.sourcePieceId];
       if (!sourcePiece)
         throw new ExpressionError(
           `Source piece '${ctx.sourcePieceId}' not found`,
           0,
+          undefined,
+          "expression-source-invalid",
         );
       if (rest[0] !== "property")
         throw new ExpressionError(
           `Unknown source sub-path '${rest[0]}'; expected 'property'`,
           0,
+          undefined,
+          "expression-path-invalid",
         );
       return { base: sourcePiece.properties, skip: 1 };
     }
@@ -199,17 +217,23 @@ function resolveRoot(
         throw new ExpressionError(
           '"target" requires targetPieceId in context',
           0,
+          undefined,
+          "expression-unbound-root",
         );
       const targetPiece = ctx.gamepieces[ctx.targetPieceId];
       if (!targetPiece)
         throw new ExpressionError(
           `Target piece '${ctx.targetPieceId}' not found`,
           0,
+          undefined,
+          "expression-ref-missing",
         );
       if (rest[0] !== "property")
         throw new ExpressionError(
           `Unknown target sub-path '${rest[0]}'; expected 'property'`,
           0,
+          undefined,
+          "expression-path-invalid",
         );
       return { base: targetPiece.properties, skip: 1 };
     }
@@ -219,10 +243,12 @@ function resolveRoot(
         throw new ExpressionError(
           '"piece" requires a bound piece in context (aggregator or piece filter)',
           0,
+          undefined,
+          "expression-unbound-root",
         );
       const piece = ctx.gamepieces[pieceId];
       if (!piece)
-        throw new ExpressionError(`Piece '${pieceId}' not found`, 0);
+        throw new ExpressionError(`Piece '${pieceId}' not found`, 0, undefined, "expression-ref-missing");
       if (rest[0] === "property") return { base: piece.properties, skip: 1 };
       if (rest[0] === "id") return { base: { id: pieceId }, skip: 0 };
       return { base: piece, skip: 0 };
@@ -232,6 +258,8 @@ function resolveRoot(
         throw new ExpressionError(
           '"trigger" requires trigger in context (passive effects only)',
           0,
+          undefined,
+          "expression-unbound-root",
         );
       return { base: ctx.trigger, skip: 0 };
     }
@@ -239,6 +267,8 @@ function resolveRoot(
       throw new ExpressionError(
         `Unknown path root '${root}'; expected 'game', 'actor', 'player', 'input', 'source', 'target', 'piece', or 'trigger'`,
         0,
+        undefined,
+        "expression-unbound-root",
       );
   }
 }

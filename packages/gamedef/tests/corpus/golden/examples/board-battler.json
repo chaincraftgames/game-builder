@@ -567,14 +567,7 @@
             "rule": "ranking",
             "property": "player.property.life",
             "order": "highest",
-            "tiebreak": "all-win",
-            "onVictory": [
-              {
-                "effect": "message",
-                "to": "all",
-                "template": "{{game.winners[0]}} wins with the most life remaining."
-              }
-            ]
+            "tiebreak": "all-win"
           }
         ]
       }

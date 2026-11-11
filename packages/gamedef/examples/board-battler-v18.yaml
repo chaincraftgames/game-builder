@@ -818,10 +818,6 @@ flow:
         order: highest
         # v10: both at 0 at the same check means nobody survived, so nobody wins.
         tiebreak: no-winner
-        onVictory:
-          - effect: message
-            to: all
-            template: "{{game.winners[0]}} wins with the most life remaining."
     children:
       - kind: turn
         id: seating
