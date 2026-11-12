@@ -27,7 +27,7 @@
                 "max": 6
               },
               "mutable": false,
-              "visibility": "revealed"
+              "visibility": "always"
             }
           ],
           "hasFaceState": false,

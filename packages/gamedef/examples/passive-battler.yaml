@@ -373,7 +373,7 @@ gamepieceTypes:
             min: 0
             max: 9
           mutable: false
-          visibility: revealed
+          visibility: always
         - id: bleed
           label: Bleed
           type:
@@ -381,13 +381,13 @@ gamepieceTypes:
             min: 0
             max: 9
           mutable: false
-          visibility: revealed
+          visibility: always
         - id: className
           label: Class
           type:
             kind: string
           mutable: false
-          visibility: revealed
+          visibility: always
 
 # ---------------------------------------------------------------------------
 # INVENTORIES

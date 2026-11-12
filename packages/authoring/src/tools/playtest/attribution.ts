@@ -32,7 +32,7 @@ export interface Attribution {
   faultCode?: FaultCode;
 }
 
-const ENGINE_HINT =
+export const ENGINE_HINT =
   "This is an engine bug, not your spec. Report it with the repro; don't change the spec to work around it.";
 
 const ACTOR_HINT_TAIL = "ran from a flow hook, where there is no acting player.";
@@ -109,10 +109,15 @@ export const UNCLASSIFIED: Attribution = {
   hint: "Unrecognized runtime error. It may come from the spec or the engine; include the repro if you report it.",
 };
 
+/** Also matches an IllegalActionError from another copy of the runtime. */
+export function isIllegalActionError(error: unknown): error is IllegalActionError {
+  return error instanceof IllegalActionError || (error instanceof Error && error.name === "IllegalActionError");
+}
+
 /** Classifies an error thrown while a playtest game runs. */
 export function attributeError(error: unknown): Attribution {
   // The driver retries rejected generated values itself; an uncaught one means an offered value was rejected.
-  if (error instanceof IllegalActionError || (error instanceof Error && error.name === "IllegalActionError")) {
+  if (isIllegalActionError(error)) {
     return { category: "engine", code: "engine-error", hint: ENGINE_HINT };
   }
   if (!isGameRuntimeError(error)) return UNCLASSIFIED;

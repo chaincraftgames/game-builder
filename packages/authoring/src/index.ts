@@ -12,3 +12,5 @@ export { init, InitConflictError } from "./tools/init.js";
 export type { InitOptions, InitResult } from "./tools/init.js";
 export { docs } from "./tools/docs.js";
 export type { DocsOptions, DocsResult } from "./tools/docs.js";
+export { playtest, PlaytestUsageError } from "./tools/playtest.js";
+export type { PlaytestOptions, PlaytestResult } from "./tools/playtest.js";

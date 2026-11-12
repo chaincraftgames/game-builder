@@ -144,7 +144,7 @@ function assembleGamepieces(spec: ModularGameSpec): Record<string, Gamepiece> {
         typeId: entry.typeId,
         ownerId: "",
         properties,
-        faceUp: false,
+        faceUp: !typeDef?.hasFaceState,
         exhausted: false,
         visibleTo: null,
       };

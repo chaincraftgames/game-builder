@@ -3,14 +3,15 @@ import {
   CompileError,
   ExpressionError,
 } from "@chaincraft/compiler";
-import type { FlowNode } from "@chaincraft/runtime";
+import type { ModularGameSpec } from "@chaincraft/gamedef";
+import type { CompiledGameModule, FlowNode } from "@chaincraft/runtime";
 import {
   AuthoringCode,
   mapFile,
   type Diagnostic,
 } from "#authoring/diagnostics.js";
-import { readManifest } from "../project.js";
-import { validate } from "./validate.js";
+import { readManifest } from "#authoring/project.js";
+import { validate } from "#authoring/tools/validate.js";
 
 /** Size of a successfully compiled module. */
 export interface CompileSummary {
@@ -27,6 +28,12 @@ export interface CompileResult {
   diagnostics: Diagnostic[];
   /** Only present when `ok` is true. */
   summary?: CompileSummary;
+  /** The assembled module; only present when `ok` is true. */
+  module?: CompiledGameModule;
+  /** The validated spec the module was assembled from; only present when `ok` is true. */
+  spec?: ModularGameSpec;
+  /** Module key to project-relative file; only present when `ok` is true. */
+  moduleFiles?: Record<string, string>;
 }
 
 /** Counts `node` and all of its descendants. */
@@ -58,6 +65,9 @@ export function compile(root: string): CompileResult {
         effectDefs: Object.keys(module.effectDefs).length,
         flowNodes: countFlowNodes(module.flow),
       },
+      module,
+      spec: validation.spec,
+      moduleFiles: validation.moduleFiles ?? {},
     };
   } catch (err) {
     if (err instanceof CompileError) {

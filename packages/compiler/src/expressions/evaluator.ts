@@ -251,7 +251,15 @@ function resolveRoot(
         throw new ExpressionError(`Piece '${pieceId}' not found`, 0, undefined, "expression-ref-missing");
       if (rest[0] === "property") return { base: piece.properties, skip: 1 };
       if (rest[0] === "id") return { base: { id: pieceId }, skip: 0 };
-      return { base: piece, skip: 0 };
+      // The context holds the live piece, so expose only the documented fields.
+      if (rest[0] === "typeId" || rest[0] === "faceUp" || rest[0] === "faceValue")
+        return { base: piece, skip: 0 };
+      throw new ExpressionError(
+        `Unknown piece sub-path '${rest[0]}'; expected 'id', 'property', 'typeId', 'faceUp' or 'faceValue'`,
+        0,
+        undefined,
+        "expression-path-invalid",
+      );
     }
     case "trigger": {
       if (!ctx.trigger)

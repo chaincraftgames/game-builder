@@ -23,20 +23,13 @@ export function sessionToEvalContext(
   const players: EvalContext["players"] = {};
   for (const pid of session.players) {
     const ps = session.state.players[pid];
+    let properties: Record<string, unknown> | undefined;
     players[pid] = {
-      // The accessor overlays computed properties, which are never stored.
-      properties: getPlayerState<PlayerStateBase & Record<string, unknown>>(session, pid),
+      // Computed properties are overlaid on first read; most predicates touch one or two players.
+      get properties() {
+        return (properties ??= getPlayerState<PlayerStateBase & Record<string, unknown>>(session, pid));
+      },
       inventories: ps.inventories,
-    };
-  }
-
-  const gamepieces: EvalContext["gamepieces"] = {};
-  for (const [id, gp] of Object.entries(session.state.gamepieces)) {
-    gamepieces[id] = {
-      typeId: gp.typeId,
-      properties: gp.properties,
-      faceUp: gp.faceUp,
-      faceValue: gp.faceValue,
     };
   }
 
@@ -44,7 +37,8 @@ export function sessionToEvalContext(
     gameProperties: getGameState<GameStateBase & Record<string, unknown>>(session),
     gameInventories: session.state.gameInventories,
     players,
-    gamepieces,
+    // The live record: no copy, so property and face changes are always current.
+    gamepieces: session.state.gamepieces,
     playerIds: session.players,
     actorId,
     params,

@@ -1,0 +1,55 @@
+# Fixture: playtest-unsupported (input). No generated value can satisfy the input's validation.
+metadata:
+  name: Unsupported Input
+  playerCount:
+    min: 2
+    max: 2
+
+state:
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 100
+        default: 0
+        description: Points scored.
+
+actions:
+  actions:
+    - id: bid
+      label: Bid
+      description: Bid an amount above 1000.
+      steps:
+        - input: amount
+          label: Amount
+          type:
+            kind: number
+            min: 1
+            max: 100
+          validation: "input.amount > 1000"
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+
+flow:
+  root:
+    kind: game
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        count: 1
+        children:
+          - kind: turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: bid

@@ -1,0 +1,46 @@
+# Fixture: playtest-unsupported (custom effect). Playtest registers no handler for custom effects.
+metadata:
+  name: Unsupported Custom
+  playerCount:
+    min: 2
+    max: 2
+
+state:
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 100
+        default: 0
+        description: Points scored.
+
+actions:
+  actions:
+    - id: gainPoint
+      label: Gain a point
+      description: Score points through a custom effect.
+      steps:
+        - effect: custom
+          description: Add one to the acting player's score.
+
+flow:
+  root:
+    kind: game
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        count: 1
+        children:
+          - kind: turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: gainPoint

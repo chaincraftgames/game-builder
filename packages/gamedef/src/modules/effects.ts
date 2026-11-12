@@ -655,7 +655,8 @@ export const MoveEffectSchema = z
 
 /**
  * Change the face state of one or more pieces.
- * Only meaningful for gamepiece types where hasFaceState is true (e.g. cards).
+ * Only meaningful for gamepiece types where hasFaceState is true (e.g. cards); a flip that can
+ * only reach types without face state is a validation error, and the engine skips such pieces.
  * For temporary visibility overrides without changing face state, use 'reveal'/'hide'.
  *
  * @example Reveal all cards in the combat zone

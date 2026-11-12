@@ -293,3 +293,103 @@ describe("validate / compile", () => {
     expect(typeof lines[3].durationMs).toBe("number");
   });
 });
+
+describe("playtest", () => {
+  beforeEach(() => {
+    cc(["init"]);
+    writeSpec();
+  });
+
+  it.each([
+    [["--games", "101"], "--games must be <= 100"],
+    [["--games", "0"], "--games must be an integer >= 1"],
+    [["--games", "x"], "--games must be an integer"],
+    [["--max-decisions", "10001"], "--max-decisions must be <= 10000"],
+    [["--seed=-1"], "--seed must be an integer"],
+    [["--players", "2,x"], "--players must be an integer"],
+    [["--players", "3"], "outside the spec's range 2-2"],
+    [["--replay", "bogus"], "malformed repro token"],
+    [["--replay", "p3-s1-g0"], "outside the spec's range 2-2"],
+    [["--replay", "p2-s1-g0", "--games", "3"], "--games can't be combined with --replay"],
+    [["--replay", "p2-s1-g0", "--seed", "3"], "--seed can't be combined with --replay"],
+    [["--draft"], "--draft is only valid for validate"],
+  ])("%j exits 2 naming the problem", (args, message) => {
+    const r = cc(["playtest", ...args]);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain(message);
+    expect(logLines().at(-1)).toMatchObject({ command: "playtest", exitCode: 2 });
+  });
+
+  it("rejects playtest flags on other commands", () => {
+    const r = cc(["validate", "--games", "3"]);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("--games is only valid for playtest");
+  });
+
+  it("accepts the caps", () => {
+    expect(cc(["playtest", "--games", "1", "--max-decisions", "10000"]).status).toBe(0);
+  });
+
+  it("plays the default games and exits 0 with a summary", () => {
+    const r = cc(["playtest"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("seed 1");
+    expect(r.stdout).toMatch(/2 players: 20 games \(20 completed, 0 crashed, 0 hit the decision limit\)/);
+    expect(r.stdout).toMatch(/\n\nOK/);
+  });
+
+  it("--json has { ok, diagnostics, summary } and is deterministic", () => {
+    const args = ["playtest", "--games", "5", "--seed", "7", "--json"];
+    const first = cc(args);
+    const out = JSON.parse(first.stdout);
+    expect(out).toMatchObject({ command: "playtest", ok: true, diagnostics: [] });
+    expect(out.summary.seed).toBe(7);
+    expect(out.summary.playerCounts).toEqual([expect.objectContaining({ playerCount: 2, games: 5 })]);
+    expect(out.replay).toBeUndefined();
+    expect(cc(args).stdout).toBe(first.stdout);
+  });
+
+  it("a compile error is printed with exit 1 and no summary", () => {
+    writeSpec((spec) => {
+      (spec.flow as Record<string, unknown>).bogusKey = 1;
+    });
+    const r = cc(["playtest", "--json"]);
+    expect(r.status).toBe(1);
+    const out = JSON.parse(r.stdout);
+    expect(out.ok).toBe(false);
+    expect(out.summary).toBeUndefined();
+    expect(out.diagnostics[0]).toMatchObject({ severity: "error", code: "schema" });
+  });
+
+  it("a playtest error exits 1 with its repro, and --replay reproduces it", () => {
+    writeSpec((spec) => {
+      delete (spec as Record<string, unknown>).catalog;
+    });
+    const run = JSON.parse(cc(["playtest", "--games", "3", "--json"]).stdout);
+    expect(run.ok).toBe(false);
+    const finding = run.diagnostics.find((d: { repro?: string }) => d.repro !== undefined);
+    expect(finding).toMatchObject({ severity: "error" });
+
+    const replay = cc(["playtest", "--replay", finding.repro, "--json"]);
+    expect(replay.status).toBe(1);
+    const out = JSON.parse(replay.stdout);
+    expect(out.replay.repro).toBe(finding.repro);
+    expect(out.replay.transcript.length).toBeGreaterThan(0);
+    expect(out.diagnostics.map((d: { code: string }) => d.code)).toContain(finding.code);
+  });
+
+  it("--replay of a clean game prints the transcript before the summary and exits 0", () => {
+    const r = cc(["playtest", "--replay", "p2-s1-g0"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("replay p2-s1-g0");
+    expect(r.stdout.indexOf("replay p2-s1-g0")).toBeLessThan(r.stdout.indexOf("seed 1"));
+    expect(r.stdout).toContain("game complete");
+  });
+
+  it("logs the summary and distinct codes to the trace", () => {
+    cc(["playtest", "--games", "2"]);
+    const last = logLines().at(-1)!;
+    expect(last).toMatchObject({ command: "playtest", exitCode: 0, counts: { errors: 0 }, codes: [] });
+    expect(last.summary).toMatchObject({ seed: 1, playerCounts: [expect.objectContaining({ games: 2 })] });
+  });
+});

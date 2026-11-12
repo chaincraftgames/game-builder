@@ -81,13 +81,27 @@ function classifyCollection(
   );
 }
 
-function itemContexts(c: CollectionType, ctx: EvalContext): EvalContext[] {
-  return c.kind === "players"
-    ? ctx.playerIds.map((pid) => ({ ...ctx, boundPlayerId: pid }))
-    : inventoryPieceIds(c.invFn(ctx)).map((id) => ({
-        ...ctx,
-        boundPieceId: id,
-      }));
+/**
+ * Calls `visit` with the context bound to each item; `visit` returns true to stop early.
+ * One child context is reused and rebound per item, so `visit` must not retain it.
+ */
+function forEachItem(
+  c: CollectionType,
+  ctx: EvalContext,
+  visit: (item: EvalContext) => boolean,
+): void {
+  const item: EvalContext = { ...ctx };
+  if (c.kind === "players") {
+    for (const pid of ctx.playerIds) {
+      item.boundPlayerId = pid;
+      if (visit(item)) return;
+    }
+    return;
+  }
+  for (const id of inventoryPieceIds(c.invFn(ctx))) {
+    item.boundPieceId = id;
+    if (visit(item)) return;
+  }
 }
 
 function inventoryPieceIds(inv: unknown): string[] {
@@ -106,9 +120,12 @@ function selectItems(
   c: CollectionType,
   filterFn: InternalFn | undefined,
   ctx: EvalContext,
-): EvalContext[] {
-  const items = itemContexts(c, ctx);
-  return filterFn ? items.filter((i) => Boolean(filterFn(i))) : items;
+  visit: (item: EvalContext) => void,
+): void {
+  forEachItem(c, ctx, (item) => {
+    if (!filterFn || filterFn(item)) visit(item);
+    return false;
+  });
 }
 
 const AGGREGATOR_ARITY: Record<string, [min: number, max: number]> = {
@@ -152,26 +169,38 @@ function compileAggregator(
   switch (fn) {
     case "count": {
       const filterFn = args.length > 1 ? compile(args[1]) : undefined;
-      return (ctx) => selectItems(collection, filterFn, ctx).length;
+      return (ctx) => {
+        let n = 0;
+        selectItems(collection, filterFn, ctx, () => void n++);
+        return n;
+      };
     }
     case "sum": {
       const valueFn = compile(args[1]);
       const filterFn = args.length > 2 ? compile(args[2]) : undefined;
-      return (ctx) =>
-        selectItems(collection, filterFn, ctx).reduce(
-          (acc, item) => acc + toFiniteNumber(valueFn(item)),
-          0,
-        );
+      return (ctx) => {
+        let total = 0;
+        selectItems(collection, filterFn, ctx, (item) => {
+          total += toFiniteNumber(valueFn(item));
+        });
+        return total;
+      };
     }
     case "all": {
       const predicateFn = compile(args[1]);
-      return (ctx) =>
-        itemContexts(collection, ctx).every((item) => Boolean(predicateFn(item)));
+      return (ctx) => {
+        let result = true;
+        forEachItem(collection, ctx, (item) => (result = Boolean(predicateFn(item))) === false);
+        return result;
+      };
     }
     case "any": {
       const predicateFn = compile(args[1]);
-      return (ctx) =>
-        itemContexts(collection, ctx).some((item) => Boolean(predicateFn(item)));
+      return (ctx) => {
+        let result = false;
+        forEachItem(collection, ctx, (item) => (result = Boolean(predicateFn(item))));
+        return result;
+      };
     }
     default:
       throw new ExpressionError(`Unknown aggregator function '${fn}'`, 0);

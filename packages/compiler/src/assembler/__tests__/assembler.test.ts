@@ -99,7 +99,7 @@ describe('assembleConfig — High Card', () => {
     expect(config.gamepieceTypes.card).toEqual({
       category: 'card',
       properties: {
-        value: { mutable: false, visibility: 'revealed', min: 1, max: 6 },
+        value: { mutable: false, visibility: 'always', min: 1, max: 6 },
       },
     });
   });
@@ -133,11 +133,19 @@ describe('assembleInitialState — High Card', () => {
         typeId: 'card',
         ownerId: '',
         properties: { value },
-        faceUp: false,
+        faceUp: true,
         exhausted: false,
         visibleTo: null,
       });
     }
+  });
+
+  it('starts pieces face-down only when their type has face state', () => {
+    const faceStateSpec = structuredClone(spec);
+    faceStateSpec.gamepieceTypes!.types[0].hasFaceState = true;
+    const faceStateState = assembleInitialState(faceStateSpec, assembleConfig(faceStateSpec), players);
+    expect(faceStateState.gamepieces.card1.faceUp).toBe(false);
+    expect(state.gamepieces.card1.faceUp).toBe(true);
   });
 
   it('places all pieces in game:unassigned, not the declared inventories', () => {

@@ -16,6 +16,7 @@ export const ValidationCode = {
   DuplicateId: "duplicate-id",
   FlowIntegrity: "flow-integrity",
   FaceTable: "face-table",
+  FaceState: "face-state",
   ActorContext: "actor-context",
   InvalidTemplateToken: "invalid-template-token",
   UnsupportedSpecVersion: "unsupported-spec-version",

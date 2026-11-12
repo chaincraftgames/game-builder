@@ -16,6 +16,7 @@
  *   7. MessageTemplate    — message templates may only use tokens the runtime resolves
  *   8. SpecVersion        — metadata.specVersion must not exceed CURRENT_SPEC_VERSION
  *   9. UnusedContent      — warnings for effects, actions and passives nothing references
+ * 10. FaceState          — revealed properties and flip effects need a type with hasFaceState
  *
  * Usage:
  *   import { validate } from "@chaincraft/gamedef/validator";
@@ -35,6 +36,7 @@ import { ActorContextValidator } from "#gamedef/validator/validators/actor-conte
 import { MessageTemplateValidator } from "#gamedef/validator/validators/message-template.js";
 import { SpecVersionValidator } from "#gamedef/validator/validators/spec-version.js";
 import { UnusedContentValidator } from "#gamedef/validator/validators/unused-content.js";
+import { FaceStateValidator } from "#gamedef/validator/validators/face-state.js";
 import { schemaIssues } from "#gamedef/validator/schema-issues.js";
 
 // Re-export types so consumers only need one import path.
@@ -57,6 +59,7 @@ const VALIDATORS: SpecValidator[] = [
   new MessageTemplateValidator(),
   new SpecVersionValidator(),
   new UnusedContentValidator(),
+  new FaceStateValidator(),
 ];
 
 /**

@@ -1,0 +1,62 @@
+# Fixture: playtest-spec-error. A hook targets the player named by a property that never holds a player id.
+metadata:
+  name: Spec Error
+  playerCount:
+    min: 2
+    max: 2
+
+state:
+  game:
+    properties:
+      - id: leader
+        type:
+          kind: string
+        default: ""
+        description: Meant to hold a player id; never set.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 100
+        default: 0
+        description: Points scored.
+
+actions:
+  actions:
+    - id: gainPoint
+      label: Gain a point
+      description: Score one point.
+      steps:
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+
+flow:
+  root:
+    kind: game
+    hooks:
+      onEnter:
+        - effect: set-state
+          path: player.property.score
+          value: 5
+          target:
+            stateRef: game.property.leader
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        count: 1
+        children:
+          - kind: turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: gainPoint

@@ -667,7 +667,7 @@ gamepieceTypes:
           label: Value
           type: { kind: enum, values: [a, b, c] }
           mutable: false
-          visibility: revealed
+          visibility: always
 inventories:
   types:
     - id: hand

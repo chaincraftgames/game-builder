@@ -20,6 +20,15 @@ import {
 import { compile, type CompileSummary } from "#authoring/tools/compile.js";
 import { docs } from "#authoring/tools/docs.js";
 import { init, InitConflictError } from "#authoring/tools/init.js";
+import {
+  MAX_DECISIONS_LIMIT,
+  MAX_GAMES,
+  playtest,
+  PlaytestUsageError,
+  type PlaytestOptions,
+} from "#authoring/tools/playtest.js";
+import type { PlaytestSummary } from "#authoring/tools/playtest/report.js";
+import { formatReplay, formatSummary } from "#authoring/tools/playtest/text.js";
 import { validate } from "#authoring/tools/validate.js";
 import { appendTrace } from "#authoring/trace.js";
 import { getVersions, type Versions } from "#authoring/versions.js";
@@ -31,6 +40,11 @@ interface Outcome {
   diagnostics: Diagnostic[];
   /** Compile only, on success. */
   summary?: CompileSummary;
+  /** Playtest only, once the spec compiled. */
+  playtest?: {
+    summary: PlaytestSummary;
+    replay?: { repro: string; transcript: string[] };
+  };
   /** Init only, on success; project-relative targets. */
   created?: string[];
   /** Docs only, on success. */
@@ -47,8 +61,68 @@ function parse(argv: string[]) {
       json: { type: "boolean" },
       draft: { type: "boolean" },
       version: { type: "boolean" },
+      games: { type: "string" },
+      seed: { type: "string" },
+      players: { type: "string" },
+      "max-decisions": { type: "string" },
+      replay: { type: "string" },
     },
   });
+}
+
+/** Thrown for a flag value or combination the CLI rejects; reported as exit code 2. */
+class UsageError extends Error {}
+
+/** Parses a base-10 integer flag value within `[min, max]`. */
+function intFlag(
+  name: string,
+  raw: string,
+  min: number,
+  max = Infinity,
+): number {
+  const value = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(value) || value < min)
+    throw new UsageError(
+      `--${name} must be an integer >= ${min}, got "${raw}"`,
+    );
+  if (value > max)
+    throw new UsageError(`--${name} must be <= ${max}, got ${value}`);
+  return value;
+}
+
+/** Converts the playtest flags into tool options, rejecting values over the caps and invalid combinations. */
+function playtestOptions(
+  values: ReturnType<typeof parse>["values"],
+): PlaytestOptions {
+  const options: PlaytestOptions = {};
+  if (values.replay !== undefined) {
+    for (const name of ["games", "seed", "players"] as const) {
+      if (values[name] !== undefined)
+        throw new UsageError(
+          `--${name} can't be combined with --replay (the token carries the seed and player count)`,
+        );
+    }
+    options.replay = values.replay;
+  }
+  if (values.games !== undefined)
+    options.games = intFlag("games", values.games, 1, MAX_GAMES);
+  if (values.seed !== undefined) options.seed = intFlag("seed", values.seed, 0);
+  if (values.players !== undefined)
+    options.playerCounts = [
+      ...new Set(
+        values.players
+          .split(",")
+          .map((part) => intFlag("players", part.trim(), 1)),
+      ),
+    ];
+  if (values["max-decisions"] !== undefined)
+    options.maxDecisions = intFlag(
+      "max-decisions",
+      values["max-decisions"],
+      1,
+      MAX_DECISIONS_LIMIT,
+    );
+  return options;
 }
 
 /** First line of every text output, also printed by `--version`. */
@@ -84,7 +158,10 @@ function formatText(outcome: Outcome, versions: Versions): string {
   const blocks = [headerLine(versions)];
   if (outcome.created)
     blocks.push(outcome.created.map((p) => `  created ${p}`).join("\n"));
+  if (outcome.playtest?.replay)
+    blocks.push(formatReplay(outcome.playtest.replay));
   blocks.push(...sortDiagnostics(outcome.diagnostics).map(formatDiagnostic));
+  if (outcome.playtest) blocks.push(formatSummary(outcome.playtest.summary));
 
   const { errors, warnings, todos } = countDiagnostics(outcome.diagnostics);
   /** Formats a count with a naive English plural, e.g. "1 error", "2 errors". */
@@ -97,7 +174,11 @@ function formatText(outcome: Outcome, versions: Versions): string {
       : "OK";
     blocks.push(warnings > 0 ? `${ok}, ${plural(warnings, "warning")}` : ok);
   } else {
-    const counts = [plural(errors, "error"), ...(warnings > 0 ? [plural(warnings, "warning")] : []), plural(todos, "todo")];
+    const counts = [
+      plural(errors, "error"),
+      ...(warnings > 0 ? [plural(warnings, "warning")] : []),
+      plural(todos, "todo"),
+    ];
     blocks.push(counts.join(", "));
     const pointer = schemaPointer(outcome.diagnostics, moduleKeys());
     if (pointer) blocks.push(pointer);
@@ -143,6 +224,27 @@ function runInit(
   }
 }
 
+/** Reads the manifest; on failure returns the outcome that reports it. */
+function checkManifest(
+  root: string,
+  versions: Versions,
+): { warning?: string; failure?: Outcome } {
+  let manifest: Manifest;
+  try {
+    manifest = readManifest(root);
+  } catch (err) {
+    if (!(err instanceof ManifestError)) throw err;
+    const diagnostic: Diagnostic = {
+      severity: "error",
+      code: AuthoringCode.InvalidManifest,
+      message: err.message,
+      file: MANIFEST_FILE,
+    };
+    return { failure: { ok: false, diagnostics: [diagnostic] } };
+  }
+  return { warning: pinWarning(manifest, versions) };
+}
+
 /**
  * Runs `validate` or `compile` in the project at `root`; an invalid manifest becomes a diagnostic.
  *
@@ -155,20 +257,8 @@ function runProjectCommand(
   draft: boolean,
   versions: Versions,
 ): { outcome: Outcome; warning?: string } {
-  let manifest: Manifest;
-  try {
-    manifest = readManifest(root);
-  } catch (err) {
-    if (!(err instanceof ManifestError)) throw err;
-    const diagnostic: Diagnostic = {
-      severity: "error",
-      code: AuthoringCode.InvalidManifest,
-      message: err.message,
-      file: MANIFEST_FILE,
-    };
-    return { outcome: { ok: false, diagnostics: [diagnostic] } };
-  }
-  const warning = pinWarning(manifest, versions);
+  const { warning, failure } = checkManifest(root, versions);
+  if (failure) return { outcome: failure };
   if (command === "validate") {
     const { ok, diagnostics } = validate(root, { draft });
     return { outcome: { ok, diagnostics }, warning };
@@ -181,13 +271,38 @@ function runProjectCommand(
 }
 
 /**
+ * Runs `playtest` in the project at `root`; an invalid manifest becomes a diagnostic.
+ *
+ * @throws {PlaytestUsageError} For a replay token or player count the project can't honor.
+ */
+async function runPlaytest(
+  root: string,
+  options: PlaytestOptions,
+  versions: Versions,
+): Promise<{ outcome: Outcome; warning?: string }> {
+  const { warning, failure } = checkManifest(root, versions);
+  if (failure) return { outcome: failure };
+  const { ok, diagnostics, summary, replay } = await playtest(root, options);
+  return {
+    outcome: {
+      ok,
+      diagnostics,
+      ...(summary
+        ? { playtest: { summary, ...(replay ? { replay } : {}) } }
+        : {}),
+    },
+    warning,
+  };
+}
+
+/**
  * Runs one CLI invocation: parses `argv`, executes the command, prints, and appends a trace entry.
  *
  * @param argv - Arguments after the executable, e.g. `["validate", "--draft"]`.
  * @param cwd - Working directory.
  * @returns Exit code: 0 ok, 1 errors, 2 usage error.
  */
-function main(argv: string[], cwd: string): number {
+async function main(argv: string[], cwd: string): Promise<number> {
   /** Epoch ms, for `durationMs` in the trace. */
   const started = Date.now();
   const versions = getVersions();
@@ -200,6 +315,7 @@ function main(argv: string[], cwd: string): number {
     command: string,
     exitCode: number,
     diagnostics: Diagnostic[],
+    summary?: PlaytestSummary,
   ) => {
     if (!traceRoot) return;
     appendTrace(traceRoot, {
@@ -210,6 +326,8 @@ function main(argv: string[], cwd: string): number {
       durationMs: Date.now() - started,
       exitCode,
       counts: countDiagnostics(diagnostics),
+      codes: [...new Set(diagnostics.map((d) => d.code))],
+      ...(summary ? { summary } : {}),
       diagnostics,
     });
   };
@@ -247,7 +365,18 @@ function main(argv: string[], cwd: string): number {
   }
   if (values.draft && command !== "validate")
     return usageError("--draft is only valid for validate", command);
-
+  if (command !== "playtest") {
+    for (const flag of [
+      "games",
+      "seed",
+      "players",
+      "max-decisions",
+      "replay",
+    ] as const) {
+      if (values[flag] !== undefined)
+        return usageError(`--${flag} is only valid for playtest`, command);
+    }
+  }
   if (command === "help") {
     console.log(USAGE);
     return 0;
@@ -268,6 +397,18 @@ function main(argv: string[], cwd: string): number {
       "Not a ChainCraft project (no chaincraft.yaml found). Run chaincraft init.",
     );
     return 1;
+  } else if (command === "playtest") {
+    try {
+      ({ outcome, warning } = await runPlaytest(
+        root,
+        playtestOptions(values),
+        versions,
+      ));
+    } catch (err) {
+      if (err instanceof UsageError || err instanceof PlaytestUsageError)
+        return usageError(err.message, command);
+      throw err;
+    }
   } else {
     ({ outcome, warning } = runProjectCommand(
       command,
@@ -279,7 +420,16 @@ function main(argv: string[], cwd: string): number {
 
   if (warning) console.error(warning);
   if (values.json) {
-    console.log(JSON.stringify({ command, ...outcome, versions }, null, 2));
+    const { playtest: run, ...rest } = outcome;
+    const payload = run
+      ? {
+          command,
+          ...rest,
+          summary: run.summary,
+          ...(run.replay ? { replay: run.replay } : {}),
+        }
+      : { command, ...rest };
+    console.log(JSON.stringify({ ...payload, versions }, null, 2));
   } else {
     console.log(
       command === "docs"
@@ -290,8 +440,16 @@ function main(argv: string[], cwd: string): number {
 
   /** 0 when `outcome.ok` (todos allowed), else 1. */
   const exitCode = outcome.ok ? 0 : 1;
-  trace(traceRoot, command, exitCode, outcome.diagnostics);
+  trace(
+    traceRoot,
+    command,
+    exitCode,
+    outcome.diagnostics,
+    outcome.playtest?.summary,
+  );
   return exitCode;
 }
 
-process.exitCode = main(process.argv.slice(2), process.cwd());
+main(process.argv.slice(2), process.cwd()).then((code) => {
+  process.exitCode = code;
+});

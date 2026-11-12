@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Diagnostic } from "./diagnostics.js";
-import type { Versions } from "./versions.js";
+import type { Diagnostic } from "#authoring/diagnostics.js";
+import type { Versions } from "#authoring/versions.js";
 
 /** Project-relative directory for local, git-ignored tool state. */
 export const TRACE_DIR = ".chaincraft";
@@ -16,6 +16,10 @@ export interface TraceEntry {
   durationMs: number;
   exitCode: number;
   counts: { errors: number; warnings: number; todos: number };
+  /** Distinct diagnostic codes, in first-seen order. */
+  codes: string[];
+  /** Playtest only: the run summary. */
+  summary?: unknown;
   diagnostics: Diagnostic[];
 }
 

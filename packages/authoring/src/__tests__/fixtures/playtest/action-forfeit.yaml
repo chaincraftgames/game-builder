@@ -1,0 +1,59 @@
+# Fixture: action-forfeit. After the action's first effect ran, its player-select has nobody to choose.
+metadata:
+  name: Action Forfeit
+  playerCount:
+    min: 2
+    max: 2
+
+state:
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 100
+        default: 0
+        description: Points scored.
+
+actions:
+  actions:
+    - id: gainThenTarget
+      label: Gain a point, then pick a rival
+      description: Score a point, then choose a player whose score exceeds 100 (nobody can) and give them a point.
+      steps:
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+        - input: rival
+          label: Rival
+          type:
+            kind: player-select
+            filter: "player.property.score > 100"
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+          target:
+            param: rival
+
+flow:
+  root:
+    kind: game
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        count: 1
+        children:
+          - kind: turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: gainThenTarget

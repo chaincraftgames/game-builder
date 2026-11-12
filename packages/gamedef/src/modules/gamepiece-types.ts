@@ -80,7 +80,8 @@ export const PropertyVisibilitySchema = z
     "Controls when and to whom a property's value is shown. " +
       "'always': visible to all players regardless of the piece's face state " +
       "(e.g., card-back info like set symbol or card type). " +
-      "'revealed': visible to all when the piece is face-up or revealed; hidden when face-down " +
+      "'revealed': visible to all when the piece is face-up or revealed to the viewer by a reveal effect; " +
+      "hidden otherwise. Only for types with hasFaceState: true (a type without it is always face-up) " +
       "(e.g., a card's attack power). " +
       "'owner': visible only to the player who controls or owns this piece. " +
       "'never': engine-tracked but never displayed to any player " +
@@ -423,6 +424,9 @@ export const GamepieceTypeSchema = z
         "Whether instances have a face-up/face-down state. " +
           "When true, the engine tracks it as a built-in property, flipping means reveal/hide, " +
           "and properties with 'visibility: revealed' are hidden while face-down. " +
+          "When false (default), instances are always face-up, cannot be flipped, " +
+          "and 'visibility: revealed' is not allowed on their properties. " +
+          "To hide pieces from other players, use the inventory's visibility instead. " +
           "Typically true for cards, tiles and tokens with hidden state (e.g., hidden roles); " +
           "false for boards and dice.",
       ),
@@ -431,9 +435,7 @@ export const GamepieceTypeSchema = z
       .default(false)
       .describe(
         "Whether instances can be exhausted (tapped/spent/on cooldown). " +
-          "When true, the engine tracks an exhausted/ready state as a built-in property. " +
-          "Flipping toggles exhausted/ready, unless hasFaceState is true: then flipping means " +
-          "reveal/hide and the renderer shows exhaustion separately (rotation, overlay).",
+          "When true, the engine tracks an exhausted/ready state as a built-in property.",
       ),
     faceCount: z
       .number()

@@ -42,7 +42,7 @@ gamepieceTypes:
             min: 1
             max: 6
           mutable: false
-          visibility: revealed
+          visibility: always
 
 inventories:
   types:

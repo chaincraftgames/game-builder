@@ -1,5 +1,6 @@
 import type { CompileCode } from "@chaincraft/compiler";
 import { ValidationCode } from "@chaincraft/gamedef/validator";
+import type { FindingCode } from "#authoring/tools/playtest/checks.js";
 
 /** Machine-facing error classes originating in this package. */
 export const AuthoringCode = {
@@ -19,7 +20,7 @@ export const AuthoringCode = {
 export type AuthoringCode = (typeof AuthoringCode)[keyof typeof AuthoringCode];
 
 /** Any code a {@link Diagnostic} can carry, across gamedef, compiler and authoring. */
-export type DiagnosticCode = ValidationCode | CompileCode | AuthoringCode;
+export type DiagnosticCode = ValidationCode | CompileCode | AuthoringCode | FindingCode;
 
 /** Codes that draft mode downgrades to `todo`. */
 export const DRAFT_TODO_CODES: ReadonlySet<DiagnosticCode> = new Set<DiagnosticCode>([
@@ -44,6 +45,8 @@ export interface Diagnostic {
   line?: number;
   /** Ids that would have resolved; present on unresolved-ref style errors. */
   knownIds?: string[];
+  /** Playtest token that reproduces the game that showed it, e.g. "p2-s1-g3". */
+  repro?: string;
 }
 
 /**
@@ -95,7 +98,8 @@ export function formatDiagnostic(d: Diagnostic, maxKnownIds: number = MAX_KNOWN_
   const location = [file, d.path].filter((part) => part !== undefined).join("  ");
   const lines: string[] = [];
   if (location) lines.push(location);
-  lines.push(`  ${d.severity} ${d.code}: ${d.message}`);
+  lines.push(`  ${d.severity} ${d.code}: ${d.message.replaceAll("\n", "\n  ")}`);
+  if (d.repro !== undefined) lines.push(`  repro: ${d.repro}`);
   if (d.knownIds) {
     const shown = d.knownIds.slice(0, maxKnownIds).join(", ");
     const more = d.knownIds.length > maxKnownIds ? `, … (${d.knownIds.length - maxKnownIds} more)` : "";

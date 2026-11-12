@@ -1,0 +1,55 @@
+# Fixture: playtest-runaway. The loop never prompts anyone and its end condition is never true.
+metadata:
+  name: Runaway
+  playerCount:
+    min: 2
+    max: 2
+
+state:
+  game:
+    properties:
+      - id: finished
+        type:
+          kind: boolean
+        default: false
+        description: Never set, so the loop never ends.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 100
+        default: 0
+        description: Points scored.
+
+actions:
+  actions:
+    - id: gainPoint
+      label: Gain a point
+      description: Score one point.
+      steps:
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+
+flow:
+  root:
+    kind: game
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        endCondition: "game.property.finished == true"
+        children:
+          - kind: turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: gainPoint

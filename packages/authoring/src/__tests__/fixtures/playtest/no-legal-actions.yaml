@@ -1,0 +1,56 @@
+# Fixture: playtest-no-legal-actions. The only action's precondition is never true.
+metadata:
+  name: No Legal Actions
+  playerCount:
+    min: 2
+    max: 2
+
+state:
+  game:
+    properties:
+      - id: open
+        type:
+          kind: boolean
+        default: false
+        description: Never set, so the action is never available.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 100
+        default: 0
+        description: Points scored.
+
+actions:
+  actions:
+    - id: gainPoint
+      label: Gain a point
+      description: Score one point, once the game is open.
+      preconditions: "game.property.open == true"
+      steps:
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+
+flow:
+  root:
+    kind: game
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        count: 1
+        children:
+          - kind: turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: gainPoint
