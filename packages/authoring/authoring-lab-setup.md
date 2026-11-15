@@ -47,7 +47,7 @@ The tarballs come from two repos, cloned **side by side**:
 | Repo | URL | Version |
 |---|---|---|
 | game-builder | (your existing checkout) | branch `dev-preview` |
-| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `0ad09c3` |
+| chaincraft-runtime | https://github.com/chaincraftgames/chaincraft-runtime | `main` at commit `55acef4` |
 
 ```bash
 # from the folder that contains game-builder/
@@ -170,11 +170,13 @@ Same opening prompt for every run (paste verbatim):
 > Read REQUEST.md and build the game it describes using ChainCraft. Use `npx chaincraft` commands to check your work. Stop when `chaincraft compile` passes, or when you are blocked
 > and need a decision from me.
 
-Until `chaincraft playtest` ships (step 3), record `playtest_passed` as `n/a`. `compiled`
-means the spec compiles, not that it plays; don't read it as "playable".
+Record `playtest_passed` from the agent's last `npx chaincraft playtest` run (zero errors = pass)
+and the number of warnings in `warning_count`. `compiled` means the spec compiles, not that it
+plays; use `playtest_passed` for "playable". Runs from before `chaincraft playtest` shipped
+stay `n/a`.
 
 **Run settings (record in `notes` or a column):** model (e.g. Sonnet 5.5), permission mode
-(auto), time box (45 minutes). Keep these fixed within a batch.
+(auto), time box (45 minutes). Record them for every run, and keep them fixed within a batch.
 
 **Reference-only arm:** the agent gets `chaincraft docs` and the shipped High Card example,
 and nothing else. The example stays in because without it the overall structure and the

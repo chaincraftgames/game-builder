@@ -136,11 +136,12 @@ if (verify) {
     cpSync(path.join(root, "packages/gamedef/examples/high-card.yaml"), path.join(dir, "spec/high-card.yaml"));
     run("npx", ["--no-install", "chaincraft", "validate"], dir);
     run("npx", ["--no-install", "chaincraft", "compile"], dir);
+    run("npx", ["--no-install", "chaincraft", "playtest"], dir);
 
-    // --version is not traced, so init, validate and compile each leave one line.
+    // --version is not traced, so init, validate, compile and playtest each leave one line.
     const traced = readFileSync(path.join(dir, ".chaincraft/log.jsonl"), "utf-8").trim().split("\n");
-    if (traced.length !== 3) throw new Error(`verify: expected 3 trace lines, found ${traced.length}`);
-    console.log("verify: chaincraft init/validate/compile OK");
+    if (traced.length !== 4) throw new Error(`verify: expected 4 trace lines, found ${traced.length}`);
+    console.log("verify: chaincraft init/validate/compile/playtest OK");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

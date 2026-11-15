@@ -18,7 +18,7 @@
     "#authoring/*": "./dist/*"
   },
   "scripts": {
-    "clean": "rimraf dist tsconfig.tsbuildinfo",
+    "clean": "rimraf dist tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
     "prebuild": "npm run clean",
     "build": "tsc --build tsconfig.build.json",
     "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js"
