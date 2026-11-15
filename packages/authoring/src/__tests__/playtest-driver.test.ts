@@ -16,7 +16,7 @@ function highCard(patch?: (raw: Raw) => void): CompiledGameModule {
   const raw = yaml.load(readFileSync(`${EXAMPLES_DIR}high-card.yaml`, "utf8")) as Raw;
   patch?.(raw);
   const result = validate(raw);
-  if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+  if (!result.valid || !result.spec) throw new Error(JSON.stringify(result.errors, null, 2));
   return assembleModule(result.spec, "high-card");
 }
 
@@ -195,7 +195,7 @@ describe("playGame failures", () => {
       createSession: (gameId, players, opts) => {
         const session = base.createSession(gameId, players, opts);
         // No hand inventory: the gamepiece-select has nothing to list.
-        session.config = { ...session.config, inventories: {} } as typeof session.config;
+        Object.assign(session, { config: { ...session.config, inventories: {} } });
         return session;
       },
     };

@@ -20,7 +20,7 @@
   "scripts": {
     "clean": "rimraf dist tsconfig.tsbuildinfo",
     "prebuild": "npm run clean",
-    "build": "tsc --build tsconfig.json",
+    "build": "tsc --build tsconfig.build.json",
     "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js"
   },
   "dependencies": {

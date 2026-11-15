@@ -4,8 +4,8 @@ import yaml from "js-yaml";
 import { validate } from "@chaincraft/gamedef/validator";
 import type { ModularGameSpec } from "@chaincraft/gamedef";
 import { assembleModule, flowNodePaths } from "@chaincraft/compiler";
-import type { CompiledGameModule } from "@chaincraft/runtime";
-import { analyzeRun, missingCatalog } from "../tools/playtest/checks.js";
+import type { CompiledGameModule, FaultSite } from "@chaincraft/runtime";
+import { analyzeRun, missingCatalog, sitePath } from "../tools/playtest/checks.js";
 import type { PlayedGame } from "../tools/playtest/checks.js";
 import { attributeError } from "../tools/playtest/attribution.js";
 import { GameRuntimeError, StepBudgetExceededError } from "@chaincraft/runtime";
@@ -17,6 +17,7 @@ const EXAMPLES_DIR = fileURLToPath(new URL("../../../gamedef/examples/", import.
 const raw = yaml.load(readFileSync(`${EXAMPLES_DIR}high-card.yaml`, "utf8"));
 const validation = validate(raw);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors, null, 2));
+if (!validation.spec) throw new Error("validation produced no spec");
 const spec: ModularGameSpec = validation.spec;
 const module: CompiledGameModule = assembleModule(spec, "high-card");
 const nodePaths = flowNodePaths(spec, "high-card");
@@ -130,10 +131,61 @@ describe("error checks", () => {
     expect(error.path).toBeUndefined();
   });
 
-  it("playtest-spec-error has no path", () => {
+  it("playtest-spec-error without a site has no path", () => {
     const [error] = analyze([played(errorEnd(new GameRuntimeError("player-target-no-actor", "boom")))]).errors;
-    expect(error).toMatchObject({ code: "playtest-spec-error", severity: "error" });
+    expect(error).toMatchObject({ code: "playtest-spec-error", severity: "error", faultCode: "player-target-no-actor" });
     expect(error.path).toBeUndefined();
+  });
+
+  it("playtest-spec-error points at the flow node, and the effect or action when known", () => {
+    const at = (site: FaultSite) =>
+      analyze([played(errorEnd(new GameRuntimeError("player-target-no-actor", "boom"), { site }))]).errors[0];
+    expect(at({ nodeId: firstChildId }).path).toBe(nodePaths[firstChildId]);
+    expect(at({ nodeId: firstChildId, actionId })).toMatchObject({ path: "actions.actions[0]", message: "boom" });
+  });
+
+  it("a named effect wins and the message names the action that ran it", () => {
+    const effectId = "shared";
+    const withEffect = {
+      ...spec,
+      effects: { effects: [{ id: effectId, effect: "set-state" }] },
+    } as unknown as ModularGameSpec;
+    const site: FaultSite = { effectRef: effectId, actionId, nodeId: firstChildId };
+    const end = errorEnd(new GameRuntimeError("player-target-no-actor", "boom"), { site });
+    const [error] = analyze([played(end)], { spec: withEffect }).errors;
+    expect(error).toMatchObject({ path: "effects.effects[0]", message: `In action "${actionId}": boom` });
+  });
+
+  it("ids the spec doesn't define give no path", () => {
+    const site: FaultSite = { effectRef: "nope", actionId: "nope", nodeId: "nope" };
+    const [error] = analyze([played(errorEnd(new GameRuntimeError("player-target-no-actor", "boom"), { site }))]).errors;
+    expect(error.path).toBeUndefined();
+    expect(error.message).toBe("boom");
+  });
+
+  it("sitePath prefers effectRef, then action, then node", () => {
+    const withEffect = { ...spec, effects: { effects: [{ id: "e", effect: "set-state" }] } } as unknown as ModularGameSpec;
+    expect(sitePath(withEffect, nodePaths, { effectRef: "e", actionId, nodeId: firstChildId })).toBe("effects.effects[0]");
+    expect(sitePath(withEffect, nodePaths, { effectRef: "x", actionId, nodeId: firstChildId })).toBe("actions.actions[0]");
+    expect(sitePath(withEffect, nodePaths, { actionId: "x", nodeId: firstChildId })).toBe(nodePaths[firstChildId]);
+    expect(sitePath(withEffect, nodePaths, {})).toBeUndefined();
+  });
+
+  it("playtest-unsupported with a site and no input points at the site", () => {
+    const end = errorEnd(new GameRuntimeError("no-custom-handler", "x"), { site: { actionId } });
+    expect(analyze([played(end)]).errors[0]).toMatchObject({ code: "playtest-unsupported", path: "actions.actions[0]" });
+  });
+
+  it("engine-error and runtime-error have no path, even with a site", () => {
+    const site: FaultSite = { actionId, nodeId: firstChildId };
+    const analysis = analyze([
+      played(errorEnd(new GameRuntimeError("walk-mismatch", "engine"), { site })),
+      played(errorEnd(new TypeError("undefined is not a function"), { site }), [], 1),
+    ]);
+    expect(analysis.errors.map((e) => [e.code, e.path])).toEqual([
+      ["engine-error", undefined],
+      ["runtime-error", undefined],
+    ]);
   });
 
   it("engine-error and runtime-error have no path", () => {

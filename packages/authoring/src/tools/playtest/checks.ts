@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ModularGameSpec } from "@chaincraft/gamedef";
-import type { CompiledGameModule } from "@chaincraft/runtime";
+import type { CompiledGameModule, FaultCode, FaultSite } from "@chaincraft/runtime";
 import type { PlaytestErrorCode } from "#authoring/tools/playtest/attribution.js";
 import type {
   GameResult,
@@ -44,6 +44,8 @@ export interface Finding {
   hint: string;
   /** Spec dot-path; absent when the origin is unknown. */
   path?: string;
+  /** Runtime fault code behind an error, when the runtime raised one. */
+  faultCode?: FaultCode;
   /** Games that showed it. */
   games: number;
   /** Games the rule was evaluated over (all games for errors, non-crashed for warnings). */
@@ -92,6 +94,12 @@ const FIXED_OUTCOME_MIN_GAMES = 10;
 
 /** The path to the win conditions in the game spec. */
 const WIN_CONDITIONS_PATH = "flow.root.winConditions";
+
+/** Replaces runtime messages that name engine internals (e.g. `effect "undefined"` for inline custom steps). */
+const UNSUPPORTED_MESSAGES: Partial<Record<FaultCode, string>> = {
+  "no-custom-handler": "The game reached a `kind: custom` effect, which playtest can't run.",
+  "no-system-responder": "The game reached an llm or external-data effect, which playtest can't answer.",
+};
 
 /** Base information for a finding, without the game-specific aggregation. */
 type Base = Omit<Finding, "games" | "total" | "first">;
@@ -180,13 +188,12 @@ function gameErrors(
 
   if (end.kind === "error") {
     const { attribution } = end;
-    const base = {
-      code: attribution.code,
-      severity: "error" as const,
-      message: end.message,
-      hint: attribution.hint,
-    };
+    const site = end.site;
+    let message =
+      (attribution.faultCode && UNSUPPORTED_MESSAGES[attribution.faultCode]) ??
+      end.message;
     let path: string | undefined;
+    let fromSite = false;
     switch (attribution.code) {
       case "playtest-runaway":
         path = pathOf(nodePaths, end.nodeId);
@@ -195,21 +202,40 @@ function gameErrors(
         path = pathOf(nodePaths, end.turnNodeId);
         break;
       case "playtest-unsupported":
-        path = end.input
-          ? unresolvedInputPath(spec, transcript, end.input)
-          : undefined;
+        if (end.input) path = unresolvedInputPath(spec, transcript, end.input);
+        else fromSite = true;
+        break;
+      case "playtest-spec-error":
+        fromSite = true;
         break;
     }
-    found.push({ ...base, ...(path !== undefined && { path }) });
+    if (fromSite && site) {
+      path = sitePath(spec, nodePaths, site);
+      // A shared effect's path alone doesn't say which action ran it.
+      if (
+        site.actionId !== undefined &&
+        site.effectRef !== undefined &&
+        path !== undefined &&
+        path === effectPath(spec, site.effectRef)
+      ) {
+        message = `In action "${site.actionId}": ${message}`;
+      }
+    }
+    found.push({
+      code: attribution.code,
+      severity: "error",
+      message,
+      hint: attribution.hint,
+      ...(path !== undefined && { path }),
+      ...(attribution.faultCode && { faultCode: attribution.faultCode }),
+    });
   } else if (end.kind === "max-decisions") {
     const path = pathOf(nodePaths, busiestTurn(transcript));
     found.push({
       code: "playtest-no-end",
       severity: "error",
       message: `The game did not finish within ${result.decisions} decisions.`,
-      hint:
-        "Check that winConditions and loop endConditions can become true, and that actions change the state they read. " +
-        "A turn where random play keeps passing can also cause this.",
+      hint: "Check that winConditions and loop endConditions can become true, and that the actions change the state they read.",
       ...(path !== undefined && { path }),
     });
   } else if (!transcript.some((entry) => entry.kind === "turn:start")) {
@@ -412,6 +438,25 @@ function actionPath(
     (action) => action.id === actionId,
   );
   return i < 0 ? undefined : `actions.actions[${i}]`;
+}
+
+/** Get the path of a named effect in the spec based on its ID. */
+function effectPath(spec: ModularGameSpec, effectId: string): string | undefined {
+  const i = (spec.effects?.effects ?? []).findIndex((effect) => effect.id === effectId);
+  return i < 0 ? undefined : `effects.effects[${i}]`;
+}
+
+/** Where a fault happened in the spec: the named effect, else the action, else the flow node. */
+export function sitePath(
+  spec: ModularGameSpec,
+  nodePaths: Record<string, string>,
+  site: FaultSite,
+): string | undefined {
+  return (
+    (site.effectRef === undefined ? undefined : effectPath(spec, site.effectRef)) ??
+    (site.actionId === undefined ? undefined : actionPath(spec, site.actionId)) ??
+    pathOf(nodePaths, site.nodeId)
+  );
 }
 
 /** The input step playtest couldn't answer, found in the player's most recent action. */

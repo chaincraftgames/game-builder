@@ -7,6 +7,7 @@ import { GameController, GameRuntimeError, IllegalActionError } from "@chaincraf
 import type { CompiledGameModule } from "@chaincraft/runtime";
 import { flowNodePaths } from "@chaincraft/compiler";
 import type { Diagnostic } from "../diagnostics.js";
+import { formatDiagnostic } from "../diagnostics.js";
 import { compile } from "../tools/compile.js";
 import { playtest } from "../tools/playtest.js";
 import { analyzeRun } from "../tools/playtest/checks.js";
@@ -64,8 +65,8 @@ const CASES: Case[] = [
     path: "actions.actions[0].steps[0]",
     replay: true,
   },
-  { fixture: "unsupported-custom", code: "playtest-unsupported", severity: "error", path: undefined, replay: true },
-  { fixture: "spec-error", code: "playtest-spec-error", severity: "error", path: undefined, replay: true },
+  { fixture: "unsupported-custom", code: "playtest-unsupported", severity: "error", path: "actions.actions[0]", replay: true },
+  { fixture: "spec-error", code: "playtest-spec-error", severity: "error", path: "flow.root", replay: true },
   { fixture: "action-forfeit", code: "action-forfeit", severity: "warning", path: "actions.actions[0]", replay: true },
   { fixture: "fixed-outcome", code: "fixed-outcome", severity: "warning", path: WIN, replay: false },
 ];
@@ -115,6 +116,15 @@ describe.each(CASES)("fixture $fixture", (c) => {
       expect(replay.ok).toBe(c.severity === "warning");
     });
   }
+});
+
+describe("spec-error fault code", () => {
+  it("is carried on the diagnostic and shown after the code", async () => {
+    fixture("spec-error");
+    const finding = (await run()).diagnostics.find((d) => d.code === "playtest-spec-error")!;
+    expect(finding.faultCode).toBe("player-target-stateref-invalid");
+    expect(formatDiagnostic(finding)).toContain("  error playtest-spec-error (player-target-stateref-invalid): ");
+  });
 });
 
 describe("injected faults", () => {

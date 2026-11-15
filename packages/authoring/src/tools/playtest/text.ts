@@ -34,8 +34,9 @@ export function formatSummary(summary: PlaytestSummary): string {
     ];
     if (uncovered.length > 0)
       lines.push(
-        `not exercised in ${coverage.games} games (informational, not a failure):`,
+        `not exercised by random play in ${coverage.games} games (not a defect; nothing to fix):`,
         ...uncovered,
+        "  the same seed plays the same games; don't raise --games or change --seed to cover these.",
       );
   }
   return lines.join("\n");

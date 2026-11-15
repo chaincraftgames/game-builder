@@ -34,6 +34,12 @@ describe("formatDiagnostic", () => {
     expect(formatDiagnostic(base)).toBe("  error unresolved-ref: boom");
   });
 
+  it("shows the fault code in parentheses after the code", () => {
+    expect(formatDiagnostic({ ...base, faultCode: "action-unknown" })).toBe(
+      "  error unresolved-ref (action-unknown): boom",
+    );
+  });
+
   it("shows file:line for yaml syntax errors", () => {
     const text = formatDiagnostic({ ...base, code: "yaml-syntax", file: "spec/x.yaml", line: 12 });
     expect(text.split("\n")[0]).toBe("spec/x.yaml:12");

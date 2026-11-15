@@ -25,6 +25,7 @@ const EXAMPLES_DIR = fileURLToPath(new URL("../../../gamedef/examples/", import.
 const raw = yaml.load(readFileSync(`${EXAMPLES_DIR}high-card.yaml`, "utf8"));
 const validation = validate(raw);
 if (!validation.valid) throw new Error(JSON.stringify(validation.errors, null, 2));
+if (!validation.spec) throw new Error("validation produced no spec");
 const spec: ModularGameSpec = validation.spec;
 const module: CompiledGameModule = assembleModule(spec, "high-card");
 const nodePaths = flowNodePaths(spec, "high-card");

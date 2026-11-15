@@ -106,7 +106,9 @@ const DEDICATED_CODES: Partial<Record<FaultCode, PlaytestErrorCode>> = {
 export const UNCLASSIFIED: Attribution = {
   category: "unclassified",
   code: "runtime-error",
-  hint: "Unrecognized runtime error. It may come from the spec or the engine; include the repro if you report it.",
+  hint:
+    "The engine threw an error playtest can't attribute. Check the spec element named in the last " +
+    "transcript lines once; if nothing there is wrong, report it with the repro and don't rewrite the spec around it.",
 };
 
 /** Also matches an IllegalActionError from another copy of the runtime. */

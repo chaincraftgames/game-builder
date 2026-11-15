@@ -10,9 +10,11 @@ import {
   createSeededRng,
   GameController,
   GameRuntimeError,
+  isGameRuntimeError,
 } from "@chaincraft/runtime";
 import type {
   CompiledGameModule,
+  FaultSite,
   GameEvent,
   GameOutcome,
   InputOption,
@@ -89,6 +91,8 @@ export type GameEnd =
       turnNodeId?: string;
       /** Innermost flow node, for a step-budget fault. */
       nodeId?: string;
+      /** Where the runtime says the faulting effect ran; absent for faults outside effect execution. */
+      site?: FaultSite;
       /** The prompt playtest couldn't answer, for `playtest-unsupported` raised by the driver. */
       input?: { playerId: string; inputId: string };
     };
@@ -129,7 +133,7 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
   const failure = (
     attribution: Attribution,
     message: string,
-    extra: { nodeId?: string; input?: { playerId: string; inputId: string } } = {},
+    extra: { nodeId?: string; site?: FaultSite; input?: { playerId: string; inputId: string } } = {},
   ): GameResult =>
     result({
       kind: "error",
@@ -144,7 +148,10 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
     return failure(
       attribution,
       error instanceof Error ? error.message : String(error),
-      attribution.faultCode === "step-budget-exceeded" && typeof nodeId === "string" ? { nodeId } : {},
+      {
+        ...(attribution.faultCode === "step-budget-exceeded" && typeof nodeId === "string" && { nodeId }),
+        ...(isGameRuntimeError(error) && error.site !== undefined && { site: error.site }),
+      },
     );
   };
 
@@ -348,6 +355,8 @@ function unsupportedAttribution(): Attribution {
   return {
     category: "unsupported",
     code: "playtest-unsupported",
-    hint: "Playtest limitation, not a spec defect; games that reach it stop here.",
+    hint:
+      "Playtest couldn't generate a value this input accepts. If the input's validation can reject " +
+      "every value, fix the validation; otherwise this is a playtest limitation, not a spec defect.",
   };
 }

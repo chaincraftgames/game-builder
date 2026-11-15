@@ -47,6 +47,8 @@ export interface Diagnostic {
   knownIds?: string[];
   /** Playtest token that reproduces the game that showed it, e.g. "p2-s1-g3". */
   repro?: string;
+  /** Runtime fault code behind a playtest error. */
+  faultCode?: string;
 }
 
 /**
@@ -98,7 +100,8 @@ export function formatDiagnostic(d: Diagnostic, maxKnownIds: number = MAX_KNOWN_
   const location = [file, d.path].filter((part) => part !== undefined).join("  ");
   const lines: string[] = [];
   if (location) lines.push(location);
-  lines.push(`  ${d.severity} ${d.code}: ${d.message.replaceAll("\n", "\n  ")}`);
+  const code = d.faultCode === undefined ? d.code : `${d.code} (${d.faultCode})`;
+  lines.push(`  ${d.severity} ${code}: ${d.message.replaceAll("\n", "\n  ")}`);
   if (d.repro !== undefined) lines.push(`  repro: ${d.repro}`);
   if (d.knownIds) {
     const shown = d.knownIds.slice(0, maxKnownIds).join(", ");

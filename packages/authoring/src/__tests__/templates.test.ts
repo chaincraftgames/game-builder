@@ -3,7 +3,7 @@ import { COMMANDS } from "../commands.js";
 
 describe("templates/AGENTS.md", () => {
   const text = readFileSync(new URL("../../templates/AGENTS.md", import.meta.url), "utf8");
-  const referenced = [...text.matchAll(/`chaincraft ([a-z][a-z-]*)/g)].map((m) => m[1]);
+  const referenced = [...text.matchAll(/`(?:npx )?chaincraft ([a-z][a-z-]*)/g)].map((m) => m[1]);
 
   it("references at least one command", () => {
     expect(referenced.length).toBeGreaterThan(0);

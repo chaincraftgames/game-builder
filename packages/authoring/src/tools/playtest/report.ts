@@ -156,6 +156,7 @@ function toDiagnostic(
     message: lines.join("\n"),
     ...(finding.path !== undefined && { path: finding.path }),
     ...(file !== undefined && { file }),
+    ...(finding.faultCode !== undefined && { faultCode: finding.faultCode }),
     ...(finding.first !== null && {
       repro: formatRepro({
         seed: input.seed,

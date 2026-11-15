@@ -37,7 +37,7 @@ export class UnusedContentValidator implements SpecValidator {
         warn(
           `effects.effects[${i}]`,
           ValidationCode.UnusedEffect,
-          `Effect "${effect.id}" is never referenced. Reference it with { effectRef: ${effect.id} } or delete it.`,
+          `Effect "${effect.id}" is never referenced. If it's meant to run, reference it with { effectRef: ${effect.id} }; if it's left over, delete it.`,
         );
       }
     });
@@ -53,7 +53,7 @@ export class UnusedContentValidator implements SpecValidator {
           warn(
             `actions.actions[${i}]`,
             ValidationCode.UnusedAction,
-            `Action "${action.id}" is not referenced by any turn grammar, interrupt window, catalog binding or charges mechanic. Add { kind: action, ref: ${action.id} } to a grammar or delete it.`,
+            `Action "${action.id}" is not referenced by any turn grammar, interrupt window, catalog binding or charges mechanic. If it's meant to be playable, add { kind: action, ref: ${action.id} } to a grammar; if it's left over, delete it.`,
           );
         }
       });
@@ -65,7 +65,7 @@ export class UnusedContentValidator implements SpecValidator {
           warn(
             `effects.passives[${i}]`,
             ValidationCode.UnboundPassive,
-            `Passive "${passive.id}" is never bound. Bind it in a catalog entry's passiveBindings or delete it.`,
+            `Passive "${passive.id}" is never bound. If pieces should have it, bind it in a catalog entry's passiveBindings; if it's left over, delete it.`,
           );
         }
       });
@@ -77,7 +77,7 @@ export class UnusedContentValidator implements SpecValidator {
             warn(
               `gamepieceTypes.types[${ti}].passiveSlots[${si}]`,
               ValidationCode.UnboundSlot,
-              `Passive slot "${slot.id}" on type "${type.id}" is not bound by any catalog entry. Bind it in a catalog entry's passiveBindings or remove the slot.`,
+              `Passive slot "${slot.id}" on type "${type.id}" is not bound by any catalog entry. If pieces should fill it, bind it in a catalog entry's passiveBindings; if it's left over, remove the slot.`,
             );
           }
         });
