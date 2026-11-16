@@ -42,8 +42,6 @@ metadata:
   playerCount:
     min: 2
     max: 2
-  rng:
-    seedSource: fixed # deterministic shuffles, so a failing run can be replayed
 
 # ---------------------------------------------------------------------------
 # PLAYERS AND ROLES
@@ -665,10 +663,10 @@ flow:
 catalog:
 #
 # ENTRY ORDER IS LOAD-BEARING, and this is the only reason it is not
-# alphabetical or grouped by class. rng seedSource 'fixed' resolves to a
-# CONSTANT seed and ignores the game id entirely, so the shuffle is the same
-# permutation on every run and the deal is identical every time. This order
-# is the one that puts both thief cards in Player 2's opening hand, which is
+# alphabetical or grouped by class. With `createSession(..., { seed: 42 })`
+# the shuffle is the same permutation on every run, so the deal is identical
+# every time. This order is the one that puts both thief cards in Player 2's
+# opening hand, which is
 # what makes the bleed stack in PASSIVE_BATTLER_WALKTHROUGH_v1.md reproduce
 # exactly. Reordering these eight lines changes the deal and nothing else.
   entries:

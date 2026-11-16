@@ -21,8 +21,6 @@ metadata:
   playerCount:
     min: 2
     max: 2
-  rng:
-    seedSource: fixed # deterministic shuffles for compiler/e2e testing
 
 state:
   game:

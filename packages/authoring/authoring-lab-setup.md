@@ -6,7 +6,7 @@ creator's machine, not our dev monorepo.
 
 > **Status:** step 1 is in place: the `chaincraft` command (`init`, `validate`, `compile`) ships in
 > `@chaincraft/authoring` and is packed with the other tarballs by `npm run pack:packages`.
-> `docs` is in place; `playtest` arrives in step 3.
+> `docs` and `playtest` are in place.
 
 ---
 
@@ -167,8 +167,7 @@ chmod +x ~/cc-lab/new-run.sh
 
 Same opening prompt for every run (paste verbatim):
 
-> Read REQUEST.md and build the game it describes using ChainCraft. Use `npx chaincraft` commands to check your work. Stop when `chaincraft compile` passes, or when you are blocked
-> and need a decision from me.
+> Read REQUEST.md and build the game it describes using ChainCraft. Use `npx chaincraft` commands to check your work. Stop when `npx chaincraft playtest` reports no errors, or when you are blocked and need a decision from me.
 
 Record `playtest_passed` from the agent's last `npx chaincraft playtest` run (zero errors = pass)
 and the number of warnings in `warning_count`. `compiled` means the spec compiles, not that it
@@ -181,7 +180,8 @@ stay `n/a`.
 **Reference-only arm:** the agent gets `chaincraft docs` and the shipped High Card example,
 and nothing else. The example stays in because without it the overall structure and the
 relationships between constructs are hard to convey. Expect the agent to copy from it
-(the Go Fish run copied `seedSource: fixed`), and read results with that in mind.
+(the first Go Fish run copied `seedSource: fixed`, since removed from the schema), and read
+results with that in mind.
 
 Rules:
 - **One run at a time** — so usage counter deltas belong to a single run.
@@ -209,9 +209,11 @@ date,agent,model,plan_assumed,brief,scenario,engine_version,
 agent_requests,premium_requests,tokens_in,tokens_out,cost_usd,
 gate_calls,usage_errors,compiled,playtest_passed,warning_count,interventions,wall_minutes,outcome,notes
 ```
-- `gate_calls`: number of `validate` and `compile` entries in `.chaincraft/log.jsonl`.
-  `init` and `help` are not gates (`help` is not logged at all).
-- `usage_errors`: number of entries with `exitCode` 2 (bad flags, unknown commands, `--help`).
+- `gate_calls`: number of `validate`, `compile` and `playtest` entries in `.chaincraft/log.jsonl`.
+  `init`, `docs` and `help` are not gates (`help` is not logged at all). Rows recorded before
+  playtest shipped counted only `validate` and `compile`.
+- `usage_errors`: number of entries with `exitCode` 2 (bad flags, unknown commands, `--help`),
+  plus `docs` lookups of a topic or id that doesn't exist (code `unknown-topic`, `exitCode` 1).
 - `plan_assumed`: which plan this run emulates (e.g. "Free", "Pro", "Pro+") and the quota
   numbers you assumed — plans change, so record what was true on the run date.
 - `scenario`: `create` or `edit`.
@@ -220,9 +222,9 @@ gate_calls,usage_errors,compiled,playtest_passed,warning_count,interventions,wal
 
 ```bash
 # gate_calls
-jq -s '[.[] | select(.command=="validate" or .command=="compile")] | length' .chaincraft/log.jsonl
+jq -s '[.[] | select(.command=="validate" or .command=="compile" or .command=="playtest")] | length' .chaincraft/log.jsonl
 # usage_errors
-jq -s '[.[] | select(.exitCode==2)] | length' .chaincraft/log.jsonl
+jq -s '[.[] | select(.exitCode==2 or ((.codes // []) | index("unknown-topic")))] | length' .chaincraft/log.jsonl
 ```
 
 ---

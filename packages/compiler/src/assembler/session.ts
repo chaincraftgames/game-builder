@@ -19,9 +19,6 @@ import { assembleConfig } from "#compiler/assembler/config.js";
 import { assembleInitialState } from "#compiler/assembler/state.js";
 import type { GameSession, GameConfig } from "#compiler/assembler/types.js";
 
-/** Fixed seed used for `seedSource: fixed` (deterministic test/replay games). */
-export const FIXED_TEST_SEED = 42;
-
 function hashString(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
@@ -30,11 +27,8 @@ function hashString(input: string): number {
   return hash;
 }
 
-export function resolveSeed(
-  seedSource: "game-id" | "round-id" | "fixed" | undefined,
-  gameId: string,
-): number {
-  if (seedSource === "fixed") return FIXED_TEST_SEED;
+/** Seed derived from the game id; `options.seed` overrides it (tests, playtest, replay). */
+export function resolveSeed(gameId: string): number {
   return hashString(gameId);
 }
 
@@ -76,7 +70,7 @@ export function assembleSession(
       players,
       outbox: [],
       rng: createSeededRng(
-        options?.seed ?? resolveSeed(spec.metadata?.rng?.seedSource, gameId),
+        options?.seed ?? resolveSeed(gameId),
       ),
       events: new GameEventEmitter(),
       bus,

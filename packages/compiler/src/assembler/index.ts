@@ -3,7 +3,6 @@ export { assembleInitialState } from "#compiler/assembler/state.js";
 export {
   assembleSession,
   resolveSeed,
-  FIXED_TEST_SEED,
 } from "#compiler/assembler/session.js";
 export type { AssembledSessionFactory } from "#compiler/assembler/session.js";
 export {

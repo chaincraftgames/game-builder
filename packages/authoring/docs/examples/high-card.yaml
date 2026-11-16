@@ -3,8 +3,6 @@ metadata:
   playerCount:
     min: 2
     max: 2
-  rng:
-    seedSource: fixed
 
 state:
   game:

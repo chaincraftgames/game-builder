@@ -12,9 +12,9 @@ write the game. It accompanies `passive-battler.yaml` in this folder.
 ## How to re-run this exactly
 
 Every number below marked OBSERVED came out of a real run, and **you can reproduce it byte
-for byte**. The spec declares `rng.seedSource: fixed`, which resolves to a constant seed and
-ignores the game id entirely, so the shuffle is the same permutation on every run and the
-deal is identical every time. The script is simply "always play the leftmost card in hand",
+for byte**. Create the session with `createSession(gameId, players, { seed: 42 })`: the seed
+overrides the one derived from the game id, so the shuffle is the same permutation on every
+run and the deal is identical every time. The script is simply "always play the leftmost card in hand",
 six times, alternating seats.
 
 Both gates pass on this spec as it stands: the validator returns `{"valid": true,

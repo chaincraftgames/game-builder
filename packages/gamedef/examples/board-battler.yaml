@@ -38,8 +38,6 @@ metadata:
   playerCount:
     min: 2
     max: 2
-  rng:
-    seedSource: fixed # a constant seed: the deal is identical on every run
 
 state:
   player:

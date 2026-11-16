@@ -18,14 +18,14 @@ import { fileURLToPath } from 'url';
 import { join, dirname } from 'path';
 import { load } from 'js-yaml';
 import { validate } from '@chaincraft/gamedef/validator';
-import { GameController, createSeededRng } from '@chaincraft/runtime';
+import { GameController } from '@chaincraft/runtime';
 import type { BagInventoryData, GameSession } from '@chaincraft/runtime';
 import {
   assembleConfig, assembleInitialState, assembleSession,
   buildExecutorRegistry, assembleEffectDefs, assembleActions,
   assembleFlow, assembleModule, walkEffectBody,
   CompileError,
-  UNASSIGNED_INVENTORY_ID, FIXED_TEST_SEED,
+  UNASSIGNED_INVENTORY_ID,
 } from '../index.js';
 import { linkAndValidate } from '../module.js';
 
@@ -192,14 +192,17 @@ describe('assembleSession — High Card', () => {
     expect(session._inventoryCache.size).toBe(0);
   });
 
-  it('uses the fixed seed deterministically (seedSource: fixed)', () => {
+  it('derives the seed from the gameId: same id repeats, different ids differ', () => {
     const { createSession } = assembleSession(spec, 'high-card');
-    const s1 = createSession('g1', ['alice', 'bob']);
-    const s2 = createSession('g2', ['alice', 'bob']); // different gameId, same fixed seed
-    expect(s1.rng.nextFloat()).toBe(s2.rng.nextFloat());
+    const draw = (s: GameSession) => Array.from({ length: 5 }, () => s.rng.nextFloat());
+    const a = createSession('g1', ['alice', 'bob']);
+    const a2 = createSession('g1', ['alice', 'bob']);
+    const b = createSession('g2', ['alice', 'bob']);
+    expect(draw(a)).toEqual(draw(a2));
+    expect(draw(createSession('g1', ['alice', 'bob']))).not.toEqual(draw(b));
   });
 
-  it('options.seed overrides the fixed seed: different seeds give different rng streams', () => {
+  it('options.seed overrides the gameId seed: different seeds give different rng streams', () => {
     const { createSession } = assembleSession(spec, 'high-card');
     const a = createSession('g1', ['alice', 'bob'], { seed: 1 });
     const b = createSession('g1', ['alice', 'bob'], { seed: 2 });
@@ -209,14 +212,7 @@ describe('assembleSession — High Card', () => {
     expect(draw(a2)).toEqual(draw(createSession('g2', ['alice', 'bob'], { seed: 1 })));
   });
 
-  it('without options.seed, seedSource: fixed still uses FIXED_TEST_SEED', () => {
-    const { createSession } = assembleSession(spec, 'high-card');
-    const session = createSession('g1', ['alice', 'bob']);
-    const expected = createSeededRng(FIXED_TEST_SEED);
-    expect(session.rng.nextFloat()).toBe(expected.nextFloat());
-  });
-
-  it('options.seed changes the deal under seedSource: fixed; same seed repeats it', async () => {
+  it('options.seed changes the deal; same seed repeats it', async () => {
     const mod = assembleModule(spec, 'high-card');
     const dealWith = async (seed?: number) => {
       const controller = new GameController(mod, { events: {} });
