@@ -600,6 +600,99 @@ flow:
     expect(controller.isComplete).toBe(true);
   });
 });
+ 
+// ---------------------------------------------------------------------------
+// Optional sequence step inside a rule-driven repeat.
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — optional sequence step", () => {
+  const SPEC = `
+metadata:
+  name: Optional Step
+  playerCount: { min: 2, max: 2 }
+state:
+  player:
+    properties:
+      - id: acted
+        type: { kind: number, min: 0, max: 10 }
+        default: 0
+        description: Actions taken by this player.
+      - id: bonus
+        type: { kind: number, min: 0, max: 10 }
+        default: 0
+        description: Bonus steps taken by this player.
+actions:
+  actions:
+    - id: act
+      label: Act
+      description: Confirm and count one action.
+      steps:
+        - input: confirm
+          label: Confirm
+          type: { kind: boolean }
+        - effect: set-state
+          path: player.property.acted
+          value: { delta: 1 }
+          target: actor
+    - id: bonus
+      label: Bonus
+      description: Count one bonus; available only after exactly two actions.
+      preconditions: "actor.property.acted == 2"
+      steps:
+        - effect: set-state
+          path: player.property.bonus
+          value: { delta: 1 }
+          target: actor
+flow:
+  root:
+    kind: game
+    label: Optional Step
+    children:
+      - kind: loop
+        id: rounds
+        count: 1
+        children:
+          - kind: turn
+            id: acting
+            actor: all
+            turnOrder: { kind: seat, direction: clockwise }
+            grammar:
+              kind: repeat
+              count: { until: "actor.property.acted >= 3" }
+              body:
+                kind: sequence
+                steps:
+                  - { kind: action, ref: act }
+                  - { kind: action, ref: bonus, optional: true }
+`;
+
+  it("skips the step while its precondition is false and runs it, unprompted, once it holds", async () => {
+    const result = validate(load(SPEC));
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    const controller = new GameController(assembleModule(result.spec, "optional-step"));
+    await controller.init("optional-e2e", ["alice", "bob"]);
+
+    const prop = (playerId: string, id: string) => Number(controller.getState().players[playerId].properties[id]);
+    const act = (playerId: string) => controller.processAction({ playerId, value: true });
+
+    // acted 0 -> 1: bonus unavailable, skipped.
+    await act("alice");
+    expect([prop("alice", "acted"), prop("alice", "bonus")]).toEqual([1, 0]);
+    expect(controller.promptFor("alice")).toBeDefined();
+
+    // acted 1 -> 2: bonus now available and runs without a prompt.
+    await act("alice");
+    expect([prop("alice", "acted"), prop("alice", "bonus")]).toEqual([2, 1]);
+    expect(controller.promptFor("alice")).toBeDefined();
+
+    // acted 2 -> 3: bonus unavailable again; the until rule ends alice's turn.
+    await act("alice");
+    expect([prop("alice", "acted"), prop("alice", "bonus")]).toEqual([3, 1]);
+    expect(controller.promptFor("alice")).toBeUndefined();
+    expect(controller.promptFor("bob")).toBeDefined();
+    expect(prop("bob", "bonus")).toBe(0);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Selector filters that compare the candidate piece with other pieces.
@@ -755,6 +848,188 @@ ${catalog}
 
     expect(valuesIn(controller, "sets")).toEqual(["b", "b"]);
     expect(valuesIn(controller, "hand")).toEqual(["a", "a", "a", "a", "c"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// input.<id>.property.<prop>: a property of the piece a gamepiece-select input chose.
+// ---------------------------------------------------------------------------
+
+describe("Compiler e2e — input.<id>.property.<prop>", () => {
+  const SINGLE_PIECE = "{ kind: gamepiece-select, inventory: hand, ofType: card }";
+  const MATCHING = "piece.property.value == input.card.property.value";
+
+  function buildSpec(opts: { inputType: string; filter: string; named?: boolean }) {
+    const move = (indent: number) =>
+      [
+        `from: { inventory: hand, select: all, filter: "${opts.filter}" }`,
+        "to: { inventory: sets }",
+      ]
+        .map((line) => `\n${" ".repeat(indent)}${line}`)
+        .join("");
+    return `
+metadata:
+  name: Input Piece Property
+  playerCount: { min: 1, max: 1 }
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A card with a value.
+      properties:
+        - id: value
+          label: Value
+          type: { kind: enum, values: [a, b, c] }
+          mutable: false
+          visibility: always
+inventories:
+  types:
+    - id: hand
+      scope: { kind: player }
+      accepts: [card]
+      visibility: owner
+      description: Cards in hand.
+    - id: sets
+      scope: { kind: player }
+      accepts: [card]
+      visibility: always
+      description: Collected cards.
+effects:
+  effects:
+    - id: deal
+      effect: distribute
+      from: { inventory: "game:unassigned", select: top, ofType: card }
+      to: { inventory: hand }
+      count: 6${
+        opts.named
+          ? `
+    - id: moveMatching
+      effect: move${move(6)}`
+          : ""
+      }
+actions:
+  actions:
+    - id: match
+      label: Match
+      description: Move the cards matching the chosen one to sets.
+      steps:
+        - input: card
+          label: Card
+          type: ${opts.inputType}
+${
+  opts.named
+    ? "        - effectRef: moveMatching"
+    : `        - effect: move${move(10)}`
+}
+flow:
+  root:
+    kind: game
+    label: Input Piece Property
+    hooks:
+      onEnter:
+        - effectRef: deal
+    children:
+      - kind: loop
+        id: rounds
+        count: 1
+        children:
+          - kind: turn
+            id: acting
+            actor: all
+            turnOrder: { kind: seat, direction: clockwise }
+            grammar: { kind: action, ref: match }
+catalog:
+  entries:
+    - { typeId: card, properties: { value: a }, quantity: 3 }
+    - { typeId: card, properties: { value: b }, quantity: 2 }
+    - { typeId: card, properties: { value: c }, quantity: 1 }
+`;
+  }
+
+  function compile(opts: Parameters<typeof buildSpec>[0]) {
+    const result = validate(load(buildSpec(opts)));
+    if (!result.valid) throw new Error(JSON.stringify(result.errors, null, 2));
+    return assembleModule(result.spec, "input-piece-property");
+  }
+
+  function valuesIn(controller: GameController, inventoryId: string): string[] {
+    const state = controller.getState();
+    const inv = state.players.alice.inventories[inventoryId];
+    const ids = "pieceIds" in inv ? inv.pieceIds : [];
+    return ids.map((id) => String(state.gamepieces[id].properties.value)).sort();
+  }
+
+  async function chooseCardWithValue(value: string, named = false) {
+    const controller = new GameController(
+      compile({ inputType: SINGLE_PIECE, filter: MATCHING, named }),
+    );
+    await controller.init("input-prop-e2e", ["alice"]);
+    const state = controller.getState();
+    const hand = state.players.alice.inventories.hand;
+    const pieceId = ("pieceIds" in hand ? hand.pieceIds : []).find(
+      (id) => state.gamepieces[id].properties.value === value,
+    );
+    await controller.processAction({ playerId: "alice", value: pieceId });
+    return controller;
+  }
+
+  it("moves the pieces sharing a property with the chosen piece", async () => {
+    const controller = await chooseCardWithValue("b");
+
+    expect(valuesIn(controller, "sets")).toEqual(["b", "b"]);
+    expect(valuesIn(controller, "hand")).toEqual(["a", "a", "a", "c"]);
+  });
+
+  it("follows the chosen piece, not a fixed value", async () => {
+    const controller = await chooseCardWithValue("a");
+
+    expect(valuesIn(controller, "sets")).toEqual(["a", "a", "a"]);
+    expect(valuesIn(controller, "hand")).toEqual(["b", "b", "c"]);
+  });
+
+  it("works in a named effect the action calls", async () => {
+    const controller = await chooseCardWithValue("b", true);
+
+    expect(valuesIn(controller, "sets")).toEqual(["b", "b"]);
+  });
+
+  it("rejects the path on an input that is not a gamepiece-select", () => {
+    expect(() =>
+      compile({ inputType: "{ kind: number, min: 1, max: 3 }", filter: MATCHING }),
+    ).toThrow(/reads input\.card\.property\.value, but input "card" is not a single-piece gamepiece-select input/);
+  });
+
+  it("rejects the path on a multi-piece gamepiece-select", () => {
+    expect(() =>
+      compile({
+        inputType: "{ kind: gamepiece-select, inventory: hand, ofType: card, count: 2 }",
+        filter: MATCHING,
+      }),
+    ).toThrow(/reads input\.card\.property\.value, but input "card" is not a single-piece gamepiece-select input/);
+  });
+
+  it("rejects a property the input's gamepiece type does not have", () => {
+    expect(() =>
+      compile({ inputType: SINGLE_PIECE, filter: "piece.property.value == input.card.property.missing" }),
+    ).toThrow(/gamepiece type "card" \(input "card" ofType\) has no property "missing"/);
+  });
+
+  it("rejects an input path other than .property.<prop>", () => {
+    expect(() =>
+      compile({ inputType: SINGLE_PIECE, filter: "piece.id == input.card.id" }),
+    ).toThrow(/the only allowed form is input\.card\.property\.<prop>/);
+  });
+
+  it("rejects the path in a named effect when the action's input is not a single piece", () => {
+    expect(() =>
+      compile({ inputType: "{ kind: number, min: 1, max: 3 }", filter: MATCHING, named: true }),
+    ).toThrow(/reads input\.card\.property\.value, but input "card" is not a single-piece gamepiece-select input/);
+  });
+
+  it("rejects the path on an input the action does not declare", () => {
+    expect(() =>
+      compile({ inputType: SINGLE_PIECE, filter: "piece.property.value == input.other.property.value" }),
+    ).toThrow(/reads input\.other\.property\.value, but "other" is not an input of this action/);
   });
 });
 

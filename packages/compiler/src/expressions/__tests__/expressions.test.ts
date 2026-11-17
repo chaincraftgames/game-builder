@@ -5,7 +5,7 @@
 // against synthetic EvalContext snapshots.
 // ---------------------------------------------------------------------------
 
-import { compileExpression, compilePredicate, parseExpression, ExpressionError, EXPRESSION_FUNCTIONS, referencedInputs } from '../index.js';
+import { compileExpression, compilePredicate, parseExpression, ExpressionError, EXPRESSION_FUNCTIONS, referencedInputs, referencedInputPaths } from '../index.js';
 import type { EvalContext } from '../index.js';
 
 // --- Test helpers -----------------------------------------------------------
@@ -107,6 +107,64 @@ describe('path resolution', () => {
 
   it("throws on input.X when no action inputs are in context", () => {
     expect(() => compileExpression("input.quantity")(ctx)).toThrow("no action inputs");
+  });
+});
+
+describe("input.<id>.property.<prop>", () => {
+  const withCard = (answer: unknown) => makeCtx({ params: { card: answer } });
+
+  it("reads a property of the piece chosen by the input, via input and param", () => {
+    expect(compileExpression("input.card.property.value")(withCard("card-5"))).toBe(5);
+    expect(compileExpression("param.card.property.value")(withCard("card-1"))).toBe(1);
+  });
+
+  it("returns undefined for a property the piece lacks", () => {
+    expect(compileExpression("input.card.property.missing")(withCard("card-5"))).toBeUndefined();
+  });
+
+  it("compares against the candidate piece inside an aggregator", () => {
+    const fn = compileExpression("count(game.inventory.table, piece.property.value == input.card.property.value)");
+    expect(fn(withCard("card-5"))).toBe(1);
+  });
+
+  it("leaves plain input.X unchanged", () => {
+    expect(compileExpression("input.card")(withCard("card-5"))).toBe("card-5");
+  });
+
+  it.each([
+    ["an unknown piece id", "card-99"],
+    ["a number", 5],
+    ["an array of piece ids", ["card-1", "card-5"]],
+    ["null", null],
+  ])("throws expression-ref-missing when the answer is %s", (_label, answer) => {
+    const fn = compileExpression("input.card.property.value");
+    expect(() => fn(withCard(answer))).toThrow(ExpressionError);
+    expect(() => fn(withCard(answer))).toThrow(expect.objectContaining({ code: "expression-ref-missing" }));
+  });
+
+  it("throws expression-ref-missing when the input was not answered", () => {
+    const fn = compileExpression("input.card.property.value");
+    expect(() => fn(makeCtx({ params: {} }))).toThrow(expect.objectContaining({ code: "expression-ref-missing" }));
+  });
+
+  it.each(["input.card.id", "input.card.property", "input.card.property.a.b", "input.card.typeId.x"])(
+    "throws expression-path-invalid for %s",
+    (path) => {
+      const fn = compileExpression(path);
+      expect(() => fn(withCard("card-5"))).toThrow(expect.objectContaining({ code: "expression-path-invalid" }));
+    },
+  );
+});
+
+describe("referencedInputPaths", () => {
+  it("returns every input path with its trailing segments, aliasing param", () => {
+    expect(
+      referencedInputPaths("input.a.property.x == param.b and count(players, player.property.s > input.a)"),
+    ).toEqual([["a", "property", "x"], ["b"], ["a"]]);
+  });
+
+  it("returns nothing when no inputs are read", () => {
+    expect(referencedInputPaths("actor.property.score >= 3")).toEqual([]);
   });
 });
 

@@ -6,17 +6,30 @@
 // parseExpression(input)   → Expr AST (for inspection/testing)
 // ---------------------------------------------------------------------------
 
-export { parseExpression } from '#compiler/expressions/parser.js';
-export { buildEvaluator, buildPredicate } from '#compiler/expressions/evaluator.js';
-export type { ExprFn, PredicateFn } from '#compiler/expressions/evaluator.js';
-export type { Expr, CompareOp, ArithOp, EvalContext, InventoryLike, PlayerLike } from '#compiler/expressions/types.js';
-export { ExpressionError } from '#compiler/expressions/types.js';
-export { EXPRESSION_FUNCTIONS } from '#compiler/expressions/evaluator-functions.js';
-export type { ExpressionFunction } from '#compiler/expressions/evaluator-functions.js';
+export { parseExpression } from "#compiler/expressions/parser.js";
+export {
+  buildEvaluator,
+  buildPredicate,
+} from "#compiler/expressions/evaluator.js";
+export type { ExprFn, PredicateFn } from "#compiler/expressions/evaluator.js";
+export type {
+  Expr,
+  CompareOp,
+  ArithOp,
+  EvalContext,
+  InventoryLike,
+  PlayerLike,
+} from "#compiler/expressions/types.js";
+export { ExpressionError } from "#compiler/expressions/types.js";
+export { EXPRESSION_FUNCTIONS } from "#compiler/expressions/evaluator-functions.js";
+export type { ExpressionFunction } from "#compiler/expressions/evaluator-functions.js";
 
-import { parseExpression } from '#compiler/expressions/parser.js';
-import { buildEvaluator, buildPredicate } from '#compiler/expressions/evaluator.js';
-import type { EvalContext, Expr } from '#compiler/expressions/types.js';
+import { parseExpression } from "#compiler/expressions/parser.js";
+import {
+  buildEvaluator,
+  buildPredicate,
+} from "#compiler/expressions/evaluator.js";
+import type { EvalContext, Expr } from "#compiler/expressions/types.js";
 import { ExpressionError } from "#compiler/expressions/types.js";
 
 /** A path root an expression may read. `param` is checked as its alias `input`. */
@@ -36,7 +49,11 @@ const AGGREGATORS = new Set(["count", "sum", "all", "any"]);
  * Throw if the expression reads a path root its evaluation context does not bind.
  * Aggregators over `players` bind `player`; aggregators over an inventory bind `piece`.
  */
-export function checkRoots(input: string, ast: Expr, roots: readonly ExprRoot[]): void {
+export function checkRoots(
+  input: string,
+  ast: Expr,
+  roots: readonly ExprRoot[],
+): void {
   const visit = (node: Expr, scope: ReadonlySet<string>): void => {
     switch (node.kind) {
       case "path": {
@@ -87,32 +104,40 @@ export function checkRoots(input: string, ast: Expr, roots: readonly ExprRoot[])
 
 /** Action input ids an expression reads via `input.<id>` (or the `param.<id>` alias). */
 export function referencedInputs(input: string): string[] {
-  const refs = new Set<string>();
+  return [...new Set(referencedInputPaths(input).map(([id]) => id))];
+}
+
+/** Every `input.<id>...` (or `param`) path an expression reads, as segments after the root: `[id, ...rest]`. */
+export function referencedInputPaths(input: string): string[][] {
+  const paths: string[][] = [];
   const visit = (node: Expr): void => {
     switch (node.kind) {
-      case 'path':
-        if ((node.segments[0] === 'input' || node.segments[0] === 'param') && node.segments[1]) {
-          refs.add(node.segments[1]);
+      case "path":
+        if (
+          (node.segments[0] === "input" || node.segments[0] === "param") &&
+          node.segments[1]
+        ) {
+          paths.push(node.segments.slice(1));
         }
         return;
-      case 'compare':
-      case 'arithmetic':
-      case 'logical':
+      case "compare":
+      case "arithmetic":
+      case "logical":
         visit(node.left);
         visit(node.right);
         return;
-      case 'not':
+      case "not":
         visit(node.operand);
         return;
-      case 'call':
+      case "call":
         node.args.forEach(visit);
         return;
-      case 'literal':
+      case "literal":
         return;
     }
   };
   visit(parseExpression(input));
-  return [...refs];
+  return paths;
 }
 
 /**

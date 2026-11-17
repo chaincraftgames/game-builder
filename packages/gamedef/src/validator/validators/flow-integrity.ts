@@ -14,6 +14,7 @@
  *       (c) a game-level mechanic that auto-wires an endCondition
  *           (currently: chaincraft:score-track with a winAt value)
  *   - the auto-wire exception applies to the first child loop of root
+ *   - `optional: true` is valid only on a direct step of a sequence
  */
 
 import type { ModularGameSpec } from "#gamedef/index.js";
@@ -28,6 +29,34 @@ function mechanicsAutoWireRootEnd(spec: ModularGameSpec): boolean {
   );
 }
 
+function checkGrammar(
+  node: unknown,
+  path: string,
+  isSequenceStep: boolean,
+  errors: ValidationError[],
+): void {
+  if (!node || typeof node !== "object") return;
+  const n = node as Record<string, unknown>;
+
+  if (n["optional"] !== undefined && !isSequenceStep) {
+    errors.push({
+      path: `${path}.optional`,
+      message:
+        `"optional" is valid only on a step of a sequence. ` +
+        `Remove it, or make this action a step of a "sequence".`,
+      code: ValidationCode.FlowIntegrity,
+    });
+  }
+
+  if (n["kind"] === "sequence" && Array.isArray(n["steps"])) {
+    n["steps"].forEach((s, i) => checkGrammar(s, `${path}.steps[${i}]`, true, errors));
+  } else if (n["kind"] === "choice" && Array.isArray(n["options"])) {
+    n["options"].forEach((o, i) => checkGrammar(o, `${path}.options[${i}]`, false, errors));
+  } else if (n["kind"] === "repeat") {
+    checkGrammar(n["body"], `${path}.body`, false, errors);
+  }
+}
+
 function checkNode(
   node: unknown,
   path: string,
@@ -37,6 +66,8 @@ function checkNode(
 ): void {
   if (!node || typeof node !== "object") return;
   const n = node as Record<string, unknown>;
+
+  checkGrammar(n["grammar"], `${path}.grammar`, false, errors);
 
   if (n["kind"] === "loop") {
     const hasExit =

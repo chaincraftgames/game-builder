@@ -189,7 +189,8 @@ function assembleGrammar(node: TurnGrammarNode): Grammar {
       }
       return step.ref;
     });
-    return { kind: "sequence", actions };
+    const optional = node.steps.map((step) => isActionNode(step) && step.optional === true);
+    return { kind: "sequence", actions, ...(optional.some(Boolean) && { optional }) };
   }
 
   if (node.kind === "choice") {

@@ -291,7 +291,8 @@ export const GamepieceSelectorSchema = z
         "Every candidate is checked against the inventory as it was before the effect runs, so aggregators see all pieces, " +
         "including the candidate itself. " +
         "Available paths: 'piece.*' (the candidate, e.g. 'piece.property.<id>', 'piece.typeId'), " +
-        "'target.property.<id>' (also the candidate), 'actor.*', 'game.*', and 'input.<id>' inside an action. " +
+        "'target.property.<id>' (also the candidate), 'actor.*', 'game.*', and 'input.<id>' inside an action, " +
+        "including 'input.<id>.property.<prop>' (a property of the piece chosen by a gamepiece-select input). " +
         "Inside count()/sum()/all()/any(), 'piece' is the aggregated item and 'target' is still the candidate, e.g. " +
         "'count(actor.inventory.hand, piece.property.value == target.property.value) == 4'. " +
         "Example: 'piece.property.frozen == false' or 'piece.typeId == \"creature\"'.",

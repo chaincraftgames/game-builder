@@ -860,20 +860,20 @@ describe('assembleFlow — turn ordering', () => {
   });
 });
 
+/** High Card with the playTrick turn's grammar replaced. */
+function assembleWithGrammar(grammar: Record<string, unknown>) {
+  const spec = loadHighCardSpec();
+  const root = spec.flow!.root as unknown as { children: { children: Record<string, unknown>[] }[] };
+  root.children[0].children[0].grammar = grammar;
+  const loop = assembleFlow(spec, 'high-card', {}).children[0];
+  if (loop.kind !== 'loop') throw new Error('expected loop');
+  const node = loop.children[0];
+  if (node.kind !== 'turn') throw new Error('expected turn');
+  return { spec, grammar: node.grammar };
+}
+
 describe('assembleFlow — repeat until', () => {
   const body = { kind: 'choice', options: [{ kind: 'action', ref: 'playCard' }] };
-
-  /** High Card with the playTrick turn's grammar replaced. */
-  function assembleWithGrammar(grammar: Record<string, unknown>) {
-    const spec = loadHighCardSpec();
-    const root = spec.flow!.root as unknown as { children: { children: Record<string, unknown>[] }[] };
-    root.children[0].children[0].grammar = grammar;
-    const loop = assembleFlow(spec, 'high-card', {}).children[0];
-    if (loop.kind !== 'loop') throw new Error('expected loop');
-    const node = loop.children[0];
-    if (node.kind !== 'turn') throw new Error('expected turn');
-    return { spec, grammar: node.grammar };
-  }
 
   it('compiles until to a predicate evaluated with the actor bound; max is preserved', () => {
     const { spec, grammar } = assembleWithGrammar({
@@ -903,6 +903,37 @@ describe('assembleFlow — repeat until', () => {
     const inner = { kind: 'repeat', body, count: { until: 'game.property.done == true' } };
     expect(() => assembleWithGrammar({ kind: 'repeat', body: inner, count: 2 }))
       .toThrow('a repeat nested inside a repeat is not yet supported');
+  });
+});
+
+describe('assembleFlow — optional sequence steps', () => {
+  const step = (optional?: boolean) => ({ kind: 'action', ref: 'playCard', ...(optional !== undefined && { optional }) });
+
+  it('emits optional parallel to actions when a step is optional', () => {
+    const { grammar } = assembleWithGrammar({ kind: 'sequence', steps: [step(), step(true), step(false)] });
+    expect(grammar).toEqual({
+      kind: 'sequence',
+      actions: ['playCard', 'playCard', 'playCard'],
+      optional: [false, true, false],
+    });
+  });
+
+  it('omits optional when no step is optional', () => {
+    const { grammar } = assembleWithGrammar({ kind: 'sequence', steps: [step(), step(false)] });
+    expect(grammar).toEqual({ kind: 'sequence', actions: ['playCard', 'playCard'] });
+  });
+
+  it('carries optional on a sequence that is the body of a repeat', () => {
+    const { grammar } = assembleWithGrammar({
+      kind: 'repeat',
+      count: 2,
+      body: { kind: 'sequence', steps: [step(), step(true)] },
+    });
+    expect(grammar).toEqual({
+      kind: 'repeat',
+      count: 2,
+      body: { kind: 'sequence', actions: ['playCard', 'playCard'], optional: [false, true] },
+    });
   });
 });
 

@@ -41,6 +41,7 @@ export const EXPRESSION_EXAMPLES: readonly string[] = [
   "count(actor.inventory.hand, piece.property.suit == \"hearts\") >= 2",
   "sum(actor.inventory.hand, piece.property.rank) > 21",
   "count(actor.inventory.hand, piece.property.value == target.property.value) == 4",
+  "input.spell.property.cost <= actor.property.mana",
   "if(actor.property.coins > 0, actor.property.coins * 2, 0)",
   "not (game.property.round == 1 or game.property.round == 2)",
 ];

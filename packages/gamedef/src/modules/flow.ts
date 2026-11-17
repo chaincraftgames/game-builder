@@ -408,6 +408,16 @@ export const ActorSpecSchema = z
  *         - kind: action
  *           ref: playCard
  * ```
+ * @example Skip a step when its action is unavailable (optional sequence step)
+ * ```yaml
+ * kind: sequence
+ * steps:
+ *   - kind: action
+ *     ref: attack
+ *   - kind: action
+ *     ref: collectLoot  # preconditions: the attack defeated its target
+ *     optional: true
+ * ```
  * @example Activate any matching slot on pieces in hand
  * ```yaml
  * kind: slot
@@ -427,6 +437,17 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
             .string()
             .describe(
               "ID of the action to take. Forward reference to the actions module.",
+            ),
+          optional: z
+            .boolean()
+            .optional()
+            .describe(
+              "Sequence steps only. Skip this step when the action is unavailable (its `preconditions` " +
+                "are false or its first input has no valid answer). The game state decides, not the " +
+                "player: whenever the action is available the step runs (an action with no inputs runs " +
+                "without prompting) and the player cannot decline it. Use for steps that happen only " +
+                "when a condition holds, e.g. collect loot only if the attack defeated its target. " +
+                "To let the player choose whether to act, use a choice with `passable: true` instead.",
             ),
         })
         .describe("Take a specific named action."),
@@ -494,7 +515,8 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
             ),
         })
         .describe(
-          "Ordered list of grammar steps, all of which must be taken in order. " +
+          "Ordered list of grammar steps, all of which must be taken in order, except steps marked " +
+            "`optional: true`, which are skipped when their action is unavailable. " +
             "Use for mandatory multi-part turns (draw then play, move then attack).",
         ),
 
@@ -600,7 +622,7 @@ export const TurnGrammarNodeSchema: z.ZodType<TurnGrammarNode> = z.lazy(() =>
 
 // TypeScript type (needed for recursive z.ZodType annotation above)
 export type TurnGrammarNode =
-  | { kind: "action"; ref: string }
+  | { kind: "action"; ref: string; optional?: boolean }
   | {
       kind: "slot";
       inventory: string;

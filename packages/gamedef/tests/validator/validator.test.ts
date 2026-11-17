@@ -324,6 +324,47 @@ describe("Flow structural integrity", () => {
     expect(result.errors.some((e) => e.message.includes("no exit condition"))).toBe(true);
   });
 
+  describe("optional grammar steps", () => {
+    const optionalErrors = (grammar: unknown) => {
+      const turn = { kind: "turn", actor: "all", grammar };
+      const result = validate(
+        minimalSpec({ flow: { root: { kind: "game", children: [{ kind: "loop", count: 1, children: [turn] }] } } }),
+      );
+      return result.errors.filter((e) => e.path.endsWith(".optional"));
+    };
+    const step = (ref: string, optional?: boolean) => ({ kind: "action", ref, ...(optional ? { optional } : {}) });
+
+    it("accepts optional on a sequence step", () => {
+      expect(optionalErrors({ kind: "sequence", steps: [step("a"), step("b", true)] })).toHaveLength(0);
+    });
+
+    it("accepts optional on a sequence step inside a repeat body", () => {
+      const grammar = {
+        kind: "repeat",
+        count: 2,
+        body: { kind: "sequence", steps: [step("a", true), step("b")] },
+      };
+      expect(optionalErrors(grammar)).toHaveLength(0);
+    });
+
+    it("rejects optional on a top-level action", () => {
+      const errors = optionalErrors(step("a", true));
+      expect(errors).toHaveLength(1);
+      expect(errors[0].path).toBe("flow.root.children[0].children[0].grammar.optional");
+    });
+
+    it("rejects optional on a choice option", () => {
+      const errors = optionalErrors({ kind: "choice", options: [step("a"), step("b", true)] });
+      expect(errors.map((e) => e.path)).toEqual([
+        "flow.root.children[0].children[0].grammar.options[1].optional",
+      ]);
+    });
+
+    it("rejects optional on a repeat body", () => {
+      expect(optionalErrors({ kind: "repeat", count: 2, body: step("a", true) })).toHaveLength(1);
+    });
+  });
+
   it("errors when flow has no root node", () => {
     const result = validate(
       minimalSpec({

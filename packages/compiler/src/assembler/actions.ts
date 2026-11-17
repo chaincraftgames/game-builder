@@ -7,24 +7,32 @@
 // synthetic IDs.
 // ---------------------------------------------------------------------------
 
-import type { ModularGameSpec, ActionInput, ActionStep, EffectCall } from '@chaincraft/gamedef';
-import { numberOptionCount } from '@chaincraft/runtime';
+import type {
+  ModularGameSpec,
+  ActionInput,
+  ActionStep,
+  EffectCall,
+} from "@chaincraft/gamedef";
+import { numberOptionCount } from "@chaincraft/runtime";
 import type {
   ActionDef,
   ActionSegmentDef,
   ActionInputDef,
   ActionInputType,
   NumberInputType,
-} from '@chaincraft/runtime';
-import { normalizeEffectList } from '#compiler/assembler/effects.js';
-import { CompileError, compileFailure } from '#compiler/assembler/errors.js';
-import { CompileCode } from '#compiler/assembler/types.js';
+} from "@chaincraft/runtime";
+import { normalizeEffectList } from "#compiler/assembler/effects.js";
+import { CompileError, compileFailure } from "#compiler/assembler/errors.js";
+import { CompileCode } from "#compiler/assembler/types.js";
 import {
   compileInputValidation,
   compilePrecondition,
   compileSelectionFilter,
-} from '#compiler/expressions/eval-bridge.js';
-import { referencedInputs } from '#compiler/expressions/index.js';
+} from "#compiler/expressions/eval-bridge.js";
+import {
+  referencedInputs,
+  referencedInputPaths,
+} from "#compiler/expressions/index.js";
 
 /** Player-supplied inputs per action; with the action choice this fills the 5-response submit cap. */
 export const MAX_PLAYER_INPUTS = 4;
@@ -32,19 +40,22 @@ export const MAX_PLAYER_INPUTS = 4;
 /** Upper bound on answer combinations the runtime may enumerate when looking ahead. */
 export const MAX_LOOKAHEAD_COMBINATIONS = 500;
 
-const AUTO_INPUT_KINDS = new Set(['effect-originator', 'trigger-input']);
-const SELECTION_KINDS = new Set(['gamepiece-select', 'player-select']);
+const AUTO_INPUT_KINDS = new Set(["effect-originator", "trigger-input"]);
+const SELECTION_KINDS = new Set(["gamepiece-select", "player-select"]);
 
 /** Map a gamedef input step to the runtime's ActionInputDef; a selection's filter becomes its `validate`. */
-function mapActionInput(step: ActionInput, dependsOn: string[]): ActionInputDef {
+function mapActionInput(
+  step: ActionInput,
+  dependsOn: string[],
+): ActionInputDef {
   const { filter, ...typeFields } = step.type as Record<string, unknown>;
   const type = typeFields as ActionInputType;
 
   let validate: ActionInputDef["validate"];
   if (SELECTION_KINDS.has(type.kind)) {
-    if (typeof filter === 'string') {
+    if (typeof filter === "string") {
       validate = compileSelectionFilter(
-        type.kind as 'gamepiece-select' | 'player-select',
+        type.kind as "gamepiece-select" | "player-select",
         step.input,
         filter,
       );
@@ -58,7 +69,9 @@ function mapActionInput(step: ActionInput, dependsOn: string[]): ActionInputDef 
     ...(step.label != null && { label: step.label }),
     type,
     ...(validate && { validate }),
-    ...(step.validationMessage != null && { validationMessage: step.validationMessage }),
+    ...(step.validationMessage != null && {
+      validationMessage: step.validationMessage,
+    }),
     ...(dependsOn.length > 0 && { dependsOn }),
   };
 }
@@ -69,7 +82,10 @@ function fail(
   message: string,
   code: CompileCode = CompileCode.InvalidSpec,
 ): never {
-  throw compileFailure(code, `actions assembler: action "${actionId}" ${message}`);
+  throw compileFailure(
+    code,
+    `actions assembler: action "${actionId}" ${message}`,
+  );
 }
 
 /** Earlier input ids this input's options depend on. Throws on any other reference. */
@@ -81,7 +97,11 @@ function inputDependencies(
   const refs = new Set<string>();
   const rawType = step.type as { fromPlayer?: unknown; filter?: unknown };
   const fromPlayer = rawType.fromPlayer;
-  if (typeof fromPlayer === "object" && fromPlayer !== null && "param" in fromPlayer) {
+  if (
+    typeof fromPlayer === "object" &&
+    fromPlayer !== null &&
+    "param" in fromPlayer
+  ) {
     refs.add(String(fromPlayer.param));
   }
   if (typeof rawType.filter === "string") {
@@ -104,11 +124,97 @@ function inputDependencies(
   return [...refs];
 }
 
+/** Expression strings an action evaluates with its inputs in scope, including those of named effects it calls. */
+function actionExpressions(
+  spec: ModularGameSpec,
+  action: SpecAction,
+): string[] {
+  const out: string[] = [];
+  const named = new Map((spec.effects?.effects ?? []).map((e) => [e.id, e]));
+
+  // Recursively collect expression strings from an object/array structure.
+  const collect = (value: unknown): void => {
+    if (typeof value !== "object" || value === null) return;
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+    for (const [key, v] of Object.entries(value)) {
+      if ((key === "expr" || key === "filter") && typeof v === "string")
+        out.push(v);
+      else collect(v);
+    }
+  };
+  for (const step of action.steps) {
+    if ("input" in step) {
+      const filter = (step.type as { filter?: unknown }).filter;
+      if (typeof filter === "string") out.push(filter);
+      if (step.validation != null) out.push(step.validation);
+    } else if ("effectRef" in step) {
+      collect(named.get(step.effectRef));
+    } else {
+      collect(step);
+    }
+  }
+  return out;
+}
+
+/** Only `input.<id>.property.<prop>` on a single-piece gamepiece-select input may extend an input path. */
+function checkInputPropertyPaths(
+  spec: ModularGameSpec,
+  action: SpecAction,
+): void {
+  const inputs = new Map<string, ActionInput>();
+  for (const step of action.steps)
+    if ("input" in step) inputs.set(step.input, step);
+  const pieceTypes = spec.gamepieceTypes?.types ?? [];
+
+  for (const expr of actionExpressions(spec, action)) {
+    for (const [id, ...rest] of referencedInputPaths(expr)) {
+      if (rest.length === 0) continue;
+      const path = `input.${[id, ...rest].join(".")}`;
+      const where = `expression "${expr}" reads ${path}`;
+      const type = inputs.get(id)?.type as
+        | { kind: string; count?: number; ofType?: string }
+        | undefined;
+      if (!type)
+        fail(action.id, `${where}, but "${id}" is not an input of this action`);
+      if (type.kind !== "gamepiece-select" || (type.count ?? 1) !== 1) {
+        fail(
+          action.id,
+          `${where}, but input "${id}" is not a single-piece gamepiece-select input; ` +
+            `only those support input.${id}.property.<prop>`,
+        );
+      }
+      if (rest.length !== 2 || rest[0] !== "property") {
+        fail(
+          action.id,
+          `${where}; the only allowed form is input.${id}.property.<prop>`,
+        );
+      }
+      const pieceType = type.ofType
+        ? pieceTypes.find((t) => t.id === type.ofType)
+        : undefined;
+      if (
+        pieceType &&
+        !(pieceType.properties ?? []).some((p) => p.id === rest[1])
+      ) {
+        fail(
+          action.id,
+          `${where}, but gamepiece type "${pieceType.id}" (input "${id}" ofType) has no property "${rest[1]}"`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Options an input lists at compile time: a count for enum/boolean/bounded numbers,
  * "dynamic" for selections (finite, state-dependent), undefined when there is no list.
  */
-function staticOptionCount(type: ActionInputType): number | "dynamic" | undefined {
+function staticOptionCount(
+  type: ActionInputType,
+): number | "dynamic" | undefined {
   switch (type.kind) {
     case "enum":
       return type.values.length;
@@ -137,7 +243,10 @@ function checkActionInputs(
     if (input.type.kind === "number") {
       const { min, max } = input.type as NumberInputType;
       if (min !== undefined && max !== undefined && min > max) {
-        fail(actionId, `input "${input.id}" has min ${min} greater than max ${max}`);
+        fail(
+          actionId,
+          `input "${input.id}" has min ${min} greater than max ${max}`,
+        );
       }
     }
   }
@@ -166,7 +275,8 @@ function checkActionInputs(
         );
       }
       const inChain =
-        dependedOn.has(input.id) || (input.dependsOn ?? []).some((d) => ids.has(d));
+        dependedOn.has(input.id) ||
+        (input.dependsOn ?? []).some((d) => ids.has(d));
       if (inChain && typeof count === "number") combinations *= count;
     }
     if (combinations > MAX_LOOKAHEAD_COMBINATIONS) {
@@ -235,10 +345,11 @@ export function assembleActions(
 
   for (const [index, action] of spec.actions.actions.entries()) {
     try {
-      actions[action.id] = assembleAction(action, effectDefs);
+      actions[action.id] = assembleAction(spec, action, effectDefs);
     } catch (err) {
       if (err instanceof CompileError) {
-        for (const issue of err.issues) issue.path ??= `actions.actions[${index}]`;
+        for (const issue of err.issues)
+          issue.path ??= `actions.actions[${index}]`;
       }
       throw err;
     }
@@ -250,6 +361,7 @@ export function assembleActions(
 type SpecAction = NonNullable<ModularGameSpec["actions"]>["actions"][number];
 
 function assembleAction(
+  spec: ModularGameSpec,
   action: SpecAction,
   effectDefs: Record<string, Record<string, unknown>>,
 ): ActionDef {
@@ -272,11 +384,17 @@ function assembleAction(
             "(compare identities with piece.id / player.id)",
         );
       }
-      const def = mapActionInput(step, inputDependencies(action.id, step, earlier));
+      const def = mapActionInput(
+        step,
+        inputDependencies(action.id, step, earlier),
+      );
       earlier.add(step.input);
       return def;
     });
-    const effects = allEffects.slice(effectOffset, effectOffset + raw.effects.length);
+    const effects = allEffects.slice(
+      effectOffset,
+      effectOffset + raw.effects.length,
+    );
     effectOffset += raw.effects.length;
     return { inputs, effects };
   });
@@ -284,9 +402,10 @@ function assembleAction(
     action.id,
     segments.map((s) => s.inputs),
   );
+  checkInputPropertyPaths(spec, action);
 
   const precondition =
-    typeof action.preconditions === 'string'
+    typeof action.preconditions === "string"
       ? compilePrecondition(action.preconditions)
       : undefined;
 

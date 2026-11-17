@@ -190,7 +190,8 @@ export const ActionInputTypeSchema = z
       filter: ConditionExpressionSchema.optional().describe(
         "Infix expression to filter eligible pieces. " +
           "Evaluated per-piece. Available paths: 'piece.id', 'piece.property.<id>', 'piece.typeId', " +
-          "'input.<id>' (an EARLIER input of this action). 'target.property.<id>' also names the candidate piece; " +
+          "'input.<id>' (an EARLIER input of this action), 'input.<id>.property.<prop>' (a property of the piece " +
+          "chosen by an earlier gamepiece-select input). 'target.property.<id>' also names the candidate piece; " +
           "inside count()/sum()/all()/any(), 'piece' is the aggregated item and 'target' is still the candidate. " +
           "Example: 'piece.property.charges > 0', 'piece.property.cost <= input.budget', " +
           "'piece.id != input.attacker', or " +
@@ -210,7 +211,8 @@ export const ActionInputTypeSchema = z
       filter: ConditionExpressionSchema.optional().describe(
         "Infix expression to filter eligible players. " +
           "Evaluated per-player. Available paths: 'player.id', 'player.property.<id>', " +
-          "'count(player.inventory.<id>)', 'input.<id>' (an EARLIER input of this action). " +
+          "'count(player.inventory.<id>)', 'input.<id>' (an EARLIER input of this action), " +
+          "'input.<id>.property.<prop>' (a property of the piece chosen by an earlier gamepiece-select input). " +
           "Example: 'not player.property.eliminated and count(player.inventory.hand) > 0'. " +
           "Runtime computes valid options and sends them to UX.",
       ),
@@ -265,7 +267,8 @@ export const ActionInputSchema = z
     validation: ConditionExpressionSchema.optional().describe(
       "Infix expression that must be true for an answer to this input to be legal. " +
         "For value inputs only (number, enum, boolean, string); selection inputs use 'filter'. " +
-        "'input.<thisId>' is the candidate answer; 'input.<id>' of an EARLIER input is its answer. " +
+        "'input.<thisId>' is the candidate answer; 'input.<id>' of an EARLIER input is its answer; " +
+        "'input.<id>.property.<prop>' is a property of the piece chosen by an earlier gamepiece-select input. " +
         "Also available: 'actor.*', 'game.*' paths. For inputs with a finite option list " +
         "(enum, boolean, small whole-number ranges) it narrows the options offered; " +
         "otherwise it is checked on submit. Put a rule on the LAST input it reads. " +

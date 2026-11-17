@@ -82,6 +82,7 @@ export type IntRange = z.infer<typeof IntRangeSchema>;
  *
  * **Input validation** (`ActionInput.validation`, value inputs only):
  * - `input.<id>`                  — this input's candidate answer, or an earlier input's answer
+ * - `input.<id>.property.<prop>` — a property of the piece chosen by a single-piece gamepiece-select input
  * - `actor.*`, `game.*`           — as for preconditions
  *
  * **Piece-slot context** (`ActionSlotSchema.preconditions`):
@@ -98,6 +99,7 @@ export type IntRange = z.infer<typeof IntRangeSchema>;
  * - `player.property.<id>`        — the candidate player's property
  * - `player.inventory.<id>`       — the candidate player's inventory (aggregators only)
  * - `input.<id>`                  — an earlier input's answer (`player-select.filter` only)
+ * - `input.<id>.property.<prop>` — a property of the piece chosen by an earlier single-piece gamepiece-select input
  *
  * **Gamepiece filter** (`gamepiece-select.filter`, and the selector `filter` of effects):
  * - `piece.id`                    — the candidate piece's id
@@ -107,6 +109,7 @@ export type IntRange = z.infer<typeof IntRangeSchema>;
  * - `piece.faceUp`                — whether the piece is face-up
  * - `target.property.<id>`        — also the candidate piece (only `.property.<id>` is supported on `target`)
  * - `input.<id>`                  — an earlier input's answer (selector filters: the enclosing action's inputs)
+ * - `input.<id>.property.<prop>` — a property of the piece chosen by a single-piece gamepiece-select input
  * - `actor.*`, `game.*`           — as for preconditions
  *
  * **Effect values** (`{ expr }` in `set-state` / `update` values and `delta` / `mult`):
@@ -185,7 +188,8 @@ export const ConditionExpressionSchema = z.string().describe(
     "piece.id / piece.property.<id> / piece.typeId / piece.faceValue / piece.faceUp (gamepiece-filter context or inside an aggregator over an inventory), " +
     "target.property.<id> (only where the context supplies a target piece: the candidate in a gamepiece filter, the piece being updated in an update value; " +
     "aggregators never rebind it, so inside count(...) it is still the candidate), " +
-    "input.<id> (input validation, selection filters and effect selector filters inside an action). " +
+    "input.<id> (input validation, selection filters and effect selector filters inside an action), " +
+    "input.<id>.property.<prop> (a property of the piece chosen by a single-piece gamepiece-select input). " +
     "Inventories (game.inventory.<id>, actor.inventory.<id>, player.inventory.<id>) are collections: " +
     "use them only inside aggregators, never with a '.count' suffix. " +
     "Aggregators take a collection ('players' or an inventory path) and an optional per-item " +

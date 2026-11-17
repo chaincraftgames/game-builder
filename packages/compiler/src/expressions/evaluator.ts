@@ -177,6 +177,14 @@ function resolveRoot(
     }
     case "input":
     case "param": {
+      if (rest.length > 1 && (rest[1] !== "property" || rest.length !== 3)) {
+        throw new ExpressionError(
+          `Invalid path for "${root}"; expected "${root}.<id>" or "${root}.<id>.property.<prop>"`,
+          0,
+          undefined,
+          "expression-path-invalid",
+        );
+      }
       if (!ctx.params) {
         throw new ExpressionError(
           `Cannot resolve "${root}" — no action inputs in context`,
@@ -184,6 +192,19 @@ function resolveRoot(
           undefined,
           "expression-unbound-root",
         );
+      }
+      if (rest.length === 3) {
+        const answer = ctx.params[rest[0]];
+        const piece = typeof answer === "string" ? ctx.gamepieces[answer] : undefined;
+        if (!piece) {
+          throw new ExpressionError(
+            `"${root}.${rest[0]}" is not the id of a known piece; cannot read its property`,
+            0,
+            undefined,
+            "expression-ref-missing",
+          );
+        }
+        return { base: piece.properties, skip: 2 };
       }
       return { base: ctx.params, skip: 0 };
     }
