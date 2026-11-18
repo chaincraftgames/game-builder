@@ -19,6 +19,8 @@ export interface ReplayId {
 /** Options for {@link playOne} and {@link playRun}; `maxDecisions` must match for a faithful replay. */
 export interface PlayOptions {
   maxDecisions: number;
+  /** Also records what this player could see; the game is the same either way. */
+  viewer?: string;
 }
 
 /** Options for {@link playRun}. */
@@ -83,6 +85,7 @@ export async function playOne(
     gameSeed: gameSeedFor(id),
     policySeed: policySeedFor(id),
     maxDecisions: options.maxDecisions,
+    ...(options.viewer !== undefined && { viewer: options.viewer }),
   });
   return { playerCount: id.playerCount, index: id.index, result };
 }

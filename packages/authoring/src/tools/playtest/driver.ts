@@ -10,6 +10,8 @@ import {
   createSeededRng,
   GameController,
   GameRuntimeError,
+  getGameState,
+  getPlayerState,
   isGameRuntimeError,
 } from "@chaincraft/runtime";
 import type {
@@ -17,10 +19,13 @@ import type {
   FaultSite,
   GameEvent,
   GameOutcome,
+  GameSession,
   InputOption,
   InventoryData,
   NumberInputType,
   PlayerInputSuspension,
+  ProjectedInventory,
+  PropertyConfig,
   RngProvider,
   StateChangeEvent,
 } from "@chaincraft/runtime";
@@ -45,6 +50,8 @@ export interface GameOptions {
   policySeed: number;
   /** Responses after which an unfinished game is stopped. */
   maxDecisions: number;
+  /** Also record what this player could see; the game itself is unaffected. */
+  viewer?: string;
 }
 
 /** What the engine offered at an action-select prompt. */
@@ -62,6 +69,8 @@ export type TranscriptEntry =
       playerId: string;
       inputId: string;
       value: unknown;
+      /** The answer is a secret of another player; `value` is not meaningful. Viewer transcripts only. */
+      hidden?: true;
       /** Node of the active turn when the player answered. */
       turnNodeId?: string;
       /** Present for action-select prompts only. */
@@ -102,10 +111,10 @@ export type GameEnd =
       input?: { playerId: string; inputId: string };
     };
 
-/** A game's or player's properties and how many pieces each inventory held. */
+/** A game's or player's properties and how many pieces each inventory held (`"hidden"`: not even the count is visible). */
 export interface StateSummary {
   properties: Record<string, unknown>;
-  inventories: Record<string, number>;
+  inventories: Record<string, number | "hidden">;
 }
 
 /** The state a completed game ended in. */
@@ -125,6 +134,8 @@ export interface GameResult {
   end: GameEnd;
   /** Present when the game completed. */
   final?: FinalState;
+  /** The game as `viewer` saw it; present when a viewer was requested. */
+  view?: { viewer: string; transcript: TranscriptEntry[]; final?: FinalState };
 }
 
 /** A single choice made by the playtest. */
@@ -132,14 +143,32 @@ type Choice = { value: unknown; generated: boolean };
 
 /** Plays one game to completion, an error, or `maxDecisions`. */
 export async function playGame(options: GameOptions): Promise<GameResult> {
-  const { module, players, gameSeed, policySeed, maxDecisions } = options;
+  const { module, players, gameSeed, policySeed, maxDecisions, viewer } = options;
   const rng = createSeededRng(policySeed);
   const transcript: TranscriptEntry[] = [];
+  const viewTranscript: TranscriptEntry[] = [];
   let decisions = 0;
 
-  const controller = new GameController(module, {
-    events: { onEngineEvent: (event) => record(transcript, event) },
-  });
+  // The controller only exposes raw stored state, which omits computed properties.
+  let session: GameSession | undefined;
+  const controller = new GameController(
+    {
+      ...module,
+      createSession: (...args) => (session = module.createSession(...args)),
+    },
+    {
+      events: {
+        onEngineEvent: (event) => {
+          const entry = toEntry(event);
+          if (entry === undefined) return;
+          transcript.push(entry);
+          // Projected now: what a change reveals depends on the state at this moment.
+          const seen = viewer === undefined ? undefined : viewOf(entry, viewer, controller);
+          if (seen) viewTranscript.push(seen);
+        },
+      },
+    },
+  );
 
   const result = (end: GameEnd): GameResult => ({
     gameSeed,
@@ -148,6 +177,7 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
     decisions,
     transcript,
     end,
+    ...(viewer !== undefined && { view: { viewer, transcript: viewTranscript } }),
   });
   const failure = (
     attribution: Attribution,
@@ -217,6 +247,7 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
         entry.value = choice.value;
         // Recorded first so the events the response causes follow it.
         transcript.push(entry);
+        if (viewer !== undefined) viewTranscript.push(viewOf(entry, viewer, controller)!);
         try {
           await controller.processAction({ playerId, value: choice.value });
           applied = true;
@@ -226,6 +257,7 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
           if (!choice.generated) return thrown(error);
           // All-or-nothing: a rejected answer changed no state and fired no events.
           transcript.pop();
+          if (viewer !== undefined) viewTranscript.pop();
           if (attempt >= MAX_GENERATED_RETRIES) {
             const message = `playtest couldn't find an accepted value for input "${prompt.input.id}"`;
             return failure(unsupportedAttribution(), message, {
@@ -240,9 +272,88 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
     return thrown(error);
   }
 
+  const complete = result({ kind: "complete", outcome: controller.outcome! });
   return {
-    ...result({ kind: "complete", outcome: controller.outcome! }),
-    final: finalState(controller.getState()),
+    ...complete,
+    final: finalState(session!),
+    ...(complete.view && {
+      view: { ...complete.view, final: viewFinalState(controller, session!, complete.view.viewer) },
+    }),
+  };
+}
+
+/** What `viewer` can see of an entry, or `undefined` when nothing. Decisions and messages of others are cut down. */
+function viewOf(
+  entry: TranscriptEntry,
+  viewer: string,
+  controller: GameController,
+): TranscriptEntry | undefined {
+  switch (entry.kind) {
+    case "message":
+      return entry.recipients.includes(viewer) ? entry : undefined;
+    case "change": {
+      const [seen] = controller.projectStateChangesForPlayer([entry.change], viewer);
+      return seen === undefined ? undefined : { kind: "change", change: seen };
+    }
+    case "decision": {
+      if (entry.playerId === viewer) return { ...entry };
+      // Which action was chosen is public (it starts for everyone); the answers to its inputs are not.
+      if (entry.offered !== undefined) {
+        const { offered: _offered, options: _options, ...rest } = entry;
+        return rest;
+      }
+      const { options: _options, ...rest } = entry;
+      return { ...rest, value: null, hidden: true };
+    }
+    default:
+      return entry;
+  }
+}
+
+/** The final state as `viewer` could read it. */
+function viewFinalState(
+  controller: GameController,
+  session: GameSession,
+  viewer: string,
+): FinalState {
+  const projected = controller.projectStateForPlayer(viewer);
+  const counts = (inventories: Record<string, ProjectedInventory>): StateSummary["inventories"] =>
+    Object.fromEntries(
+      Object.entries(inventories).map(([id, inv]) => [
+        id,
+        !("redacted" in inv) ? pieceCount(inv) : inv.redacted === "hidden" ? "hidden" : inv.count,
+      ]),
+    );
+  // The runtime projection omits computed properties, so apply the common rules here: shown unless private to another player.
+  const computed = (configs: Record<string, PropertyConfig>, owner?: string) =>
+    Object.entries(configs)
+      .filter(([, config]) => config.computed)
+      .filter(([, config]) => config.visibility === undefined || config.visibility === "public" || owner === viewer)
+      .map(([key]) => key);
+  const gameComputed = getGameState(session) as Record<string, unknown>;
+  return {
+    game: {
+      properties: {
+        ...projected.gameProperties,
+        ...Object.fromEntries(computed(session.config.gameProperties).map((key) => [key, gameComputed[key]])),
+      },
+      inventories: counts(projected.gameInventories),
+    },
+    players: Object.fromEntries(
+      Object.entries(projected.players).map(([id, player]) => {
+        const own = getPlayerState(session, id) as Record<string, unknown>;
+        return [
+          id,
+          {
+            properties: {
+              ...player.properties,
+              ...Object.fromEntries(computed(session.config.playerProperties, id).map((key) => [key, own[key]])),
+            },
+            inventories: counts(player.inventories),
+          },
+        ];
+      }),
+    ),
   };
 }
 
@@ -261,7 +372,8 @@ function choiceCounts(
   return counts;
 }
 
-function finalState(state: ReturnType<GameController["getState"]>): FinalState {
+function finalState(session: GameSession): FinalState {
+  const { state } = session;
   const summarize = (
     properties: Record<string, unknown>,
     inventories: Record<string, InventoryData>,
@@ -272,9 +384,12 @@ function finalState(state: ReturnType<GameController["getState"]>): FinalState {
     ),
   });
   return {
-    game: summarize(state.gameProperties, state.gameInventories),
+    game: summarize({ ...getGameState(session) }, state.gameInventories),
     players: Object.fromEntries(
-      Object.entries(state.players).map(([id, p]) => [id, summarize(p.properties, p.inventories)]),
+      Object.entries(state.players).map(([id, p]) => [
+        id,
+        summarize({ ...getPlayerState(session, id) }, p.inventories),
+      ]),
     ),
   };
 }
@@ -295,70 +410,63 @@ function pieceCount(data: InventoryData): number {
   }
 }
 
-function record(transcript: TranscriptEntry[], event: GameEvent): void {
+/** The transcript entry for an engine event; `undefined` for events the transcript doesn't keep. */
+function toEntry(event: GameEvent): TranscriptEntry | undefined {
   switch (event.kind) {
     case "message:emit":
-      transcript.push({
+      return {
         kind: "message",
         recipients: [...event.message.recipients],
         content: event.message.content,
-      });
-      break;
+      };
     case "turn:start":
     case "turn:end":
-      transcript.push({
+      return {
         kind: event.kind,
         nodeId: event.nodeId,
         actors: [...event.actors],
-      });
-      break;
+      };
     case "flow:enter":
-      transcript.push({
+      return {
         kind: "flow:enter",
         nodeId: event.nodeId,
         nodeType: event.nodeType,
-      });
-      break;
+      };
     case "action:start":
-      transcript.push({
+      return {
         kind: "action:start",
         playerId: event.playerId,
         actionId: event.actionId,
         auto: event.auto,
-      });
-      break;
+      };
     case "action:forfeit":
-      transcript.push({
+      return {
         kind: "action:forfeit",
         playerId: event.playerId,
         inputId: event.inputId,
         ...(event.actionId !== undefined && { actionId: event.actionId }),
-      });
-      break;
+      };
     case "passive:fire":
-      transcript.push({
+      return {
         kind: "passive:fire",
         passiveId: event.passiveId,
         ...(event.ownerPieceId !== undefined && {
           ownerPieceId: event.ownerPieceId,
         }),
-      });
-      break;
+      };
     case "state:change":
       // Cloned: values may reference state that later effects mutate.
-      transcript.push({ kind: "change", change: structuredClone(event.change) });
-      break;
+      return { kind: "change", change: structuredClone(event.change) };
     case "game:complete":
-      transcript.push({
+      return {
         kind: "complete",
         reason: event.outcome.reason,
         ...(event.outcome.winnerIds !== undefined && {
           winnerIds: [...event.outcome.winnerIds],
         }),
-      });
-      break;
+      };
     default:
-      break;
+      return undefined;
   }
 }
 

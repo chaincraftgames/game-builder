@@ -66,6 +66,7 @@ function parse(argv: string[]) {
       players: { type: "string" },
       "max-decisions": { type: "string" },
       replay: { type: "string" },
+      as: { type: "string" },
     },
   });
 }
@@ -104,6 +105,7 @@ function playtestOptions(
     }
     options.replay = values.replay;
   }
+  if (values.as !== undefined) options.as = values.as;
   if (values.games !== undefined)
     options.games = intFlag("games", values.games, 1, MAX_GAMES);
   if (values.seed !== undefined) options.seed = intFlag("seed", values.seed, 0);
@@ -372,6 +374,7 @@ async function main(argv: string[], cwd: string): Promise<number> {
       "players",
       "max-decisions",
       "replay",
+      "as",
     ] as const) {
       if (values[flag] !== undefined)
         return usageError(`--${flag} is only valid for playtest`, command);

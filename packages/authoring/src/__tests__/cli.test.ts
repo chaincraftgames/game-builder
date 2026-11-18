@@ -312,6 +312,8 @@ describe("playtest", () => {
     [["--replay", "p3-s1-g0"], "outside the spec's range 2-2"],
     [["--replay", "p2-s1-g0", "--games", "3"], "--games can't be combined with --replay"],
     [["--replay", "p2-s1-g0", "--seed", "3"], "--seed can't be combined with --replay"],
+    [["--as", "p1"], "--as needs --replay"],
+    [["--replay", "p2-s1-g0", "--as", "p3"], "--as p3 isn't in that game (players: p1, p2)"],
     [["--draft"], "--draft is only valid for validate"],
   ])("%j exits 2 naming the problem", (args, message) => {
     const r = cc(["playtest", ...args]);
@@ -384,6 +386,15 @@ describe("playtest", () => {
     expect(r.stdout).toContain("replay p2-s1-g0");
     expect(r.stdout.indexOf("replay p2-s1-g0")).toBeLessThan(r.stdout.indexOf("seed 1"));
     expect(r.stdout).toContain("game complete");
+  });
+
+  it("--replay --as shows the game as that player saw it", () => {
+    const r = cc(["playtest", "--replay", "p2-s1-g0", "--as", "p1"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("as p1 saw it");
+    expect(r.stdout).toContain("p2 card: (hidden)");
+    expect(r.stdout).toContain("p2.hand +3 (3 hidden)");
+    expect(r.stdout).not.toContain("p1 card: (hidden)");
   });
 
   it("logs the summary and distinct codes to the trace", () => {

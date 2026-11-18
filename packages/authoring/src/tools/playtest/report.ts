@@ -155,7 +155,10 @@ function toDiagnostic(
     `hint: ${finding.hint}`,
   ];
   if (finding.severity === "error" && finding.first !== null) {
-    const tail = formatTail(finding.first.result.transcript, input.nodePaths);
+    const tail = formatTail(
+      (finding.first.result.view ?? finding.first.result).transcript,
+      input.nodePaths,
+    );
     if (tail.length > 0)
       lines.push(
         `last ${tail.length} steps of the first game:`,
@@ -261,21 +264,25 @@ export function formatTail(
   return lines.slice(-TAIL_LINES);
 }
 
-/** Every transcript entry, then how the game ended. */
+/** Every transcript entry, then how the game ended; as the viewer saw it when the game was played with one. */
 export function formatFullTranscript(
   result: GameResult,
   nodePaths: Record<string, string>,
 ): string[] {
-  const lines = result.transcript.flatMap((entry) => {
+  const { view } = result;
+  const { transcript, final } = view ?? result;
+  const lines = transcript.flatMap((entry) => {
     const line = formatEntry(entry, nodePaths);
     return [
       // The final state reads as the lead-in to how the game ended.
-      ...(entry.kind === "complete" && result.final
-        ? formatFinalState(result.final)
-        : []),
+      ...(entry.kind === "complete" && final ? formatFinalState(final) : []),
       ...(line === undefined ? [] : [line]),
     ];
   });
+  if (view)
+    lines.unshift(
+      `as ${view.viewer} saw it: other players' hidden information is left out or shown as (hidden)`,
+    );
   const { end } = result;
   if (end.kind === "error")
     lines.push(`error ${end.attribution.code}: ${end.message}`);
@@ -292,6 +299,7 @@ function formatEntry(
   const node = (nodeId: string) => nodePaths[nodeId] ?? nodeId;
   switch (entry.kind) {
     case "decision":
+      if (entry.hidden) return `${entry.playerId} ${entry.inputId}: (hidden)`;
       return `${entry.playerId} ${entry.inputId}: ${formatValue(entry.value)}${formatOffered(entry)}`;
     case "message":
       return `message to ${entry.recipients.join(", ")}: ${truncate(entry.content.replaceAll("\n", " "), MAX_MESSAGE_CHARS)}`;
@@ -339,12 +347,25 @@ function formatOffered(
 const inventoryName = ({ inventoryId, ownerId }: InventoryRef): string =>
   ownerId === undefined ? inventoryId : `${ownerId}.${inventoryId}`;
 
+/** The piece id the runtime's per-viewer projection substitutes for a piece the viewer can't identify. */
+const REDACTED_PIECE = "__redacted__";
+
+const pieceName = (pieceId: string): string =>
+  pieceId === REDACTED_PIECE ? "(hidden)" : pieceId;
+
+/** Piece ids joined for display, with the unidentifiable ones counted: `a, 2 hidden`. */
+function pieceList(pieceIds: string[]): string {
+  const known = pieceIds.filter((id) => id !== REDACTED_PIECE);
+  const hidden = pieceIds.length - known.length;
+  return [...known, ...(hidden > 0 ? [`${hidden} hidden`] : [])].join(", ");
+}
+
 /** One line for a state change; values and piece lists are truncated. */
 function formatChange(change: StateChangeEvent): string {
   const line = ((): string => {
     switch (change.kind) {
       case "piece:moved":
-        return `move ${inventoryName(change.from.inventory)} -> ${inventoryName(change.to.inventory)}: ${change.pieceId}`;
+        return `move ${inventoryName(change.from.inventory)} -> ${inventoryName(change.to.inventory)}: ${pieceName(change.pieceId)}`;
       case "pieces:distributed": {
         const byTarget = new Map<string, string[]>();
         for (const { pieceId, to } of change.deals) {
@@ -352,7 +373,7 @@ function formatChange(change: StateChangeEvent): string {
           byTarget.set(target, [...(byTarget.get(target) ?? []), pieceId]);
         }
         const targets = [...byTarget].map(
-          ([target, ids]) => `${target} +${ids.length} (${ids.join(", ")})`,
+          ([target, ids]) => `${target} +${ids.length} (${pieceList(ids)})`,
         );
         return `deal from ${inventoryName(change.from.inventory)}: ${targets.join("; ")}`;
       }

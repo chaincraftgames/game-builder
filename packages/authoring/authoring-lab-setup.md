@@ -212,7 +212,8 @@ copy of the run folder, and compute the metrics below from the tagged log
 the token carries the player count, which must be in the spec's range. Take tokens from the
 summary: each outcome and each action lists the first game that showed it. To survey every
 player count, run `playtest --players 2,3,4` (the spec's full range; the default plays only the
-minimum and maximum) and replay tokens from that output.
+minimum and maximum) and replay tokens from that output. The transcript is omniscient; for rubric
+items about hidden information add `--as p1` to the replay to see the game as that player saw it.
 
 ### `results.csv` columns
 ```

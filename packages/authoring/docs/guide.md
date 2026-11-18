@@ -26,5 +26,10 @@ Each error carries a repro such as `p2-s1-g7`. Replay it with
 `chaincraft playtest --replay p2-s1-g7` (pass the same `--max-decisions` if you changed it) to
 see the full transcript. Re-run playtest after each fix; the same seed plays the same games.
 
+The transcript shows everything, including every player's hidden cards. To check what one player
+could see, add `--as p1`: other players' hidden pieces and answers appear as `(hidden)`, and
+changes the player couldn't see are left out. Use it to verify hidden information stays hidden
+and public information is visible.
+
 "Not exercised" lists flow nodes, actions and passives that random play didn't reach. It is
 not a defect. Don't raise `--games` or change `--seed` to cover them.

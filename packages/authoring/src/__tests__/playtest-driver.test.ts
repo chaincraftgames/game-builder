@@ -81,6 +81,20 @@ describe("playGame on High Card", () => {
     expect(result.end).toEqual({ kind: "max-decisions" });
     expect(result.decisions).toBe(2);
   });
+
+  it("includes computed properties in the final state", async () => {
+    const withComputed = highCard((raw) => {
+      raw.state.player.properties.push({
+        id: "handSize",
+        type: { kind: "number", min: 0 },
+        computed: { inventory: "hand", aggregate: "count" },
+      });
+    });
+    const { final } = await playGame(options(withComputed));
+    for (const player of Object.values(final!.players)) {
+      expect(player.properties.handSize).toBe(player.inventories.hand);
+    }
+  });
 });
 
 describe("playGame generated values", () => {
@@ -221,5 +235,53 @@ describe("playGame failures", () => {
       attribution: { code: "playtest-runaway" },
       nodeId: "loop-1",
     });
+  });
+});
+
+describe("playGame with a viewer", () => {
+  const module = highCard();
+  const play = (viewer?: string) =>
+    playGame(options(module, { ...(viewer !== undefined && { viewer }) }));
+
+  it("plays the same game as without a viewer", async () => {
+    const [plain, viewed] = await Promise.all([play(), play("p1")]);
+    const { view, ...rest } = viewed;
+    expect(view?.viewer).toBe("p1");
+    expect(rest).toEqual(plain);
+  });
+
+  it("shows the viewer's own deal and redacts the opponent's", async () => {
+    const { view } = await play("p1");
+    const dealt = view!.transcript.flatMap((e) =>
+      e.kind === "change" && e.change.kind === "pieces:distributed" ? e.change.deals : [],
+    );
+    const own = dealt.filter((d) => d.to.inventory.ownerId === "p1");
+    const other = dealt.filter((d) => d.to.inventory.ownerId === "p2");
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.every((d) => d.pieceId !== "__redacted__")).toBe(true);
+    expect(other.length).toBeGreaterThan(0);
+    expect(other.every((d) => d.pieceId === "__redacted__")).toBe(true);
+  });
+
+  it("hides the other player's answers but keeps the viewer's", async () => {
+    const { view } = await play("p1");
+    const cards = decisions(view!.transcript).filter((d) => d.inputId === "card");
+    expect(cards.length).toBeGreaterThan(0);
+    for (const d of cards) {
+      if (d.playerId === "p1") expect(d.hidden).toBeUndefined();
+      else expect(d).toMatchObject({ hidden: true, value: null });
+    }
+  });
+
+  it("keeps the other player's action choices, which start publicly", async () => {
+    const { view } = await play("p1");
+    const choices = decisions(view!.transcript).filter((d) => d.offered !== undefined || d.inputId === "act");
+    for (const d of choices) expect(d.hidden).toBeUndefined();
+  });
+
+  it("gives the viewer's final state with counts only where the engine allows", async () => {
+    const { view, final } = await play("p1");
+    expect(view!.final!.players.p1.properties).toEqual(final!.players.p1.properties);
+    expect(view!.final!.game.inventories.deck).toBe(final!.game.inventories.deck);
   });
 });

@@ -9,6 +9,7 @@ import {
 } from "#authoring/tools/playtest/report.js";
 import {
   parseRepro,
+  playerIdsFor,
   playOne,
   playRun,
 } from "#authoring/tools/playtest/run.js";
@@ -46,6 +47,8 @@ export interface PlaytestOptions {
   maxDecisions?: number;
   /** A repro token; plays that one game and ignores `games`, `seed` and `playerCounts`. */
   replay?: string;
+  /** With `replay`: show the game as this player saw it (hidden information redacted). */
+  as?: string;
 }
 
 /** Outcome of {@link playtest}. */
@@ -64,7 +67,8 @@ export interface PlaytestResult {
  * Compiles the project at `root`, then plays seeded games with a random legal player.
  *
  * @param root - Project root containing `chaincraft.yaml`.
- * @throws {PlaytestUsageError} For a malformed replay token or a player count outside the spec's range.
+ * @throws {PlaytestUsageError} For a malformed replay token, a player count outside the spec's range,
+ * or `as` without `replay` or naming a player the replayed game doesn't have.
  */
 export async function playtest(
   root: string,
@@ -93,6 +97,9 @@ export async function playtest(
   };
   const maxDecisions = options.maxDecisions ?? DEFAULT_MAX_DECISIONS;
 
+  if (options.as !== undefined && options.replay === undefined)
+    throw new PlaytestUsageError("--as needs --replay (it shows one replayed game as a player saw it)");
+
   if (options.replay !== undefined) {
     const id = parseRepro(options.replay);
     if (id === null)
@@ -100,7 +107,15 @@ export async function playtest(
         `malformed repro token "${options.replay}" (expected p<players>-s<seed>-g<index>, e.g. p2-s1-g0)`,
       );
     checkCount(id.playerCount);
-    const game = await playOne(module, id, { maxDecisions });
+    const players = playerIdsFor(id.playerCount);
+    if (options.as !== undefined && !players.includes(options.as))
+      throw new PlaytestUsageError(
+        `--as ${options.as} isn't in that game (players: ${players.join(", ")})`,
+      );
+    const game = await playOne(module, id, {
+      maxDecisions,
+      ...(options.as !== undefined && { viewer: options.as }),
+    });
     return buildReplayReport({ ...input, seed: id.seed, game });
   }
 
