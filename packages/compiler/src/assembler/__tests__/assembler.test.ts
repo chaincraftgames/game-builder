@@ -179,6 +179,59 @@ describe('assembleInitialState — High Card', () => {
   });
 });
 
+describe('assembleInitialState — sized inventories', () => {
+  function stateWith(extra: Record<string, unknown>[]) {
+    const spec = structuredClone(loadHighCardSpec());
+    spec.inventories!.types.push(...(extra as never[]));
+    const config = assembleConfig(spec);
+    return assembleInitialState(spec, config, ['alice', 'bob']);
+  }
+
+  const base = {
+    accepts: ['card'], visibility: 'always', label: 'x',
+  };
+
+  it('pre-allocates grid cells from gridDimensions in row-major order', () => {
+    const state = stateWith([
+      { ...base, id: 'board', scope: { kind: 'game' }, structure: 'grid', gridDimensions: { rows: 2, columns: 2 } },
+    ]);
+    expect(state.gameInventories.board).toEqual({
+      structure: 'grid',
+      order: 'row-major',
+      cells: { '0:0': null, '0:1': null, '1:0': null, '1:1': null },
+    });
+  });
+
+  it('honours gridOrder col-major', () => {
+    const state = stateWith([
+      { ...base, id: 'board', scope: { kind: 'game' }, structure: 'grid', gridOrder: 'col-major', gridDimensions: { rows: 2, columns: 2 } },
+    ]);
+    const board = state.gameInventories.board;
+    expect(board.structure === 'grid' && board.order).toBe('col-major');
+    expect(board.structure === 'grid' && Object.keys(board.cells)).toEqual(['0:0', '1:0', '0:1', '1:1']);
+  });
+
+  it('pre-allocates player-scoped grids for every player', () => {
+    const state = stateWith([
+      { ...base, id: 'tableau', scope: { kind: 'player' }, structure: 'grid', gridDimensions: { rows: 1, columns: 2 } },
+    ]);
+    for (const pid of ['alice', 'bob']) {
+      expect(state.players[pid].inventories.tableau).toEqual({
+        structure: 'grid', order: 'row-major', cells: { '0:0': null, '0:1': null },
+      });
+    }
+  });
+
+  it('pre-allocates line slots from lineLength', () => {
+    const state = stateWith([
+      { ...base, id: 'track', scope: { kind: 'game' }, structure: 'line', lineLength: 3 },
+    ]);
+    expect(state.gameInventories.track).toEqual({
+      structure: 'line', length: 3, slots: [null, null, null],
+    });
+  });
+});
+
 describe('assembleSession — High Card', () => {
   const spec = loadHighCardSpec();
 

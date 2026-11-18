@@ -15,33 +15,17 @@
 // ---------------------------------------------------------------------------
 
 import type { ModularGameSpec } from "@chaincraft/gamedef";
-import { ELIMINATED_PROPERTY } from "@chaincraft/runtime";
+import { ELIMINATED_PROPERTY, createEmptyInventoryData } from "@chaincraft/runtime";
 import { enumerateCatalogPieces } from "#compiler/assembler/catalog.js";
 import type {
   GameConfig,
   GameState,
   Gamepiece,
   InventoryData,
-  InventoryStructure,
   PlayerState,
   PropertyConfig,
 } from "./types.js";
 import { UNASSIGNED_INVENTORY_ID } from "./types.js";
-
-function emptyInventoryData(structure: InventoryStructure): InventoryData {
-  switch (structure) {
-    case "none":
-      return { structure: "none", pieceIds: [] };
-    case "stack":
-      return { structure: "stack", pieceIds: [] };
-    case "line":
-      return { structure: "line", slots: [] };
-    case "grid":
-      return { structure: "grid", order: "row-major", cells: {} };
-    case "graph":
-      return { structure: "graph", nodes: {} };
-  }
-}
 
 /** Resolve a state property's declared default into its initial runtime value. */
 function resolveDefault(
@@ -97,7 +81,7 @@ function assembleGameInventories(
   const result: Record<string, InventoryData> = {};
   for (const [id, inv] of Object.entries(config.inventories)) {
     if (inv.scope !== "game") continue;
-    result[id] = emptyInventoryData(inv.structure);
+    result[id] = createEmptyInventoryData(inv.structure, inv);
   }
   return result;
 }
@@ -108,7 +92,7 @@ function assemblePlayerInventories(
   const result: Record<string, InventoryData> = {};
   for (const [id, inv] of Object.entries(config.inventories)) {
     if (inv.scope !== "player") continue;
-    result[id] = emptyInventoryData(inv.structure);
+    result[id] = createEmptyInventoryData(inv.structure, inv);
   }
   return result;
 }

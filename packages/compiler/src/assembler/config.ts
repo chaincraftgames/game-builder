@@ -116,6 +116,8 @@ function assembleInventories(spec: ModularGameSpec): Record<string, InventoryCon
         accepts: inv.accepts,
         ...(inv.capacity ? { capacity: inv.capacity } : {}),
         ...(inv.gridDimensions ? { gridDimensions: inv.gridDimensions } : {}),
+        ...(inv.gridOrder ? { gridOrder: inv.gridOrder } : {}),
+        ...(inv.lineLength !== undefined ? { lineLength: inv.lineLength } : {}),
         ...('role' in inv.scope && inv.scope.role ? { role: inv.scope.role } : {}),
       };
       return [inv.id, config];
