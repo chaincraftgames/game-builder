@@ -18,9 +18,11 @@ import type {
   GameEvent,
   GameOutcome,
   InputOption,
+  InventoryData,
   NumberInputType,
   PlayerInputSuspension,
   RngProvider,
+  StateChangeEvent,
 } from "@chaincraft/runtime";
 import {
   attributeError,
@@ -49,6 +51,8 @@ export interface GameOptions {
 export interface OfferedActions {
   actions: string[];
   canPass: boolean;
+  /** Per offered action, how many choices its first input has; absent when it has no finite list. */
+  choiceCounts?: Record<string, number>;
 }
 
 /** One entry in the game transcript. */
@@ -77,6 +81,7 @@ export type TranscriptEntry =
       inputId: string;
     }
   | { kind: "passive:fire"; passiveId: string; ownerPieceId?: string }
+  | { kind: "change"; change: StateChangeEvent }
   | { kind: "complete"; winnerIds?: string[]; reason: string };
 
 /** The possible ways a game can end. */
@@ -97,6 +102,18 @@ export type GameEnd =
       input?: { playerId: string; inputId: string };
     };
 
+/** A game's or player's properties and how many pieces each inventory held. */
+export interface StateSummary {
+  properties: Record<string, unknown>;
+  inventories: Record<string, number>;
+}
+
+/** The state a completed game ended in. */
+export interface FinalState {
+  game: StateSummary;
+  players: Record<string, StateSummary>;
+}
+
 /** The outcome of a single playtest game. */
 export interface GameResult {
   gameSeed: number;
@@ -106,6 +123,8 @@ export interface GameResult {
   decisions: number;
   transcript: TranscriptEntry[];
   end: GameEnd;
+  /** Present when the game completed. */
+  final?: FinalState;
 }
 
 /** A single choice made by the playtest. */
@@ -181,6 +200,7 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
           offered: {
             actions: [...prompt.input.type.actions],
             canPass: prompt.input.type.canPass,
+            choiceCounts: choiceCounts(controller, playerId, prompt.input.type.actions),
           },
         }),
         ...(prompt.options !== undefined && { options: [...prompt.options] }),
@@ -220,7 +240,59 @@ export async function playGame(options: GameOptions): Promise<GameResult> {
     return thrown(error);
   }
 
-  return result({ kind: "complete", outcome: controller.outcome! });
+  return {
+    ...result({ kind: "complete", outcome: controller.outcome! }),
+    final: finalState(controller.getState()),
+  };
+}
+
+/** How many choices each action's first input offers, without taking the action. */
+function choiceCounts(
+  controller: GameController,
+  playerId: string,
+  actions: readonly string[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const actionId of actions) {
+    const walk = controller.queryResponses(playerId, [{ kind: "act", actionId }]);
+    if (walk.kind === "ok" && typeof walk.next === "object" && walk.next.options !== undefined)
+      counts[actionId] = walk.next.options.length;
+  }
+  return counts;
+}
+
+function finalState(state: ReturnType<GameController["getState"]>): FinalState {
+  const summarize = (
+    properties: Record<string, unknown>,
+    inventories: Record<string, InventoryData>,
+  ): StateSummary => ({
+    properties,
+    inventories: Object.fromEntries(
+      Object.entries(inventories).map(([id, data]) => [id, pieceCount(data)]),
+    ),
+  });
+  return {
+    game: summarize(state.gameProperties, state.gameInventories),
+    players: Object.fromEntries(
+      Object.entries(state.players).map(([id, p]) => [id, summarize(p.properties, p.inventories)]),
+    ),
+  };
+}
+
+function pieceCount(data: InventoryData): number {
+  const occupied = (slots: Iterable<string | null>) =>
+    [...slots].filter((id) => id !== null).length;
+  switch (data.structure) {
+    case "none":
+    case "stack":
+      return data.pieceIds.length;
+    case "line":
+      return occupied(data.slots);
+    case "grid":
+      return occupied(Object.values(data.cells));
+    case "graph":
+      return occupied(Object.values(data.nodes));
+  }
 }
 
 function record(transcript: TranscriptEntry[], event: GameEvent): void {
@@ -271,6 +343,10 @@ function record(transcript: TranscriptEntry[], event: GameEvent): void {
           ownerPieceId: event.ownerPieceId,
         }),
       });
+      break;
+    case "state:change":
+      // Cloned: values may reference state that later effects mutate.
+      transcript.push({ kind: "change", change: structuredClone(event.change) });
       break;
     case "game:complete":
       transcript.push({

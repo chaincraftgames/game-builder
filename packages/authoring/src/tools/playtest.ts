@@ -106,6 +106,12 @@ export async function playtest(
 
   const playerCounts = options.playerCounts ?? [...new Set([min, max])];
   playerCounts.forEach(checkCount);
+  const unplayedPlayerCounts =
+    options.playerCounts === undefined
+      ? Array.from({ length: max - min + 1 }, (_, i) => min + i).filter(
+          (count) => !playerCounts.includes(count),
+        )
+      : [];
   const seed = options.seed ?? DEFAULT_SEED;
   const games = await playRun(module, {
     seed,
@@ -113,5 +119,5 @@ export async function playtest(
     playerCounts,
     maxDecisions,
   });
-  return buildReport({ ...input, seed, games });
+  return buildReport({ ...input, seed, games, unplayedPlayerCounts });
 }

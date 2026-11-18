@@ -203,6 +203,17 @@ Rules:
 | Claude Code | `/cost` at end of session; Anthropic Console usage for the lab API key. |
 | Both | `.chaincraft/log.jsonl` in the run folder — every `chaincraft` call (gate calls, fix cycles, time to first compile / first playtest pass). |
 
+**Grading:** `chaincraft playtest` and `--replay` calls made while grading land in the run's
+`.chaincraft/log.jsonl` and inflate `gate_calls`. When the agent finishes, commit the log
+(`git add -A && git commit -qm "end of run" && git tag end-of-run`) before grading, or grade in a
+copy of the run folder, and compute the metrics below from the tagged log
+(`git show end-of-run:.chaincraft/log.jsonl`). A transcript comes only from
+`--replay p<players>-s<seed>-g<index>` (e.g. `--replay p3-s1-g0`), which ignores `--players`:
+the token carries the player count, which must be in the spec's range. Take tokens from the
+summary: each outcome and each action lists the first game that showed it. To survey every
+player count, run `playtest --players 2,3,4` (the spec's full range; the default plays only the
+minimum and maximum) and replay tokens from that output.
+
 ### `results.csv` columns
 ```
 date,agent,model,plan_assumed,brief,scenario,engine_version,

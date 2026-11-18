@@ -8,7 +8,7 @@ import type { CompiledGameModule } from "@chaincraft/runtime";
 import { GameRuntimeError } from "@chaincraft/runtime";
 import { attributeError } from "../tools/playtest/attribution.js";
 import type { PlayedGame } from "../tools/playtest/checks.js";
-import type { GameEnd, GameResult, TranscriptEntry } from "../tools/playtest/driver.js";
+import type { FinalState, GameEnd, GameResult, TranscriptEntry } from "../tools/playtest/driver.js";
 import {
   formatRepro,
   gameSeedFor,
@@ -17,7 +17,8 @@ import {
   playRun,
   policySeedFor,
 } from "../tools/playtest/run.js";
-import { buildReplayReport, buildReport, TAIL_LINES, TOP_OUTCOMES } from "../tools/playtest/report.js";
+import { buildReplayReport, buildReport, formatTail, TAIL_LINES, TOP_OUTCOMES } from "../tools/playtest/report.js";
+import { formatSummary } from "../tools/playtest/text.js";
 import { formatDiagnostic } from "../diagnostics.js";
 
 const EXAMPLES_DIR = fileURLToPath(new URL("../../../gamedef/examples/", import.meta.url));
@@ -165,7 +166,8 @@ describe("summary", () => {
         crashed: 1,
         hitLimit: 1,
         meanDecisions: 2.3,
-        outcomes: [{ outcome: "winners p1 (most tricks)", games: 1 }],
+        outcomes: [{ outcome: "winners p1 (most tricks)", games: 1, example: "p2-s9-g0" }],
+        otherOutcomes: { outcomes: 0, games: 0 },
       },
     ]);
   });
@@ -175,12 +177,13 @@ describe("summary", () => {
     const turn: TranscriptEntry = { kind: "turn:start", nodeId: firstChildId, actors: ["p1"] };
     const winners = ["p2", "p1", "p2", "p3", "p4", "p2", "p1"];
     const games = winners.map((w, i) => played(end(w), [turn], i));
-    const { outcomes } = report(games).summary.playerCounts[0];
+    const { outcomes, otherOutcomes } = report(games).summary.playerCounts[0];
     expect(outcomes).toEqual([
-      { outcome: "winners p2 (r)", games: 3 },
-      { outcome: "winners p1 (r)", games: 2 },
-      { outcome: "winners p3 (r)", games: 1 },
+      { outcome: "winners p2 (r)", games: 3, example: "p2-s9-g0" },
+      { outcome: "winners p1 (r)", games: 2, example: "p2-s9-g1" },
+      { outcome: "winners p3 (r)", games: 1, example: "p2-s9-g3" },
     ]);
+    expect(otherOutcomes).toEqual({ outcomes: 1, games: 1 });
   });
 });
 
@@ -313,5 +316,112 @@ describe("replay report", () => {
     expect(game).toEqual(run[1]);
     expect(result.ok).toBe(true);
     expect(result.replay!.transcript.at(-1)).toMatch(/^game complete: /);
+  });
+});
+
+describe("replay transcript detail", () => {
+  const replayLines = (game: PlayedGame) =>
+    buildReplayReport({ spec, module, nodePaths, game, seed: 9 }).replay!.transcript;
+
+  it("renders state changes", () => {
+    const hand = { inventoryId: "hand", ownerId: "p1" };
+    const deck = { inventoryId: "deck" };
+    const lines = replayLines(
+      played(OUTCOME, [
+        { kind: "change", change: { kind: "piece:moved", pieceId: "c7", from: { inventory: deck }, to: { inventory: hand } } },
+        {
+          kind: "change",
+          change: {
+            kind: "pieces:distributed",
+            from: { inventory: deck },
+            deals: [
+              { pieceId: "a", to: { inventory: hand } },
+              { pieceId: "b", to: { inventory: { inventoryId: "hand", ownerId: "p2" } } },
+              { pieceId: "c", to: { inventory: hand } },
+            ],
+          },
+        },
+        { kind: "change", change: { kind: "state:property-changed", scope: "game", property: "suit", oldValue: null, newValue: "clubs" } },
+        { kind: "change", change: { kind: "inventory:shuffled", inventory: deck } },
+      ]),
+    );
+    expect(lines.slice(0, 4)).toEqual([
+      "move deck -> p1.hand: c7",
+      "deal from deck: p1.hand +2 (a, c); p2.hand +1 (b)",
+      "set game.suit = \"clubs\" (was null)",
+      "shuffle deck",
+    ]);
+  });
+
+  it("keeps state changes out of error tails", () => {
+    const change: TranscriptEntry = { kind: "change", change: { kind: "inventory:shuffled", inventory: { inventoryId: "deck" } } };
+    expect(formatTail([change, decision(1)], nodePaths)).toEqual(["p1 pick: 1"]);
+  });
+
+  it("lists offered actions with choice counts, and option counts", () => {
+    const lines = replayLines(
+      played(OUTCOME, [
+        {
+          kind: "decision",
+          playerId: "p1",
+          inputId: "act",
+          value: { kind: "act", actionId: "playCard" },
+          offered: { actions: ["playCard", "draw"], canPass: true, choiceCounts: { playCard: 2 } },
+        },
+        { kind: "decision", playerId: "p1", inputId: "card", value: "a", options: ["a", "b", "c"] },
+      ]),
+    );
+    expect(lines[0]).toBe("p1 act: act playCard (offered: playCard(2), draw, pass)");
+    expect(lines[1]).toBe("p1 card: \"a\" (3 options)");
+  });
+
+  it("prints the final state before the completion line", () => {
+    const final: FinalState = {
+      game: { properties: {}, inventories: { deck: 12 } },
+      players: {
+        p1: { properties: { score: 2 }, inventories: { hand: 0 } },
+        p2: { properties: {}, inventories: {} },
+      },
+    };
+    const game = played(OUTCOME, [{ kind: "complete", winnerIds: ["p1"], reason: "most tricks" }]);
+    game.result.final = final;
+    expect(replayLines(game)).toEqual([
+      "final game: deck: 12",
+      "final p1: score=2 | hand: 0",
+      "game complete: winners p1 (most tricks)",
+    ]);
+  });
+});
+
+describe("summary text", () => {
+  const summaryOf = (games: PlayedGame[], unplayedPlayerCounts: number[] = []) =>
+    buildReport({ spec, module, nodePaths, games, seed: 9, unplayedPlayerCounts }).summary;
+
+  it("notes truncated outcomes and gives an example game per outcome", () => {
+    const end = (winner: string): GameEnd => ({ kind: "complete", outcome: { winnerIds: [winner], reason: "r" } });
+    const turn: TranscriptEntry = { kind: "turn:start", nodeId: firstChildId, actors: ["p1"] };
+    const games = ["p1", "p2", "p3", "p4", "p5"].map((w, i) => played(end(w), [turn], i));
+    const text = formatSummary(summaryOf(games));
+    expect(text).toContain("winners p1 (r) x1 (p2-s9-g0)");
+    expect(text).toContain("+2 other outcomes (2 games)");
+  });
+
+  it("names the first game to take each action", () => {
+    const start = (actionId: string): TranscriptEntry => ({ kind: "action:start", playerId: "p1", actionId, auto: false });
+    const turn: TranscriptEntry = { kind: "turn:start", nodeId: firstChildId, actors: ["p1"] };
+    const games = [played(OUTCOME, [turn, start("a")], 0), played(OUTCOME, [turn, start("b"), start("a")], 1)];
+    const summary = summaryOf(games);
+    expect(summary.actionExamples).toEqual([
+      { actionId: "a", repro: "p2-s9-g0" },
+      { actionId: "b", repro: "p2-s9-g1" },
+    ]);
+    expect(formatSummary(summary)).toContain("  b: p2-s9-g1");
+  });
+
+  it("says which player counts were left unplayed", () => {
+    const turn: TranscriptEntry = { kind: "turn:start", nodeId: firstChildId, actors: ["p1"] };
+    const games = [played(OUTCOME, [turn], 0, 2), played(OUTCOME, [turn], 0, 4)];
+    expect(formatSummary(summaryOf(games, [3]))).toContain("use --players 2,3,4 to play every count");
+    expect(formatSummary(summaryOf(games))).not.toContain("--players");
   });
 });

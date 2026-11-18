@@ -14,11 +14,28 @@ export function formatSummary(summary: PlaytestSummary): string {
     lines.push(
       `${s.playerCount} players: ${s.games} games (${s.completed} completed, ${s.crashed} crashed, ${s.hitLimit} hit the decision limit), mean ${s.meanDecisions} decisions`,
     );
-    if (s.outcomes.length > 0)
-      lines.push(
-        `  outcomes: ${s.outcomes.map((o) => `${o.outcome} x${o.games}`).join("; ")}`,
-      );
+    if (s.outcomes.length > 0) {
+      const listed = s.outcomes.map((o) => `${o.outcome} x${o.games} (${o.example})`);
+      const { outcomes, games } = s.otherOutcomes;
+      if (outcomes > 0)
+        listed.push(`+${outcomes} other outcomes (${games} games)`);
+      lines.push(`  outcomes: ${listed.join("; ")}`);
+    }
   }
+  if (summary.unplayedPlayerCounts.length > 0) {
+    const all = [
+      ...summary.playerCounts.map((s) => s.playerCount),
+      ...summary.unplayedPlayerCounts,
+    ].sort((a, b) => a - b);
+    lines.push(
+      `player counts: the spec's min and max only; use --players ${all.join(",")} to play every count`,
+    );
+  }
+  if (summary.actionExamples.length > 0)
+    lines.push(
+      "first game to take each action (see its steps with --replay <token>):",
+      ...summary.actionExamples.map((a) => `  ${a.actionId}: ${a.repro}`),
+    );
   const { coverage } = summary;
   if (coverage) {
     const uncovered = [
