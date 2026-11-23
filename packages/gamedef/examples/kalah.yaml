@@ -1,0 +1,631 @@
+# ---------------------------------------------------------------------------
+# Kalah (Mancala). Authored by an AI from a plain-language brief.
+#
+# Two players. Each has 6 houses of 4 seeds and a store on their right. Pick
+# one of your non-empty houses and sow its seeds one at a time
+# counter-clockwise, including your own store and skipping the opponent's
+# store. If the last seed lands in your store you move again. If it lands in
+# an empty house on your side and the opposite house is not empty, you
+# capture both into your store.
+#
+# The game ends when a side is empty at the end of a move; the other side's
+# seeds sweep into its owner's store. The player with more seeds in their
+# store wins and equal stores are a draw.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The board is numeric state on a 14-cell ring, not pieces, and each seed
+#    is one flow iteration because effects have no loops.
+#  - Player ids are recorded by a setup turn.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: register
+      label: Take your seat
+      description: 'Setup: records each player''s id so the engine can address the mover.'
+      steps:
+        - effect: set-state
+          path: game.property.p2Id
+          value:
+            expr: if(game.property.p1Id == "", "", actor.id)
+        - effect: set-state
+          path: game.property.p1Id
+          value:
+            expr: if(game.property.p1Id == "", actor.id, game.property.p1Id)
+        - effect: set-state
+          path: game.property.currentPlayer
+          value:
+            expr: game.property.p1Id
+    - id: pickHouse1
+      label: House 1
+      description: Pick up all seeds from your house 1 and sow them.
+      preconditions: (game.property.side == 0 and game.property.c0 > 0) or (game.property.side == 1 and game.property.c7 > 0)
+      steps:
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: if(game.property.side == 0, game.property.c0, game.property.c7)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: 0 + 7 * game.property.side
+        - effect: set-state
+          path: game.property.c0
+          value:
+            expr: if(game.property.side == 0, 0, game.property.c0)
+        - effect: set-state
+          path: game.property.c7
+          value:
+            expr: if(game.property.side == 1, 0, game.property.c7)
+    - id: pickHouse2
+      label: House 2
+      description: Pick up all seeds from your house 2 and sow them.
+      preconditions: (game.property.side == 0 and game.property.c1 > 0) or (game.property.side == 1 and game.property.c8 > 0)
+      steps:
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: if(game.property.side == 0, game.property.c1, game.property.c8)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: 1 + 7 * game.property.side
+        - effect: set-state
+          path: game.property.c1
+          value:
+            expr: if(game.property.side == 0, 0, game.property.c1)
+        - effect: set-state
+          path: game.property.c8
+          value:
+            expr: if(game.property.side == 1, 0, game.property.c8)
+    - id: pickHouse3
+      label: House 3
+      description: Pick up all seeds from your house 3 and sow them.
+      preconditions: (game.property.side == 0 and game.property.c2 > 0) or (game.property.side == 1 and game.property.c9 > 0)
+      steps:
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: if(game.property.side == 0, game.property.c2, game.property.c9)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: 2 + 7 * game.property.side
+        - effect: set-state
+          path: game.property.c2
+          value:
+            expr: if(game.property.side == 0, 0, game.property.c2)
+        - effect: set-state
+          path: game.property.c9
+          value:
+            expr: if(game.property.side == 1, 0, game.property.c9)
+    - id: pickHouse4
+      label: House 4
+      description: Pick up all seeds from your house 4 and sow them.
+      preconditions: (game.property.side == 0 and game.property.c3 > 0) or (game.property.side == 1 and game.property.c10 > 0)
+      steps:
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: if(game.property.side == 0, game.property.c3, game.property.c10)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: 3 + 7 * game.property.side
+        - effect: set-state
+          path: game.property.c3
+          value:
+            expr: if(game.property.side == 0, 0, game.property.c3)
+        - effect: set-state
+          path: game.property.c10
+          value:
+            expr: if(game.property.side == 1, 0, game.property.c10)
+    - id: pickHouse5
+      label: House 5
+      description: Pick up all seeds from your house 5 and sow them.
+      preconditions: (game.property.side == 0 and game.property.c4 > 0) or (game.property.side == 1 and game.property.c11 > 0)
+      steps:
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: if(game.property.side == 0, game.property.c4, game.property.c11)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: 4 + 7 * game.property.side
+        - effect: set-state
+          path: game.property.c4
+          value:
+            expr: if(game.property.side == 0, 0, game.property.c4)
+        - effect: set-state
+          path: game.property.c11
+          value:
+            expr: if(game.property.side == 1, 0, game.property.c11)
+    - id: pickHouse6
+      label: House 6
+      description: Pick up all seeds from your house 6 and sow them.
+      preconditions: (game.property.side == 0 and game.property.c5 > 0) or (game.property.side == 1 and game.property.c12 > 0)
+      steps:
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: if(game.property.side == 0, game.property.c5, game.property.c12)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: 5 + 7 * game.property.side
+        - effect: set-state
+          path: game.property.c5
+          value:
+            expr: if(game.property.side == 0, 0, game.property.c5)
+        - effect: set-state
+          path: game.property.c12
+          value:
+            expr: if(game.property.side == 1, 0, game.property.c12)
+    - id: sowOne
+      label: Sow a seed
+      description: Drop one seed from your hand into the next cell (skipping the opponent's store).
+      steps:
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: if(game.property.pos == 13, 0, game.property.pos + 1)
+        - effect: set-state
+          path: game.property.pos
+          value:
+            expr: if(game.property.pos == (13 - 7 * game.property.side), if(game.property.pos == 13, 0, game.property.pos + 1), game.property.pos)
+        - effect: set-state
+          path: game.property.c0
+          value:
+            expr: if(game.property.pos == 0, game.property.c0 + 1, game.property.c0)
+        - effect: set-state
+          path: game.property.c1
+          value:
+            expr: if(game.property.pos == 1, game.property.c1 + 1, game.property.c1)
+        - effect: set-state
+          path: game.property.c2
+          value:
+            expr: if(game.property.pos == 2, game.property.c2 + 1, game.property.c2)
+        - effect: set-state
+          path: game.property.c3
+          value:
+            expr: if(game.property.pos == 3, game.property.c3 + 1, game.property.c3)
+        - effect: set-state
+          path: game.property.c4
+          value:
+            expr: if(game.property.pos == 4, game.property.c4 + 1, game.property.c4)
+        - effect: set-state
+          path: game.property.c5
+          value:
+            expr: if(game.property.pos == 5, game.property.c5 + 1, game.property.c5)
+        - effect: set-state
+          path: game.property.c6
+          value:
+            expr: if(game.property.pos == 6, game.property.c6 + 1, game.property.c6)
+        - effect: set-state
+          path: game.property.c7
+          value:
+            expr: if(game.property.pos == 7, game.property.c7 + 1, game.property.c7)
+        - effect: set-state
+          path: game.property.c8
+          value:
+            expr: if(game.property.pos == 8, game.property.c8 + 1, game.property.c8)
+        - effect: set-state
+          path: game.property.c9
+          value:
+            expr: if(game.property.pos == 9, game.property.c9 + 1, game.property.c9)
+        - effect: set-state
+          path: game.property.c10
+          value:
+            expr: if(game.property.pos == 10, game.property.c10 + 1, game.property.c10)
+        - effect: set-state
+          path: game.property.c11
+          value:
+            expr: if(game.property.pos == 11, game.property.c11 + 1, game.property.c11)
+        - effect: set-state
+          path: game.property.c12
+          value:
+            expr: if(game.property.pos == 12, game.property.c12 + 1, game.property.c12)
+        - effect: set-state
+          path: game.property.c13
+          value:
+            expr: if(game.property.pos == 13, game.property.c13 + 1, game.property.c13)
+        - effect: set-state
+          path: game.property.hand
+          value:
+            expr: game.property.hand - 1
+    - id: finishMove
+      label: End of move
+      description: Resolve capture, extra move, end-of-game sweep and hand over the turn.
+      steps:
+        - effect: set-state
+          path: game.property.landed
+          value:
+            expr: if(game.property.pos == 0, game.property.c0, if(game.property.pos == 1, game.property.c1, if(game.property.pos == 2, game.property.c2, if(game.property.pos == 3, game.property.c3, if(game.property.pos == 4, game.property.c4, if(game.property.pos == 5, game.property.c5, if(game.property.pos == 6, game.property.c6, if(game.property.pos == 7, game.property.c7, if(game.property.pos == 8, game.property.c8, if(game.property.pos == 9, game.property.c9, if(game.property.pos == 10, game.property.c10, if(game.property.pos == 11, game.property.c11, if(game.property.pos == 12, game.property.c12, if(game.property.pos == 13, game.property.c13, 0))))))))))))))
+        - effect: set-state
+          path: game.property.oppCount
+          value:
+            expr: if(game.property.pos == 0, game.property.c12, if(game.property.pos == 1, game.property.c11, if(game.property.pos == 2, game.property.c10, if(game.property.pos == 3, game.property.c9, if(game.property.pos == 4, game.property.c8, if(game.property.pos == 5, game.property.c7, if(game.property.pos == 7, game.property.c5, if(game.property.pos == 8, game.property.c4, if(game.property.pos == 9, game.property.c3, if(game.property.pos == 10, game.property.c2, if(game.property.pos == 11, game.property.c1, if(game.property.pos == 12, game.property.c0, 0))))))))))))
+        - effect: set-state
+          path: game.property.cap
+          value:
+            expr: if(game.property.pos >= 7 * game.property.side and game.property.pos <= 7 * game.property.side + 5 and game.property.landed == 1 and game.property.oppCount > 0, 1, 0)
+        - effect: set-state
+          path: game.property.extra
+          value:
+            expr: if(game.property.pos == (6 + 7 * game.property.side), 1, 0)
+        - effect: set-state
+          path: game.property.c6
+          value:
+            expr: if(game.property.cap == 1 and game.property.side == 0, game.property.c6 + game.property.oppCount + 1, game.property.c6)
+        - effect: set-state
+          path: game.property.c13
+          value:
+            expr: if(game.property.cap == 1 and game.property.side == 1, game.property.c13 + game.property.oppCount + 1, game.property.c13)
+        - effect: set-state
+          path: game.property.c0
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 0 or game.property.pos == 12), 0, game.property.c0)
+        - effect: set-state
+          path: game.property.c1
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 1 or game.property.pos == 11), 0, game.property.c1)
+        - effect: set-state
+          path: game.property.c2
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 2 or game.property.pos == 10), 0, game.property.c2)
+        - effect: set-state
+          path: game.property.c3
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 3 or game.property.pos == 9), 0, game.property.c3)
+        - effect: set-state
+          path: game.property.c4
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 4 or game.property.pos == 8), 0, game.property.c4)
+        - effect: set-state
+          path: game.property.c5
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 5 or game.property.pos == 7), 0, game.property.c5)
+        - effect: set-state
+          path: game.property.c7
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 7 or game.property.pos == 5), 0, game.property.c7)
+        - effect: set-state
+          path: game.property.c8
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 8 or game.property.pos == 4), 0, game.property.c8)
+        - effect: set-state
+          path: game.property.c9
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 9 or game.property.pos == 3), 0, game.property.c9)
+        - effect: set-state
+          path: game.property.c10
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 10 or game.property.pos == 2), 0, game.property.c10)
+        - effect: set-state
+          path: game.property.c11
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 11 or game.property.pos == 1), 0, game.property.c11)
+        - effect: set-state
+          path: game.property.c12
+          value:
+            expr: if(game.property.cap == 1 and (game.property.pos == 12 or game.property.pos == 0), 0, game.property.c12)
+        - effect: set-state
+          path: game.property.gameOver
+          value:
+            expr: if((game.property.c0+game.property.c1+game.property.c2+game.property.c3+game.property.c4+game.property.c5) == 0 or (game.property.c7+game.property.c8+game.property.c9+game.property.c10+game.property.c11+game.property.c12) == 0, true, false)
+        - effect: set-state
+          path: game.property.c6
+          value:
+            expr: if(game.property.gameOver == true, game.property.c6 + game.property.c0+game.property.c1+game.property.c2+game.property.c3+game.property.c4+game.property.c5, game.property.c6)
+        - effect: set-state
+          path: game.property.c13
+          value:
+            expr: if(game.property.gameOver == true, game.property.c13 + game.property.c7+game.property.c8+game.property.c9+game.property.c10+game.property.c11+game.property.c12, game.property.c13)
+        - effect: set-state
+          path: game.property.c0
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c0)
+        - effect: set-state
+          path: game.property.c1
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c1)
+        - effect: set-state
+          path: game.property.c2
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c2)
+        - effect: set-state
+          path: game.property.c3
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c3)
+        - effect: set-state
+          path: game.property.c4
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c4)
+        - effect: set-state
+          path: game.property.c5
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c5)
+        - effect: set-state
+          path: game.property.c7
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c7)
+        - effect: set-state
+          path: game.property.c8
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c8)
+        - effect: set-state
+          path: game.property.c9
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c9)
+        - effect: set-state
+          path: game.property.c10
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c10)
+        - effect: set-state
+          path: game.property.c11
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c11)
+        - effect: set-state
+          path: game.property.c12
+          value:
+            expr: if(game.property.gameOver == true, 0, game.property.c12)
+        - effect: set-state
+          path: game.property.currentPlayer
+          value:
+            expr: if(game.property.extra == 1, game.property.currentPlayer, if(game.property.currentPlayer == game.property.p1Id, game.property.p2Id, game.property.p1Id))
+        - effect: set-state
+          path: game.property.side
+          value:
+            expr: if(game.property.extra == 1, game.property.side, 1 - game.property.side)
+        - effect: set-state
+          path: player.property.score
+          value:
+            expr: game.property.c6
+          target:
+            stateRef: game.property.p1Id
+        - effect: set-state
+          path: player.property.score
+          value:
+            expr: game.property.c13
+          target:
+            stateRef: game.property.p2Id
+flow:
+  root:
+    kind: game
+    label: Kalah
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: turn
+        id: register
+        label: Setup
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: register
+      - kind: loop
+        id: play
+        label: Moves
+        endCondition: game.property.gameOver == true
+        children:
+          - kind: turn
+            id: pick
+            label: Pick a house
+            actor:
+              player:
+                stateRef: game.property.currentPlayer
+            grammar:
+              kind: choice
+              options:
+                - kind: action
+                  ref: pickHouse1
+                - kind: action
+                  ref: pickHouse2
+                - kind: action
+                  ref: pickHouse3
+                - kind: action
+                  ref: pickHouse4
+                - kind: action
+                  ref: pickHouse5
+                - kind: action
+                  ref: pickHouse6
+          - kind: loop
+            id: sowing
+            label: Sowing
+            endCondition: game.property.hand == 0
+            children:
+              - kind: turn
+                id: sowStep
+                label: Sow a seed
+                actor:
+                  player:
+                    stateRef: game.property.currentPlayer
+                grammar:
+                  kind: action
+                  ref: sowOne
+          - kind: turn
+            id: finish
+            label: Resolve move
+            actor:
+              player:
+                stateRef: game.property.currentPlayer
+            grammar:
+              kind: action
+              ref: finishMove
+metadata:
+  name: Kalah
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: c0
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 0 (player 1 house 1); seeds.
+      - id: c1
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 1 (player 1 house 2); seeds.
+      - id: c2
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 2 (player 1 house 3); seeds.
+      - id: c3
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 3 (player 1 house 4); seeds.
+      - id: c4
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 4 (player 1 house 5); seeds.
+      - id: c5
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 5 (player 1 house 6); seeds.
+      - id: c6
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 0
+        description: Store of player 1 (ring index 6).
+      - id: c7
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 7 (player 2 house 1); seeds.
+      - id: c8
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 8 (player 2 house 2); seeds.
+      - id: c9
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 9 (player 2 house 3); seeds.
+      - id: c10
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 10 (player 2 house 4); seeds.
+      - id: c11
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 11 (player 2 house 5); seeds.
+      - id: c12
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 4
+        description: House at ring index 12 (player 2 house 6); seeds.
+      - id: c13
+        type:
+          kind: number
+          min: 0
+          max: 48
+        default: 0
+        description: Store of player 2 (ring index 13).
+      - id: hand
+        type:
+          kind: number
+        default: 0
+        description: Seeds still in hand during sowing.
+      - id: pos
+        type:
+          kind: number
+        default: 0
+        description: Ring index of the cell most recently sown into (or the house just picked up).
+      - id: side
+        type:
+          kind: number
+        default: 0
+        description: 0 when player 1 is moving, 1 when player 2 is moving.
+      - id: landed
+        type:
+          kind: number
+        default: 0
+        description: Seed count in the last-sown cell, read after sowing.
+      - id: oppCount
+        type:
+          kind: number
+        default: 0
+        description: Seed count in the house opposite the last-sown cell (0 for stores).
+      - id: cap
+        type:
+          kind: number
+        default: 0
+        description: 1 when the move that just ended captures.
+      - id: extra
+        type:
+          kind: number
+        default: 0
+        description: 1 when the move that just ended earns another move.
+      - id: gameOver
+        type:
+          kind: boolean
+        default: false
+        description: True once a side is empty at the end of a move and the sweep is done.
+      - id: p1Id
+        type:
+          kind: string
+        default: ''
+        description: Player id of player 1, recorded during setup.
+      - id: p2Id
+        type:
+          kind: string
+        default: ''
+        description: Player id of player 2, recorded during setup.
+      - id: currentPlayer
+        type:
+          kind: string
+        default: ''
+        description: Player id of the player who moves now.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Seeds in this player's store; copied from the ring after every move.

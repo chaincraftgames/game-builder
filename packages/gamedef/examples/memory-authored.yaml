@@ -1,0 +1,308 @@
+# ---------------------------------------------------------------------------
+# Memory (authored variant). Authored by an AI from a plain-language brief.
+#
+# Two players, 16 cards (8 pictures, 2 of each) shuffled face down in a 4x4
+# grid. Player 1 goes first. On a turn turn up one face-down card, then a
+# different one; both are visible to both players. A match is taken from the
+# grid, scores 1 point and gives another turn. A mismatch turns both cards
+# face down in place and passes the turn.
+#
+# The game ends when the grid is empty. The player with more points wins and
+# 4-4 is a draw.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - Card ids are neutral (c01 to c16) so ids do not reveal pictures.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: flipFirst
+      label: Turn up the first card
+      description: Turn one face-down card face up.
+      steps:
+        - input: card
+          label: Choose a face-down card
+          type:
+            kind: gamepiece-select
+            inventory: grid
+            ofType: card
+            filter: piece.faceUp == false
+        - effect: flip
+          pieces:
+            inventory: grid
+            select:
+              id:
+                param: card
+          to: face-up
+        - effect: set-state
+          source:
+            param: card
+          path: game.property.firstPicture
+          value:
+            var: source.property.picture
+    - id: flipSecond
+      label: Turn up a second card
+      description: Turn a different face-down card face up and record whether it matches the first.
+      steps:
+        - input: card
+          label: Choose a different face-down card
+          type:
+            kind: gamepiece-select
+            inventory: grid
+            ofType: card
+            filter: piece.faceUp == false
+        - effect: flip
+          pieces:
+            inventory: grid
+            select:
+              id:
+                param: card
+          to: face-up
+        - effect: set-state
+          path: game.property.matched
+          value:
+            expr: count(game.inventory.grid, piece.faceUp == true and piece.property.picture == game.property.firstPicture) == 2
+    - id: takePair
+      label: Take the pair
+      description: The two face-up cards match. Remove them from the grid and score a point.
+      preconditions: game.property.matched == true
+      steps:
+        - effect: move
+          from:
+            inventory: grid
+            select: all
+            filter: piece.faceUp == true
+          to:
+            inventory: taken
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta: 1
+    - id: hideCards
+      label: Turn the cards back down
+      description: The two face-up cards do not match. They go face down again in the same places.
+      preconditions: game.property.matched == false
+      steps:
+        - effect: flip
+          pieces:
+            inventory: grid
+            select: all
+            filter: piece.faceUp == true
+          to: face-down
+catalog:
+  entries:
+    - id: c01
+      typeId: card
+      properties:
+        picture: apple
+    - id: c02
+      typeId: card
+      properties:
+        picture: apple
+    - id: c03
+      typeId: card
+      properties:
+        picture: banana
+    - id: c04
+      typeId: card
+      properties:
+        picture: banana
+    - id: c05
+      typeId: card
+      properties:
+        picture: cherry
+    - id: c06
+      typeId: card
+      properties:
+        picture: cherry
+    - id: c07
+      typeId: card
+      properties:
+        picture: grape
+    - id: c08
+      typeId: card
+      properties:
+        picture: grape
+    - id: c09
+      typeId: card
+      properties:
+        picture: lemon
+    - id: c10
+      typeId: card
+      properties:
+        picture: lemon
+    - id: c11
+      typeId: card
+      properties:
+        picture: orange
+    - id: c12
+      typeId: card
+      properties:
+        picture: orange
+    - id: c13
+      typeId: card
+      properties:
+        picture: pear
+    - id: c14
+      typeId: card
+      properties:
+        picture: pear
+    - id: c15
+      typeId: card
+      properties:
+        picture: plum
+    - id: c16
+      typeId: card
+      properties:
+        picture: plum
+effects:
+  effects:
+    - id: fillDeck
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: card
+      to:
+        inventory: deck
+    - id: shuffleDeck
+      effect: shuffle
+      inventory: deck
+    - id: layOutGrid
+      effect: move
+      from:
+        inventory: deck
+        select: all
+      to:
+        inventory: grid
+    - id: turnAllFaceDown
+      effect: flip
+      pieces:
+        inventory: grid
+        select: all
+      to: face-down
+    - id: announceStart
+      effect: message
+      to: all
+      template: 16 cards are face down in a 4 by 4 grid. Find the pairs!
+flow:
+  root:
+    kind: game
+    label: Memory
+    hooks:
+      onEnter:
+        - effectRef: fillDeck
+        - effectRef: shuffleDeck
+        - effectRef: layOutGrid
+        - effectRef: turnAllFaceDown
+        - effectRef: announceStart
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+        tiebreak: all-win
+    children:
+      - kind: loop
+        id: rounds
+        label: Rounds
+        endCondition: count(game.inventory.grid) == 0
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: playerTurn
+            label: Player turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: repeat
+              count:
+                until: game.property.matched == false or count(game.inventory.grid) == 0
+              body:
+                kind: sequence
+                steps:
+                  - kind: action
+                    ref: flipFirst
+                  - kind: action
+                    ref: flipSecond
+                  - kind: action
+                    ref: takePair
+                    optional: true
+                  - kind: action
+                    ref: hideCards
+                    optional: true
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      hasFaceState: true
+      description: A memory card. Two cards share each picture.
+      properties:
+        - id: picture
+          label: Picture
+          type:
+            kind: string
+          mutable: false
+          visibility: revealed
+          description: The picture on the card; visible only while the card is face up.
+inventories:
+  types:
+    - id: deck
+      label: Deck
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      structure: stack
+      description: Setup only. Holds the cards while they are shuffled before being laid out in the grid.
+    - id: grid
+      label: Grid
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      structure: grid
+      gridDimensions:
+        rows: 4
+        columns: 4
+      description: The 4 by 4 layout. Pictures show only on face-up cards, so nobody sees a face-down card.
+    - id: taken
+      label: Taken pairs
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      description: Matched pairs removed from the grid.
+metadata:
+  name: Memory
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: firstPicture
+        type:
+          kind: string
+        default: ''
+        description: Picture on the first card turned up this turn. Written by flipFirst and compared by flipSecond.
+      - id: matched
+        type:
+          kind: boolean
+        default: false
+        description: True when the two cards turned up this turn show the same picture. Written by flipSecond, read by the resolve actions and the extra-turn repeat.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 8
+        default: 0
+        description: Number of pairs this player has taken.

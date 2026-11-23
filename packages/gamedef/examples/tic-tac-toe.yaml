@@ -1,0 +1,297 @@
+# ---------------------------------------------------------------------------
+# Tic-Tac-Toe. Authored by an AI from a plain-language brief.
+#
+# Two players on a 3x3 grid. Player 1 is X and moves first; player 2 is O. On
+# your turn put your mark in one empty square. Three of your marks in a row,
+# column or diagonal wins immediately. If all nine squares are full with no
+# line, the game is a draw.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The board is nine game-state strings with one action per square, because
+#    a set-state path cannot be chosen from an input.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: place0
+      label: Square 1 (row 1, column 1)
+      description: Put your mark in square 1.
+      preconditions: game.property.c0 == ""
+      steps:
+        - effectRef: markC0
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place1
+      label: Square 2 (row 1, column 2)
+      description: Put your mark in square 2.
+      preconditions: game.property.c1 == ""
+      steps:
+        - effectRef: markC1
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place2
+      label: Square 3 (row 1, column 3)
+      description: Put your mark in square 3.
+      preconditions: game.property.c2 == ""
+      steps:
+        - effectRef: markC2
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place3
+      label: Square 4 (row 2, column 1)
+      description: Put your mark in square 4.
+      preconditions: game.property.c3 == ""
+      steps:
+        - effectRef: markC3
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place4
+      label: Square 5 (row 2, column 2)
+      description: Put your mark in square 5.
+      preconditions: game.property.c4 == ""
+      steps:
+        - effectRef: markC4
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place5
+      label: Square 6 (row 2, column 3)
+      description: Put your mark in square 6.
+      preconditions: game.property.c5 == ""
+      steps:
+        - effectRef: markC5
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place6
+      label: Square 7 (row 3, column 1)
+      description: Put your mark in square 7.
+      preconditions: game.property.c6 == ""
+      steps:
+        - effectRef: markC6
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place7
+      label: Square 8 (row 3, column 2)
+      description: Put your mark in square 8.
+      preconditions: game.property.c7 == ""
+      steps:
+        - effectRef: markC7
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+    - id: place8
+      label: Square 9 (row 3, column 3)
+      description: Put your mark in square 9.
+      preconditions: game.property.c8 == ""
+      steps:
+        - effectRef: markC8
+        - effectRef: checkLine
+        - effectRef: awardWin
+        - effectRef: countMove
+        - effectRef: flipMark
+effects:
+  effects:
+    - id: checkLine
+      effect: set-state
+      path: game.property.won
+      value:
+        expr: if((game.property.c0 == game.property.currentMark and game.property.c1 == game.property.currentMark and game.property.c2 == game.property.currentMark) or (game.property.c3 == game.property.currentMark and game.property.c4 == game.property.currentMark and game.property.c5 == game.property.currentMark) or (game.property.c6 == game.property.currentMark and game.property.c7 == game.property.currentMark and game.property.c8 == game.property.currentMark) or (game.property.c0 == game.property.currentMark and game.property.c3 == game.property.currentMark and game.property.c6 == game.property.currentMark) or (game.property.c1 == game.property.currentMark and game.property.c4 == game.property.currentMark and game.property.c7 == game.property.currentMark) or (game.property.c2 == game.property.currentMark and game.property.c5 == game.property.currentMark and game.property.c8 == game.property.currentMark) or (game.property.c0 == game.property.currentMark and game.property.c4 == game.property.currentMark and game.property.c8 == game.property.currentMark) or (game.property.c2 == game.property.currentMark and game.property.c4 == game.property.currentMark and game.property.c6 == game.property.currentMark), true, false)
+    - id: awardWin
+      effect: set-state
+      path: player.property.score
+      value:
+        expr: if(game.property.won == true, 1, 0)
+    - id: countMove
+      effect: set-state
+      path: game.property.moves
+      value:
+        delta: 1
+    - id: flipMark
+      effect: set-state
+      path: game.property.currentMark
+      value:
+        expr: if(game.property.currentMark == "X", "O", "X")
+    - id: markC0
+      effect: set-state
+      path: game.property.c0
+      value:
+        var: game.property.currentMark
+    - id: markC1
+      effect: set-state
+      path: game.property.c1
+      value:
+        var: game.property.currentMark
+    - id: markC2
+      effect: set-state
+      path: game.property.c2
+      value:
+        var: game.property.currentMark
+    - id: markC3
+      effect: set-state
+      path: game.property.c3
+      value:
+        var: game.property.currentMark
+    - id: markC4
+      effect: set-state
+      path: game.property.c4
+      value:
+        var: game.property.currentMark
+    - id: markC5
+      effect: set-state
+      path: game.property.c5
+      value:
+        var: game.property.currentMark
+    - id: markC6
+      effect: set-state
+      path: game.property.c6
+      value:
+        var: game.property.currentMark
+    - id: markC7
+      effect: set-state
+      path: game.property.c7
+      value:
+        var: game.property.currentMark
+    - id: markC8
+      effect: set-state
+      path: game.property.c8
+      value:
+        var: game.property.currentMark
+flow:
+  root:
+    kind: game
+    label: Tic-Tac-Toe
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+        tiebreak: no-winner
+    children:
+      - kind: loop
+        id: moves
+        label: Moves
+        endCondition: game.property.won == true or game.property.moves >= 9
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: placeMark
+            label: Place your mark
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: choice
+              options:
+                - kind: action
+                  ref: place0
+                - kind: action
+                  ref: place1
+                - kind: action
+                  ref: place2
+                - kind: action
+                  ref: place3
+                - kind: action
+                  ref: place4
+                - kind: action
+                  ref: place5
+                - kind: action
+                  ref: place6
+                - kind: action
+                  ref: place7
+                - kind: action
+                  ref: place8
+metadata:
+  name: Tic-Tac-Toe
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: c0
+        type:
+          kind: string
+        default: ''
+        description: Square 0 (row 1, column 1); empty string, X or O.
+      - id: c1
+        type:
+          kind: string
+        default: ''
+        description: Square 1 (row 1, column 2); empty string, X or O.
+      - id: c2
+        type:
+          kind: string
+        default: ''
+        description: Square 2 (row 1, column 3); empty string, X or O.
+      - id: c3
+        type:
+          kind: string
+        default: ''
+        description: Square 3 (row 2, column 1); empty string, X or O.
+      - id: c4
+        type:
+          kind: string
+        default: ''
+        description: Square 4 (row 2, column 2); empty string, X or O.
+      - id: c5
+        type:
+          kind: string
+        default: ''
+        description: Square 5 (row 2, column 3); empty string, X or O.
+      - id: c6
+        type:
+          kind: string
+        default: ''
+        description: Square 6 (row 3, column 1); empty string, X or O.
+      - id: c7
+        type:
+          kind: string
+        default: ''
+        description: Square 7 (row 3, column 2); empty string, X or O.
+      - id: c8
+        type:
+          kind: string
+        default: ''
+        description: Square 8 (row 3, column 3); empty string, X or O.
+      - id: currentMark
+        type:
+          kind: string
+        default: X
+        description: Mark placed by the player whose turn it is. Starts as X (player 1), flips after each move.
+      - id: moves
+        type:
+          kind: number
+          min: 0
+          max: 9
+        default: 0
+        description: Number of squares filled so far.
+      - id: won
+        type:
+          kind: boolean
+        default: false
+        description: Set true by the move that completes a line; ends the game at once.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 1
+        default: 0
+        description: 1 for the player who completed a line, otherwise 0. Used only to decide the winner.

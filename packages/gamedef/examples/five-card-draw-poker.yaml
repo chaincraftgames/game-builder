@@ -1,0 +1,929 @@
+# ---------------------------------------------------------------------------
+# Five-Card Draw Poker (one hand). Authored by an AI from a plain-language
+# brief.
+#
+# Two to four players, one standard 52-card deck, 100 chips each, a 1-chip
+# ante. Deal 5 cards each. There are two fixed-limit betting rounds (bet 2,
+# then bet 4) separated by a draw. In each round a player may fold, check
+# (when no bet is open), bet, call, or raise once by one bet size.
+#
+# Draw: each live player discards up to 3 cards and then draws back up to 5.
+# Showdown: the best five-card hand wins the pot and ties split it. If
+# everyone else folds, the last player takes the pot without showing. After
+# the single hand, the player with the most chips wins.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - No wild cards, no blinds and no all-in handling.
+#  - Hands are ranked by one computed score, since the engine has no
+#    hand-ranking primitive.
+#  - Folded players take a no-op action so that no turn has zero legal
+#    actions.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: fold
+      label: Fold
+      description: Give up your hand and your claim on the pot.
+      preconditions: not actor.property.folded and game.property.live > 1
+      steps:
+        - effect: set-state
+          path: player.property.folded
+          value: true
+        - effect: set-state
+          path: game.property.live
+          value:
+            delta: -1
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: check
+      label: Check
+      description: Pass without betting. Only when no bet is open.
+      preconditions: not actor.property.folded and game.property.live > 1 and game.property.currentBet == 0
+      steps:
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: bet
+      label: Bet
+      description: Open the betting with the fixed bet size.
+      preconditions: not actor.property.folded and game.property.live > 1 and game.property.currentBet == 0
+      steps:
+        - effect: set-state
+          path: player.property.chips
+          value:
+            delta:
+              var: game.property.betSize
+              negate: true
+        - effect: set-state
+          path: game.property.pot
+          value:
+            delta:
+              var: game.property.betSize
+        - effect: set-state
+          path: game.property.currentBet
+          value:
+            var: game.property.betSize
+        - effect: set-state
+          path: player.property.roundBet
+          value:
+            var: game.property.betSize
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: call
+      label: Call
+      description: Match the open bet.
+      preconditions: not actor.property.folded and game.property.live > 1 and game.property.currentBet > actor.property.roundBet
+      steps:
+        - effect: set-state
+          path: player.property.chips
+          value:
+            delta:
+              expr: actor.property.roundBet - game.property.currentBet
+        - effect: set-state
+          path: game.property.pot
+          value:
+            delta:
+              expr: game.property.currentBet - actor.property.roundBet
+        - effect: set-state
+          path: player.property.roundBet
+          value:
+            var: game.property.currentBet
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: raise
+      label: Raise
+      description: Match the open bet and add one more bet size. One raise per round.
+      preconditions: not actor.property.folded and game.property.live > 1 and game.property.currentBet > 0 and not game.property.raised
+      steps:
+        - effect: set-state
+          path: player.property.chips
+          value:
+            delta:
+              expr: actor.property.roundBet - game.property.currentBet - game.property.betSize
+        - effect: set-state
+          path: game.property.pot
+          value:
+            delta:
+              expr: game.property.currentBet + game.property.betSize - actor.property.roundBet
+        - effect: set-state
+          path: game.property.currentBet
+          value:
+            delta:
+              var: game.property.betSize
+        - effect: set-state
+          path: player.property.roundBet
+          value:
+            var: game.property.currentBet
+        - effect: set-state
+          path: game.property.raised
+          value: true
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: sitOut
+      label: Sit out
+      description: 'Nothing to do: you have folded or only one player remains.'
+      preconditions: actor.property.folded or game.property.live < 2
+      steps:
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: discardCard
+      label: Discard a card
+      description: Discard one card from your hand (up to 3 per draw); replacements are dealt afterwards.
+      preconditions: not actor.property.folded and game.property.live > 1
+      steps:
+        - input: card
+          label: Card to discard
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            fromPlayer: actor
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: discard
+    - id: drawUp
+      label: Draw replacements
+      description: Draw cards from the deck until your hand is back to five.
+      preconditions: not actor.property.folded and game.property.live > 1
+      steps:
+        - effect: move
+          from:
+            inventory: deck
+            select: top
+            count: 1
+            filter: count(actor.inventory.hand) < 5
+          to:
+            inventory: hand
+        - effect: move
+          from:
+            inventory: deck
+            select: top
+            count: 1
+            filter: count(actor.inventory.hand) < 5
+          to:
+            inventory: hand
+        - effect: move
+          from:
+            inventory: deck
+            select: top
+            count: 1
+            filter: count(actor.inventory.hand) < 5
+          to:
+            inventory: hand
+    - id: revealAndScore
+      label: Show hand
+      description: Score your hand and turn it face up at showdown.
+      preconditions: not actor.property.folded and game.property.live > 1
+      steps:
+        - effectRef: scoreSig
+        - effectRef: scoreRaw
+        - effectRef: scoreTrip
+        - effectRef: scorePair
+        - effectRef: scoreFlush
+        - effectRef: scoreStraight
+        - effectRef: scoreTotal
+        - effectRef: showHand
+    - id: skipHand
+      label: Stay hidden
+      description: 'Folded, or everyone else folded: no showdown needed.'
+      preconditions: actor.property.folded or game.property.live < 2
+      steps:
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: markWinner
+      label: Check for best hand
+      description: Flag yourself as a winner if no remaining player has a higher hand score.
+      preconditions: not actor.property.folded
+      steps:
+        - effect: set-state
+          path: player.property.isWinner
+          value:
+            expr: if(all(players, player.property.handScore <= actor.property.handScore), 1, 0)
+    - id: skipFolded
+      label: Folded
+      description: Folded players take no part.
+      preconditions: actor.property.folded
+      steps:
+        - effect: set-state
+          path: player.property.acted
+          value: true
+    - id: payWinner
+      label: Collect winnings
+      description: Take an equal share of the pot.
+      preconditions: actor.property.isWinner == 1
+      steps:
+        - effect: set-state
+          path: player.property.chips
+          value:
+            delta:
+              expr: game.property.pot / count(players, player.property.isWinner == 1)
+    - id: skipLoser
+      label: Not a winner
+      description: No winnings.
+      preconditions: actor.property.isWinner == 0
+      steps:
+        - effect: set-state
+          path: player.property.acted
+          value: true
+catalog:
+  entries:
+    - id: hearts2
+      typeId: card
+      properties:
+        rank: 2
+        suit: hearts
+    - id: hearts3
+      typeId: card
+      properties:
+        rank: 3
+        suit: hearts
+    - id: hearts4
+      typeId: card
+      properties:
+        rank: 4
+        suit: hearts
+    - id: hearts5
+      typeId: card
+      properties:
+        rank: 5
+        suit: hearts
+    - id: hearts6
+      typeId: card
+      properties:
+        rank: 6
+        suit: hearts
+    - id: hearts7
+      typeId: card
+      properties:
+        rank: 7
+        suit: hearts
+    - id: hearts8
+      typeId: card
+      properties:
+        rank: 8
+        suit: hearts
+    - id: hearts9
+      typeId: card
+      properties:
+        rank: 9
+        suit: hearts
+    - id: hearts10
+      typeId: card
+      properties:
+        rank: 10
+        suit: hearts
+    - id: hearts11
+      typeId: card
+      properties:
+        rank: 11
+        suit: hearts
+    - id: hearts12
+      typeId: card
+      properties:
+        rank: 12
+        suit: hearts
+    - id: hearts13
+      typeId: card
+      properties:
+        rank: 13
+        suit: hearts
+    - id: hearts14
+      typeId: card
+      properties:
+        rank: 14
+        suit: hearts
+    - id: diamonds2
+      typeId: card
+      properties:
+        rank: 2
+        suit: diamonds
+    - id: diamonds3
+      typeId: card
+      properties:
+        rank: 3
+        suit: diamonds
+    - id: diamonds4
+      typeId: card
+      properties:
+        rank: 4
+        suit: diamonds
+    - id: diamonds5
+      typeId: card
+      properties:
+        rank: 5
+        suit: diamonds
+    - id: diamonds6
+      typeId: card
+      properties:
+        rank: 6
+        suit: diamonds
+    - id: diamonds7
+      typeId: card
+      properties:
+        rank: 7
+        suit: diamonds
+    - id: diamonds8
+      typeId: card
+      properties:
+        rank: 8
+        suit: diamonds
+    - id: diamonds9
+      typeId: card
+      properties:
+        rank: 9
+        suit: diamonds
+    - id: diamonds10
+      typeId: card
+      properties:
+        rank: 10
+        suit: diamonds
+    - id: diamonds11
+      typeId: card
+      properties:
+        rank: 11
+        suit: diamonds
+    - id: diamonds12
+      typeId: card
+      properties:
+        rank: 12
+        suit: diamonds
+    - id: diamonds13
+      typeId: card
+      properties:
+        rank: 13
+        suit: diamonds
+    - id: diamonds14
+      typeId: card
+      properties:
+        rank: 14
+        suit: diamonds
+    - id: clubs2
+      typeId: card
+      properties:
+        rank: 2
+        suit: clubs
+    - id: clubs3
+      typeId: card
+      properties:
+        rank: 3
+        suit: clubs
+    - id: clubs4
+      typeId: card
+      properties:
+        rank: 4
+        suit: clubs
+    - id: clubs5
+      typeId: card
+      properties:
+        rank: 5
+        suit: clubs
+    - id: clubs6
+      typeId: card
+      properties:
+        rank: 6
+        suit: clubs
+    - id: clubs7
+      typeId: card
+      properties:
+        rank: 7
+        suit: clubs
+    - id: clubs8
+      typeId: card
+      properties:
+        rank: 8
+        suit: clubs
+    - id: clubs9
+      typeId: card
+      properties:
+        rank: 9
+        suit: clubs
+    - id: clubs10
+      typeId: card
+      properties:
+        rank: 10
+        suit: clubs
+    - id: clubs11
+      typeId: card
+      properties:
+        rank: 11
+        suit: clubs
+    - id: clubs12
+      typeId: card
+      properties:
+        rank: 12
+        suit: clubs
+    - id: clubs13
+      typeId: card
+      properties:
+        rank: 13
+        suit: clubs
+    - id: clubs14
+      typeId: card
+      properties:
+        rank: 14
+        suit: clubs
+    - id: spades2
+      typeId: card
+      properties:
+        rank: 2
+        suit: spades
+    - id: spades3
+      typeId: card
+      properties:
+        rank: 3
+        suit: spades
+    - id: spades4
+      typeId: card
+      properties:
+        rank: 4
+        suit: spades
+    - id: spades5
+      typeId: card
+      properties:
+        rank: 5
+        suit: spades
+    - id: spades6
+      typeId: card
+      properties:
+        rank: 6
+        suit: spades
+    - id: spades7
+      typeId: card
+      properties:
+        rank: 7
+        suit: spades
+    - id: spades8
+      typeId: card
+      properties:
+        rank: 8
+        suit: spades
+    - id: spades9
+      typeId: card
+      properties:
+        rank: 9
+        suit: spades
+    - id: spades10
+      typeId: card
+      properties:
+        rank: 10
+        suit: spades
+    - id: spades11
+      typeId: card
+      properties:
+        rank: 11
+        suit: spades
+    - id: spades12
+      typeId: card
+      properties:
+        rank: 12
+        suit: spades
+    - id: spades13
+      typeId: card
+      properties:
+        rank: 13
+        suit: spades
+    - id: spades14
+      typeId: card
+      properties:
+        rank: 14
+        suit: spades
+effects:
+  effects:
+    - id: fillDeck
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: card
+      to:
+        inventory: deck
+    - id: shuffleDeck
+      effect: shuffle
+      inventory: deck
+    - id: dealHands
+      effect: distribute
+      from:
+        inventory: deck
+        select: top
+      to:
+        inventory: hand
+      count: 5
+    - id: ante
+      effect: set-state
+      path: player.property.chips
+      value:
+        delta: -1
+      target: all
+    - id: seedPot
+      effect: set-state
+      path: game.property.pot
+      value:
+        expr: count(players)
+    - id: seedLive
+      effect: set-state
+      path: game.property.live
+      value:
+        expr: count(players)
+    - id: announceStart
+      effect: message
+      to: all
+      template: 'Antes paid and five cards dealt. First betting round: bets are 2 chips.'
+    - id: resetBetCurrent
+      effect: set-state
+      path: game.property.currentBet
+      value: 0
+    - id: resetBetSize
+      effect: set-state
+      path: game.property.betSize
+      value: 4
+    - id: resetRaised
+      effect: set-state
+      path: game.property.raised
+      value: false
+    - id: resetRoundBets
+      effect: set-state
+      path: player.property.roundBet
+      value: 0
+      target: all
+    - id: resetActed
+      effect: set-state
+      path: player.property.acted
+      value: false
+      target: all
+    - id: announceRound2
+      effect: message
+      to: all
+      template: 'Draw complete. Second betting round: bets are 4 chips.'
+    - id: clearPot
+      effect: set-state
+      path: game.property.pot
+      value: 0
+    - id: scoreSig
+      effect: set-state
+      path: player.property.sig
+      value:
+        expr: count(actor.inventory.hand, piece.property.rank == 2) * count(actor.inventory.hand, piece.property.rank == 2) + count(actor.inventory.hand, piece.property.rank == 3) * count(actor.inventory.hand, piece.property.rank == 3) + count(actor.inventory.hand, piece.property.rank == 4) * count(actor.inventory.hand, piece.property.rank == 4) + count(actor.inventory.hand, piece.property.rank == 5) * count(actor.inventory.hand, piece.property.rank == 5) + count(actor.inventory.hand, piece.property.rank == 6) * count(actor.inventory.hand, piece.property.rank == 6) + count(actor.inventory.hand, piece.property.rank == 7) * count(actor.inventory.hand, piece.property.rank == 7) + count(actor.inventory.hand, piece.property.rank == 8) * count(actor.inventory.hand, piece.property.rank == 8) + count(actor.inventory.hand, piece.property.rank == 9) * count(actor.inventory.hand, piece.property.rank == 9) + count(actor.inventory.hand, piece.property.rank == 10) * count(actor.inventory.hand, piece.property.rank == 10) + count(actor.inventory.hand, piece.property.rank == 11) * count(actor.inventory.hand, piece.property.rank == 11) + count(actor.inventory.hand, piece.property.rank == 12) * count(actor.inventory.hand, piece.property.rank == 12) + count(actor.inventory.hand, piece.property.rank == 13) * count(actor.inventory.hand, piece.property.rank == 13) + count(actor.inventory.hand, piece.property.rank == 14) * count(actor.inventory.hand, piece.property.rank == 14)
+    - id: scoreRaw
+      effect: set-state
+      path: player.property.rawBits
+      value:
+        expr: if(count(actor.inventory.hand, piece.property.rank == 2) == 1, 1, 0) + if(count(actor.inventory.hand, piece.property.rank == 3) == 1, 2, 0) + if(count(actor.inventory.hand, piece.property.rank == 4) == 1, 4, 0) + if(count(actor.inventory.hand, piece.property.rank == 5) == 1, 8, 0) + if(count(actor.inventory.hand, piece.property.rank == 6) == 1, 16, 0) + if(count(actor.inventory.hand, piece.property.rank == 7) == 1, 32, 0) + if(count(actor.inventory.hand, piece.property.rank == 8) == 1, 64, 0) + if(count(actor.inventory.hand, piece.property.rank == 9) == 1, 128, 0) + if(count(actor.inventory.hand, piece.property.rank == 10) == 1, 256, 0) + if(count(actor.inventory.hand, piece.property.rank == 11) == 1, 512, 0) + if(count(actor.inventory.hand, piece.property.rank == 12) == 1, 1024, 0) + if(count(actor.inventory.hand, piece.property.rank == 13) == 1, 2048, 0) + if(count(actor.inventory.hand, piece.property.rank == 14) == 1, 4096, 0)
+    - id: scoreTrip
+      effect: set-state
+      path: player.property.tripBits
+      value:
+        expr: if(count(actor.inventory.hand, piece.property.rank == 2) >= 3, 1, 0) + if(count(actor.inventory.hand, piece.property.rank == 3) >= 3, 2, 0) + if(count(actor.inventory.hand, piece.property.rank == 4) >= 3, 4, 0) + if(count(actor.inventory.hand, piece.property.rank == 5) >= 3, 8, 0) + if(count(actor.inventory.hand, piece.property.rank == 6) >= 3, 16, 0) + if(count(actor.inventory.hand, piece.property.rank == 7) >= 3, 32, 0) + if(count(actor.inventory.hand, piece.property.rank == 8) >= 3, 64, 0) + if(count(actor.inventory.hand, piece.property.rank == 9) >= 3, 128, 0) + if(count(actor.inventory.hand, piece.property.rank == 10) >= 3, 256, 0) + if(count(actor.inventory.hand, piece.property.rank == 11) >= 3, 512, 0) + if(count(actor.inventory.hand, piece.property.rank == 12) >= 3, 1024, 0) + if(count(actor.inventory.hand, piece.property.rank == 13) >= 3, 2048, 0) + if(count(actor.inventory.hand, piece.property.rank == 14) >= 3, 4096, 0)
+    - id: scorePair
+      effect: set-state
+      path: player.property.pairBits
+      value:
+        expr: if(count(actor.inventory.hand, piece.property.rank == 2) == 2, 1, 0) + if(count(actor.inventory.hand, piece.property.rank == 3) == 2, 2, 0) + if(count(actor.inventory.hand, piece.property.rank == 4) == 2, 4, 0) + if(count(actor.inventory.hand, piece.property.rank == 5) == 2, 8, 0) + if(count(actor.inventory.hand, piece.property.rank == 6) == 2, 16, 0) + if(count(actor.inventory.hand, piece.property.rank == 7) == 2, 32, 0) + if(count(actor.inventory.hand, piece.property.rank == 8) == 2, 64, 0) + if(count(actor.inventory.hand, piece.property.rank == 9) == 2, 128, 0) + if(count(actor.inventory.hand, piece.property.rank == 10) == 2, 256, 0) + if(count(actor.inventory.hand, piece.property.rank == 11) == 2, 512, 0) + if(count(actor.inventory.hand, piece.property.rank == 12) == 2, 1024, 0) + if(count(actor.inventory.hand, piece.property.rank == 13) == 2, 2048, 0) + if(count(actor.inventory.hand, piece.property.rank == 14) == 2, 4096, 0)
+    - id: scoreFlush
+      effect: set-state
+      path: player.property.flush
+      value:
+        expr: if(count(actor.inventory.hand, piece.property.suit == "hearts") == 5 or count(actor.inventory.hand, piece.property.suit == "diamonds") == 5 or count(actor.inventory.hand, piece.property.suit == "clubs") == 5 or count(actor.inventory.hand, piece.property.suit == "spades") == 5, 1, 0)
+    - id: scoreStraight
+      effect: set-state
+      path: player.property.straight
+      value:
+        expr: if(actor.property.sig == 5 and (actor.property.rawBits == 31 or actor.property.rawBits == 62 or actor.property.rawBits == 124 or actor.property.rawBits == 248 or actor.property.rawBits == 496 or actor.property.rawBits == 992 or actor.property.rawBits == 1984 or actor.property.rawBits == 3968 or actor.property.rawBits == 7936 or actor.property.rawBits == 4111), 1, 0)
+    - id: scoreTotal
+      effect: set-state
+      path: player.property.handScore
+      value:
+        expr: if(actor.property.straight == 1 and actor.property.flush == 1, 8, if(actor.property.sig == 17, 7, if(actor.property.sig == 13, 6, if(actor.property.flush == 1, 5, if(actor.property.straight == 1, 4, if(actor.property.sig == 11, 3, if(actor.property.sig == 9, 2, if(actor.property.sig == 7, 1, 0)))))))) * 549755813888 + actor.property.tripBits * 67108864 + actor.property.pairBits * 8192 + if(actor.property.rawBits == 4111, 15, actor.property.rawBits)
+    - id: showHand
+      effect: move
+      from:
+        inventory: hand
+        select: all
+      to:
+        inventory: shown
+flow:
+  root:
+    kind: game
+    label: Five-Card Draw Poker
+    hooks:
+      onEnter:
+        - effectRef: fillDeck
+        - effectRef: shuffleDeck
+        - effectRef: dealHands
+        - effectRef: ante
+        - effectRef: seedPot
+        - effectRef: seedLive
+        - effectRef: announceStart
+      onComplete:
+        - effectRef: clearPot
+    winConditions:
+      - rule: ranking
+        property: player.property.chips
+        order: highest
+    children:
+      - kind: loop
+        id: round1
+        label: Betting round 1
+        checkAfter: turn
+        endCondition: game.property.live < 2 or all(players, player.property.folded or (player.property.acted and player.property.roundBet == game.property.currentBet))
+        children:
+          - kind: turn
+            id: bet1
+            label: Betting round 1 turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: choice
+              options:
+                - kind: action
+                  ref: fold
+                - kind: action
+                  ref: check
+                - kind: action
+                  ref: bet
+                - kind: action
+                  ref: call
+                - kind: action
+                  ref: raise
+                - kind: action
+                  ref: sitOut
+      - kind: turn
+        id: discardPhase
+        label: Discard up to 3 cards
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: repeat
+          count:
+            max: 3
+          body:
+            kind: choice
+            passable: true
+            options:
+              - kind: action
+                ref: discardCard
+      - kind: turn
+        id: drawPhase
+        label: Draw replacements
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: choice
+          options:
+            - kind: action
+              ref: drawUp
+            - kind: action
+              ref: sitOut
+        hooks:
+          onComplete:
+            - effectRef: resetBetCurrent
+            - effectRef: resetBetSize
+            - effectRef: resetRaised
+            - effectRef: resetRoundBets
+            - effectRef: resetActed
+            - effectRef: announceRound2
+      - kind: loop
+        id: round2
+        label: Betting round 2
+        checkAfter: turn
+        endCondition: game.property.live < 2 or all(players, player.property.folded or (player.property.acted and player.property.roundBet == game.property.currentBet))
+        children:
+          - kind: turn
+            id: bet2
+            label: Betting round 2 turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: choice
+              options:
+                - kind: action
+                  ref: fold
+                - kind: action
+                  ref: check
+                - kind: action
+                  ref: bet
+                - kind: action
+                  ref: call
+                - kind: action
+                  ref: raise
+                - kind: action
+                  ref: sitOut
+      - kind: turn
+        id: showdownReveal
+        label: 'Showdown: reveal hands'
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: choice
+          options:
+            - kind: action
+              ref: revealAndScore
+            - kind: action
+              ref: skipHand
+      - kind: turn
+        id: showdownJudge
+        label: 'Showdown: find best hand'
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: choice
+          options:
+            - kind: action
+              ref: markWinner
+            - kind: action
+              ref: skipFolded
+      - kind: turn
+        id: showdownPay
+        label: 'Showdown: pay out'
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: choice
+          options:
+            - kind: action
+              ref: payWinner
+            - kind: action
+              ref: skipLoser
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A standard playing card. Ace is rank 14 (also plays low in a wheel straight).
+      properties:
+        - id: rank
+          label: Rank
+          type:
+            kind: number
+            min: 2
+            max: 14
+          mutable: false
+          visibility: always
+        - id: suit
+          label: Suit
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+inventories:
+  types:
+    - id: deck
+      label: Deck
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: The face-down draw deck.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: owner
+      description: Each player's five private cards.
+    - id: discard
+      label: Discards
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      countVisibility: always
+      description: Cards discarded in the draw. Face down, never revealed.
+    - id: shown
+      label: Showdown hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: always
+      description: A remaining player's hand, revealed face up at showdown.
+metadata:
+  name: Five-Card Draw Poker
+  playerCount:
+    min: 2
+    max: 4
+state:
+  game:
+    properties:
+      - id: pot
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Chips committed by all players this hand (antes and bets).
+      - id: currentBet
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Highest total a player has put in during the current betting round. 0 means no bet is open.
+      - id: betSize
+        type:
+          kind: number
+          min: 0
+        default: 2
+        description: Fixed bet and raise increment for the current betting round (2 in round 1, 4 in round 2).
+      - id: raised
+        type:
+          kind: boolean
+        default: false
+        description: True once the one allowed raise of this betting round has been made.
+      - id: live
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Number of players who have not folded. Set at setup, decremented by fold.
+  player:
+    properties:
+      - id: chips
+        type:
+          kind: number
+        default: 100
+        description: The player's chip stack.
+      - id: folded
+        type:
+          kind: boolean
+        default: false
+      - id: acted
+        type:
+          kind: boolean
+        default: false
+        description: Has acted in the current betting round.
+      - id: roundBet
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Chips this player has put in during the current betting round.
+      - id: sig
+        type:
+          kind: number
+        default: 0
+        description: Sum over ranks of (copies of the rank in hand) squared. 5 high card or straight or flush, 7 pair, 9 two pair, 11 trips, 13 full house, 17 quads.
+      - id: rawBits
+        type:
+          kind: number
+        default: 0
+        description: Bitmask (rank 2 = 1 ... ace = 4096) of ranks held exactly once.
+      - id: tripBits
+        type:
+          kind: number
+        default: 0
+        description: Bitmask of ranks held three or four times.
+      - id: pairBits
+        type:
+          kind: number
+        default: 0
+        description: Bitmask of ranks held exactly twice.
+      - id: straight
+        type:
+          kind: number
+        default: 0
+        description: 1 if the hand is five consecutive ranks (ace may be low).
+      - id: flush
+        type:
+          kind: number
+        default: 0
+        description: 1 if all five cards share a suit.
+      - id: handScore
+        type:
+          kind: number
+        default: 0
+        description: Single comparable number; category and then tie-break ranks. Higher beats lower. 0 for players who never showed down.
+      - id: isWinner
+        type:
+          kind: number
+        default: 0
+        description: 1 if the player holds the best showdown hand (ties all get 1).

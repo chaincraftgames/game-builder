@@ -1,0 +1,637 @@
+# ---------------------------------------------------------------------------
+# Draw Dominoes (one round). Authored by an AI from a plain-language brief.
+#
+# Two players, a double-six set of 28 tiles. Each player is dealt 7 tiles and
+# the other 14 form a face-down boneyard. The holder of the highest double
+# opens with it, or with the highest-pip tile if no double was dealt. Players
+# then extend the line by matching a half of one of their tiles to an open
+# end. A player with no matching tile draws from the boneyard until one fits
+# or it is empty, and passes if nothing fits and the boneyard is empty.
+#
+# The round ends when a player empties their hand, who wins and scores the
+# opponent's pips, or when two passes in a row block the game, in which case
+# the lower pip total wins and scores the difference. Equal totals are a tie.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The line is an unordered inventory with the two open ends tracked in
+#    state, so the order of the line cannot be shown from the spec alone.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: playOpening
+      label: Play the opening tile
+      description: The player holding the highest double (or else the highest-pip tile) must play it to start the line.
+      preconditions: game.property.leftEnd < 0
+      steps:
+        - input: tile
+          label: Play your highest tile
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: tile
+            fromPlayer: actor
+            filter: all(actor.inventory.hand, piece.property.startWeight <= target.property.startWeight)
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: tile
+          to:
+            inventory: chain
+        - effect: set-state
+          path: game.property.leftEnd
+          value:
+            expr: input.tile.property.a
+        - effect: set-state
+          path: game.property.rightEnd
+          value:
+            expr: input.tile.property.b
+        - effectRef: markPlayed
+        - effectRef: resetPasses
+        - effectRef: checkEmptyHand
+    - id: playLeft
+      label: Play on the left end
+      description: Play a tile with a half matching the left open end; its other half becomes the new left end.
+      preconditions: game.property.leftEnd >= 0
+      steps:
+        - input: tile
+          label: Choose a tile to play
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: tile
+            fromPlayer: actor
+            filter: piece.property.a == game.property.leftEnd or piece.property.b == game.property.leftEnd
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: tile
+          to:
+            inventory: chain
+        - effect: set-state
+          path: game.property.leftEnd
+          value:
+            expr: if(input.tile.property.a == game.property.leftEnd, input.tile.property.b, input.tile.property.a)
+        - effectRef: markPlayed
+        - effectRef: resetPasses
+        - effectRef: checkEmptyHand
+    - id: playRight
+      label: Play on the right end
+      description: Play a tile with a half matching the right open end; its other half becomes the new right end.
+      preconditions: game.property.rightEnd >= 0
+      steps:
+        - input: tile
+          label: Choose a tile to play
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: tile
+            fromPlayer: actor
+            filter: piece.property.a == game.property.rightEnd or piece.property.b == game.property.rightEnd
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: tile
+          to:
+            inventory: chain
+        - effect: set-state
+          path: game.property.rightEnd
+          value:
+            expr: if(input.tile.property.a == game.property.rightEnd, input.tile.property.b, input.tile.property.a)
+        - effectRef: markPlayed
+        - effectRef: resetPasses
+        - effectRef: checkEmptyHand
+    - id: drawTile
+      label: Draw from the boneyard
+      description: You cannot play, so draw one tile from the boneyard.
+      preconditions: game.property.leftEnd >= 0 and count(game.inventory.boneyard) > 0 and count(actor.inventory.hand, piece.property.a == game.property.leftEnd or piece.property.b == game.property.leftEnd or piece.property.a == game.property.rightEnd or piece.property.b == game.property.rightEnd) == 0
+      steps:
+        - effect: move
+          from:
+            inventory: boneyard
+            select: top
+            count: 1
+          to:
+            inventory: hand
+    - id: passTurn
+      label: Pass
+      description: You cannot play and the boneyard is empty.
+      preconditions: game.property.leftEnd >= 0 and count(game.inventory.boneyard) == 0 and count(actor.inventory.hand, piece.property.a == game.property.leftEnd or piece.property.b == game.property.leftEnd or piece.property.a == game.property.rightEnd or piece.property.b == game.property.rightEnd) == 0
+      steps:
+        - effect: set-state
+          path: game.property.passes
+          value:
+            delta: 1
+        - effect: set-state
+          path: game.property.lastMover
+          value:
+            actor: true
+        - effect: set-state
+          path: game.property.finished
+          value:
+            expr: if(game.property.passes >= 2, true, game.property.finished)
+    - id: tallyOpening
+      label: Weigh opening tiles
+      description: Automatic setup step run once per player.
+      steps:
+        - effect: set-state
+          path: player.property.openWeight
+          value:
+            expr: sum(actor.inventory.hand, piece.property.startWeight)
+    - id: claimOpening
+      label: Decide who opens
+      description: Automatic setup step run once per player; records the player holding the opening tile.
+      steps:
+        - effect: set-state
+          path: game.property.firstPlayer
+          value:
+            expr: if(actor.property.openWeight > sum(players, player.property.openWeight) - actor.property.openWeight, actor.id, game.property.firstPlayer)
+    - id: tallyPips
+      label: Count pips
+      description: Automatic end-of-round step run once per player.
+      steps:
+        - effect: set-state
+          path: player.property.pips
+          value:
+            expr: sum(actor.inventory.hand, piece.property.pips)
+    - id: scoreRound
+      label: Score the round
+      description: 'Automatic end-of-round step run once per player. A player with no tiles wins; otherwise the lower pip total wins. The winner scores the opponent''s pips minus their own (which equals the opponent''s total when the winner has no tiles). Equal totals are a tie: nobody wins and nobody scores.'
+      steps:
+        - effect: set-state
+          path: player.property.won
+          value:
+            expr: if(count(actor.inventory.hand) == 0, true, actor.property.pips < sum(players, player.property.pips) - actor.property.pips)
+        - effect: set-state
+          path: player.property.score
+          value:
+            expr: if(actor.property.won == true, sum(players, player.property.pips) - 2 * actor.property.pips, 0)
+catalog:
+  entries:
+    - id: tile01
+      typeId: tile
+      properties:
+        a: 0
+        b: 1
+        pips: 1
+        startWeight: 2
+    - id: tile02
+      typeId: tile
+      properties:
+        a: 0
+        b: 2
+        pips: 2
+        startWeight: 4
+    - id: tile12
+      typeId: tile
+      properties:
+        a: 1
+        b: 2
+        pips: 3
+        startWeight: 8
+    - id: tile03
+      typeId: tile
+      properties:
+        a: 0
+        b: 3
+        pips: 3
+        startWeight: 16
+    - id: tile13
+      typeId: tile
+      properties:
+        a: 1
+        b: 3
+        pips: 4
+        startWeight: 32
+    - id: tile04
+      typeId: tile
+      properties:
+        a: 0
+        b: 4
+        pips: 4
+        startWeight: 64
+    - id: tile23
+      typeId: tile
+      properties:
+        a: 2
+        b: 3
+        pips: 5
+        startWeight: 128
+    - id: tile14
+      typeId: tile
+      properties:
+        a: 1
+        b: 4
+        pips: 5
+        startWeight: 256
+    - id: tile05
+      typeId: tile
+      properties:
+        a: 0
+        b: 5
+        pips: 5
+        startWeight: 512
+    - id: tile24
+      typeId: tile
+      properties:
+        a: 2
+        b: 4
+        pips: 6
+        startWeight: 1024
+    - id: tile15
+      typeId: tile
+      properties:
+        a: 1
+        b: 5
+        pips: 6
+        startWeight: 2048
+    - id: tile06
+      typeId: tile
+      properties:
+        a: 0
+        b: 6
+        pips: 6
+        startWeight: 4096
+    - id: tile34
+      typeId: tile
+      properties:
+        a: 3
+        b: 4
+        pips: 7
+        startWeight: 8192
+    - id: tile25
+      typeId: tile
+      properties:
+        a: 2
+        b: 5
+        pips: 7
+        startWeight: 16384
+    - id: tile16
+      typeId: tile
+      properties:
+        a: 1
+        b: 6
+        pips: 7
+        startWeight: 32768
+    - id: tile35
+      typeId: tile
+      properties:
+        a: 3
+        b: 5
+        pips: 8
+        startWeight: 65536
+    - id: tile26
+      typeId: tile
+      properties:
+        a: 2
+        b: 6
+        pips: 8
+        startWeight: 131072
+    - id: tile45
+      typeId: tile
+      properties:
+        a: 4
+        b: 5
+        pips: 9
+        startWeight: 262144
+    - id: tile36
+      typeId: tile
+      properties:
+        a: 3
+        b: 6
+        pips: 9
+        startWeight: 524288
+    - id: tile46
+      typeId: tile
+      properties:
+        a: 4
+        b: 6
+        pips: 10
+        startWeight: 1048576
+    - id: tile56
+      typeId: tile
+      properties:
+        a: 5
+        b: 6
+        pips: 11
+        startWeight: 2097152
+    - id: tile00
+      typeId: tile
+      properties:
+        a: 0
+        b: 0
+        pips: 0
+        startWeight: 4194304
+    - id: tile11
+      typeId: tile
+      properties:
+        a: 1
+        b: 1
+        pips: 2
+        startWeight: 8388608
+    - id: tile22
+      typeId: tile
+      properties:
+        a: 2
+        b: 2
+        pips: 4
+        startWeight: 16777216
+    - id: tile33
+      typeId: tile
+      properties:
+        a: 3
+        b: 3
+        pips: 6
+        startWeight: 33554432
+    - id: tile44
+      typeId: tile
+      properties:
+        a: 4
+        b: 4
+        pips: 8
+        startWeight: 67108864
+    - id: tile55
+      typeId: tile
+      properties:
+        a: 5
+        b: 5
+        pips: 10
+        startWeight: 134217728
+    - id: tile66
+      typeId: tile
+      properties:
+        a: 6
+        b: 6
+        pips: 12
+        startWeight: 268435456
+effects:
+  effects:
+    - id: fillBoneyard
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: tile
+      to:
+        inventory: boneyard
+    - id: shuffleBoneyard
+      effect: shuffle
+      inventory: boneyard
+    - id: dealHands
+      effect: distribute
+      from:
+        inventory: boneyard
+        select: top
+      to:
+        inventory: hand
+      count: 7
+    - id: markPlayed
+      effect: set-state
+      path: game.property.lastMover
+      value:
+        actor: true
+    - id: resetPasses
+      effect: set-state
+      path: game.property.passes
+      value: 0
+    - id: checkEmptyHand
+      effect: set-state
+      path: game.property.finished
+      value:
+        expr: if(count(actor.inventory.hand) == 0, true, game.property.finished)
+flow:
+  root:
+    kind: game
+    label: Draw Dominoes
+    hooks:
+      onEnter:
+        - effectRef: fillBoneyard
+        - effectRef: shuffleBoneyard
+        - effectRef: dealHands
+    winConditions:
+      - rule: condition
+        condition: player.property.won == true
+    children:
+      - kind: turn
+        id: weighOpening
+        label: Find the opening tile
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: tallyOpening
+      - kind: turn
+        id: decideOpener
+        label: Decide who opens
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: claimOpening
+      - kind: loop
+        id: play
+        label: Play
+        endCondition: game.property.finished == true
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: playerTurn
+            label: Take a turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+              startingPlayer:
+                stateRef: game.property.firstPlayer
+            grammar:
+              kind: repeat
+              count:
+                until: game.property.lastMover == actor.id
+                max: 16
+              body:
+                kind: choice
+                options:
+                  - kind: action
+                    ref: playOpening
+                  - kind: action
+                    ref: playLeft
+                  - kind: action
+                    ref: playRight
+                  - kind: action
+                    ref: drawTile
+                  - kind: action
+                    ref: passTurn
+      - kind: turn
+        id: countPips
+        label: Count pips
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: tallyPips
+      - kind: turn
+        id: scoreRound
+        label: Score the round
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: scoreRound
+gamepieceTypes:
+  types:
+    - id: tile
+      category: tile
+      description: A domino tile with two halves.
+      properties:
+        - id: a
+          label: Half A
+          type:
+            kind: number
+            min: 0
+            max: 6
+          mutable: false
+          visibility: always
+        - id: b
+          label: Half B
+          type:
+            kind: number
+            min: 0
+            max: 6
+          mutable: false
+          visibility: always
+        - id: pips
+          label: Pips
+          type:
+            kind: number
+            min: 0
+            max: 12
+          mutable: false
+          visibility: always
+          description: Total of both halves.
+        - id: startWeight
+          label: Opening weight
+          type:
+            kind: number
+            min: 2
+            max: 600000000
+          mutable: false
+          visibility: always
+          description: Power of two by opening rank (doubles above non-doubles; doubles by pips; non-doubles by total pips then higher half). Comparing sums of these across hands finds the hand holding the opening tile.
+inventories:
+  types:
+    - id: boneyard
+      label: Boneyard
+      scope:
+        kind: game
+      accepts:
+        - tile
+      visibility: never
+      countVisibility: always
+      structure: stack
+      displayHint: pile
+      description: Face-down tiles to draw from.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - tile
+      visibility: owner
+      countVisibility: always
+      displayHint: fan
+    - id: chain
+      label: Line
+      scope:
+        kind: game
+      accepts:
+        - tile
+      visibility: always
+      description: Tiles played so far. The open ends are tracked in leftEnd and rightEnd.
+metadata:
+  name: Draw Dominoes
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: leftEnd
+        type:
+          kind: number
+          min: -1
+          max: 6
+        default: -1
+        description: Pip count of the left open end of the line; -1 while the line is empty.
+      - id: rightEnd
+        type:
+          kind: number
+          min: -1
+          max: 6
+        default: -1
+        description: Pip count of the right open end of the line; -1 while the line is empty.
+      - id: firstPlayer
+        type:
+          kind: string
+        default: ''
+        description: Player id of the player who holds the opening tile and plays first.
+      - id: lastMover
+        type:
+          kind: string
+        default: ''
+        description: Player id of whoever last played or passed; a turn ends when this equals the acting player.
+      - id: passes
+        type:
+          kind: number
+          min: 0
+          max: 2
+        default: 0
+        description: Consecutive passes. Reset by any play.
+      - id: finished
+        type:
+          kind: boolean
+        default: false
+        description: True once a player has emptied their hand or the game is blocked.
+  player:
+    properties:
+      - id: openWeight
+        type:
+          kind: number
+          min: 0
+          max: 600000000
+        default: 0
+        description: Sum of the startWeight of the tiles in hand; the larger sum holds the opening tile.
+      - id: pips
+        type:
+          kind: number
+          min: 0
+          max: 200
+        default: 0
+        description: Total pips left in hand at the end of the round.
+      - id: won
+        type:
+          kind: boolean
+        default: false
+        description: True if this player won the round.
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 200
+        default: 0
+        description: Points scored for the round (winner only).
