@@ -1,0 +1,693 @@
+# ---------------------------------------------------------------------------
+# Chess (without check rules). Authored by an AI from a plain-language brief.
+#
+# Two players, standard chess. White is player 1 and moves first. All piece
+# moves are implemented, including castling, en passant and promotion (the
+# mover chooses the piece), plus resignation. A game is drawn automatically
+# by insufficient material (king against king, or king and one minor piece
+# against king), by threefold repetition, or by the fifty-move rule.
+#
+# The spec below is the authored spec, with one description sentence
+# shortened to drop a pointer to a lab file; no rules changed.
+#
+# Known limits:
+#  - Check is NOT enforced: a move may leave or put your own king in check,
+#    and pins and forced replies to check do not exist.
+#  - Castling requires an unmoved king and rook and empty squares between
+#    them, but does not test attacked squares.
+#  - Checkmate and stalemate cannot be detected, so the game is won by
+#    capturing the enemy king.
+#  - These need an engine change: nestable aggregators, an attack-on-square
+#    test, or a has-legal-action predicate for end conditions.
+#  - The repetition fingerprint is a hash and is not an exact position key.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: movePiece
+      label: Move a piece
+      description: 'Move one of your pieces. Includes castling (king moves two squares), en passant and promotion. Legality is pseudo-legal.'
+      steps:
+        - input: piece
+          label: Piece to move
+          type:
+            kind: gamepiece-select
+            inventory: board
+            ofType: piece
+            filter: piece.property.side == game.property.turnSide
+        - input: toFile
+          label: Destination file (1=a ... 8=h)
+          type:
+            kind: number
+            min: 1
+            max: 8
+        - input: toRank
+          label: Destination rank (1-8)
+          type:
+            kind: number
+            min: 1
+            max: 8
+          validation: (input.toFile != input.piece.property.file or input.toRank != input.piece.property.rank) and count(game.inventory.board, piece.property.file == input.toFile and piece.property.rank == input.toRank and piece.property.side == game.property.turnSide) == 0 and ((input.piece.property.kind == "N" and (input.toFile - input.piece.property.file) * (input.toFile - input.piece.property.file) + (input.toRank - input.piece.property.rank) * (input.toRank - input.piece.property.rank) == 5) or ((input.piece.property.kind == "B" or input.piece.property.kind == "Q") and (input.toFile - input.piece.property.file) * (input.toFile - input.piece.property.file) == (input.toRank - input.piece.property.rank) * (input.toRank - input.piece.property.rank) and count(game.inventory.board, (piece.property.file - input.piece.property.file) * (input.toRank - input.piece.property.rank) == (piece.property.rank - input.piece.property.rank) * (input.toFile - input.piece.property.file) and (piece.property.file - input.piece.property.file) * (piece.property.file - input.toFile) <= 0 and (piece.property.rank - input.piece.property.rank) * (piece.property.rank - input.toRank) <= 0 and (piece.property.file != input.piece.property.file or piece.property.rank != input.piece.property.rank) and (piece.property.file != input.toFile or piece.property.rank != input.toRank)) == 0) or ((input.piece.property.kind == "R" or input.piece.property.kind == "Q") and (input.toFile == input.piece.property.file or input.toRank == input.piece.property.rank) and count(game.inventory.board, (piece.property.file - input.piece.property.file) * (input.toRank - input.piece.property.rank) == (piece.property.rank - input.piece.property.rank) * (input.toFile - input.piece.property.file) and (piece.property.file - input.piece.property.file) * (piece.property.file - input.toFile) <= 0 and (piece.property.rank - input.piece.property.rank) * (piece.property.rank - input.toRank) <= 0 and (piece.property.file != input.piece.property.file or piece.property.rank != input.piece.property.rank) and (piece.property.file != input.toFile or piece.property.rank != input.toRank)) == 0) or (input.piece.property.kind == "K" and (((input.toFile - input.piece.property.file) * (input.toFile - input.piece.property.file) <= 1 and (input.toRank - input.piece.property.rank) * (input.toRank - input.piece.property.rank) <= 1) or (input.toRank == input.piece.property.rank and ((input.toFile - input.piece.property.file) == 2 or (input.toFile - input.piece.property.file) == -2) and input.piece.property.moved == 0 and count(game.inventory.board, piece.property.kind == "R" and piece.property.side == game.property.turnSide and piece.property.moved == 0 and piece.property.rank == input.piece.property.rank and piece.property.file == if(input.toFile > input.piece.property.file, 8, 1)) == 1 and count(game.inventory.board, piece.property.rank == input.piece.property.rank and ((input.toFile > input.piece.property.file and piece.property.file > input.piece.property.file and piece.property.file < 8) or (input.toFile < input.piece.property.file and piece.property.file < input.piece.property.file and piece.property.file > 1))) == 0))) or (input.piece.property.kind == "P" and ((input.toFile == input.piece.property.file and (input.toRank - input.piece.property.rank) == if(game.property.turnSide == 1, 1, -1) and count(game.inventory.board, piece.property.file == input.toFile and piece.property.rank == input.toRank) == 0) or (input.toFile == input.piece.property.file and (input.toRank - input.piece.property.rank) == if(game.property.turnSide == 1, 2, -2) and input.piece.property.rank == if(game.property.turnSide == 1, 2, 7) and count(game.inventory.board, piece.property.file == input.toFile and piece.property.rank == input.toRank) == 0 and count(game.inventory.board, piece.property.file == input.piece.property.file and piece.property.rank == input.piece.property.rank + if(game.property.turnSide == 1, 1, -1)) == 0) or ((input.toFile - input.piece.property.file) * (input.toFile - input.piece.property.file) == 1 and (input.toRank - input.piece.property.rank) == if(game.property.turnSide == 1, 1, -1) and (count(game.inventory.board, piece.property.file == input.toFile and piece.property.rank == input.toRank and piece.property.side != game.property.turnSide) == 1 or (input.toFile == game.property.epFile and input.toRank == game.property.epRank))))))
+          validationMessage: That piece cannot move there.
+        - input: promo
+          label: Promote to (Q, R, B, N; - if not promoting)
+          type:
+            kind: enum
+            values:
+              - '-'
+              - Q
+              - R
+              - B
+              - 'N'
+          validation: ((input.piece.property.kind == "P" and input.toRank == if(game.property.turnSide == 1, 8, 1)) and input.promo != "-") or (not (input.piece.property.kind == "P" and input.toRank == if(game.property.turnSide == 1, 8, 1)) and input.promo == "-")
+          validationMessage: Choose a promotion piece only when a pawn reaches the last rank.
+        - effect: set-state
+          path: game.property.halfmove
+          value:
+            expr: if(input.piece.property.kind == "P" or count(game.inventory.board, piece.property.file == input.toFile and piece.property.rank == input.toRank) > 0, 0, game.property.halfmove + 1)
+        - effect: move
+          from:
+            inventory: board
+            select: all
+            ofType: piece
+            filter: piece.property.file == input.toFile and piece.property.rank == input.toRank and piece.property.side != game.property.turnSide
+          to:
+            inventory: captured
+        - effect: move
+          from:
+            inventory: board
+            select: all
+            ofType: piece
+            filter: input.piece.property.kind == "P" and input.toFile == game.property.epFile and input.toRank == game.property.epRank and input.piece.property.file != input.toFile and piece.property.side != game.property.turnSide and piece.property.file == input.toFile and piece.property.rank == input.piece.property.rank
+          to:
+            inventory: captured
+        - effect: update
+          pieces:
+            inventory: board
+            select: all
+            ofType: piece
+            filter: input.piece.property.kind == "K" and input.toFile - input.piece.property.file == 2 and piece.property.kind == "R" and piece.property.side == game.property.turnSide and piece.property.file == 8 and piece.property.rank == input.piece.property.rank
+          property: file
+          value: 6
+        - effect: update
+          pieces:
+            inventory: board
+            select: all
+            ofType: piece
+            filter: input.piece.property.kind == "K" and input.toFile - input.piece.property.file == -2 and piece.property.kind == "R" and piece.property.side == game.property.turnSide and piece.property.file == 1 and piece.property.rank == input.piece.property.rank
+          property: file
+          value: 4
+        - effect: set-state
+          path: game.property.epFile
+          value:
+            expr: if(input.piece.property.kind == "P" and (input.toRank - input.piece.property.rank == 2 or input.toRank - input.piece.property.rank == -2), input.toFile, 0)
+        - effect: set-state
+          path: game.property.epRank
+          value:
+            expr: if(input.piece.property.kind == "P" and (input.toRank - input.piece.property.rank == 2 or input.toRank - input.piece.property.rank == -2), (input.toRank + input.piece.property.rank) / 2, 0)
+        - effect: update
+          pieces:
+            inventory: board
+            select:
+              id:
+                param: piece
+          property: file
+          value:
+            param: toFile
+        - effect: update
+          pieces:
+            inventory: board
+            select:
+              id:
+                param: piece
+          property: rank
+          value:
+            param: toRank
+        - effect: update
+          pieces:
+            inventory: board
+            select:
+              id:
+                param: piece
+          property: moved
+          value: 1
+        - effect: update
+          pieces:
+            inventory: board
+            select:
+              id:
+                param: piece
+            filter: input.promo != "-"
+          property: kind
+          value:
+            param: promo
+        - effect: update
+          pieces:
+            inventory: board
+            select:
+              id:
+                param: piece
+            filter: input.promo != "-"
+          property: hv
+          value:
+            expr: (game.property.turnSide - 1) * 6 + if(input.promo == "Q", 5, if(input.promo == "R", 4, if(input.promo == "B", 3, 2)))
+        - effect: set-state
+          path: player.property.won
+          value:
+            expr: count(game.inventory.board, piece.property.kind == "K") < 2
+        - effect: set-state
+          path: game.property.turnSide
+          value:
+            expr: 3 - game.property.turnSide
+        - effectRef: computeHash
+        - effectRef: clearHistory
+        - effectRef: addHistory
+        - effectRef: writeHistory
+        - effectRef: computeOver
+    - id: resign
+      label: Resign
+      description: Concede the game; the opponent wins.
+      steps:
+        - effect: set-state
+          path: player.property.won
+          value: true
+          target: all-other
+        - effect: set-state
+          path: game.property.over
+          value: true
+catalog:
+  entries:
+    - id: wR1
+      typeId: piece
+      properties:
+        kind: R
+        side: 1
+        file: 1
+        rank: 1
+        moved: 0
+        hv: 4
+    - id: wN2
+      typeId: piece
+      properties:
+        kind: 'N'
+        side: 1
+        file: 2
+        rank: 1
+        moved: 0
+        hv: 2
+    - id: wB3
+      typeId: piece
+      properties:
+        kind: B
+        side: 1
+        file: 3
+        rank: 1
+        moved: 0
+        hv: 3
+    - id: wQ4
+      typeId: piece
+      properties:
+        kind: Q
+        side: 1
+        file: 4
+        rank: 1
+        moved: 0
+        hv: 5
+    - id: wK5
+      typeId: piece
+      properties:
+        kind: K
+        side: 1
+        file: 5
+        rank: 1
+        moved: 0
+        hv: 6
+    - id: wB6
+      typeId: piece
+      properties:
+        kind: B
+        side: 1
+        file: 6
+        rank: 1
+        moved: 0
+        hv: 3
+    - id: wN7
+      typeId: piece
+      properties:
+        kind: 'N'
+        side: 1
+        file: 7
+        rank: 1
+        moved: 0
+        hv: 2
+    - id: wR8
+      typeId: piece
+      properties:
+        kind: R
+        side: 1
+        file: 8
+        rank: 1
+        moved: 0
+        hv: 4
+    - id: wP1
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 1
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP2
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 2
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP3
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 3
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP4
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 4
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP5
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 5
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP6
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 6
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP7
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 7
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: wP8
+      typeId: piece
+      properties:
+        kind: P
+        side: 1
+        file: 8
+        rank: 2
+        moved: 0
+        hv: 1
+    - id: bR1
+      typeId: piece
+      properties:
+        kind: R
+        side: 2
+        file: 1
+        rank: 8
+        moved: 0
+        hv: 10
+    - id: bN2
+      typeId: piece
+      properties:
+        kind: 'N'
+        side: 2
+        file: 2
+        rank: 8
+        moved: 0
+        hv: 8
+    - id: bB3
+      typeId: piece
+      properties:
+        kind: B
+        side: 2
+        file: 3
+        rank: 8
+        moved: 0
+        hv: 9
+    - id: bQ4
+      typeId: piece
+      properties:
+        kind: Q
+        side: 2
+        file: 4
+        rank: 8
+        moved: 0
+        hv: 11
+    - id: bK5
+      typeId: piece
+      properties:
+        kind: K
+        side: 2
+        file: 5
+        rank: 8
+        moved: 0
+        hv: 12
+    - id: bB6
+      typeId: piece
+      properties:
+        kind: B
+        side: 2
+        file: 6
+        rank: 8
+        moved: 0
+        hv: 9
+    - id: bN7
+      typeId: piece
+      properties:
+        kind: 'N'
+        side: 2
+        file: 7
+        rank: 8
+        moved: 0
+        hv: 8
+    - id: bR8
+      typeId: piece
+      properties:
+        kind: R
+        side: 2
+        file: 8
+        rank: 8
+        moved: 0
+        hv: 10
+    - id: bP1
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 1
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP2
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 2
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP3
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 3
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP4
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 4
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP5
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 5
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP6
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 6
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP7
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 7
+        rank: 7
+        moved: 0
+        hv: 7
+    - id: bP8
+      typeId: piece
+      properties:
+        kind: P
+        side: 2
+        file: 8
+        rank: 7
+        moved: 0
+        hv: 7
+    - typeId: histmark
+      quantity: 102
+effects:
+  effects:
+    - id: setupBoard
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: piece
+      to:
+        inventory: board
+    - id: computeHash
+      effect: set-state
+      path: game.property.curHash
+      value:
+        expr: sum(game.inventory.board, ((piece.property.hv + 13 * piece.property.moved) * 100 + piece.property.file * 10 + piece.property.rank) * ((piece.property.hv + 13 * piece.property.moved) * 100 + piece.property.file * 10 + piece.property.rank) * ((piece.property.hv + 13 * piece.property.moved) * 100 + piece.property.file * 10 + piece.property.rank)) + game.property.epFile * 1000003 + game.property.turnSide * 7000001
+    - id: clearHistory
+      effect: move
+      from:
+        inventory: history
+        select: all
+        ofType: histmark
+        filter: game.property.halfmove == 0
+      to:
+        inventory: game:unassigned
+    - id: addHistory
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: top
+        count: 1
+        ofType: histmark
+      to:
+        inventory: history
+    - id: writeHistory
+      effect: update
+      pieces:
+        inventory: history
+        select: all
+        ofType: histmark
+        filter: piece.property.hash == 0
+      property: hash
+      value:
+        var: game.property.curHash
+    - id: computeOver
+      effect: set-state
+      path: game.property.over
+      value:
+        expr: count(game.inventory.board, piece.property.kind == "K") < 2 or game.property.halfmove >= 100 or count(game.inventory.history, piece.property.hash == game.property.curHash) >= 3 or (count(game.inventory.board, piece.property.kind == "P" or piece.property.kind == "R" or piece.property.kind == "Q") == 0 and count(game.inventory.board, piece.property.kind == "N" or piece.property.kind == "B") <= 1)
+flow:
+  root:
+    kind: game
+    label: Chess
+    hooks:
+      onEnter:
+        - effectRef: setupBoard
+        - effectRef: computeHash
+        - effectRef: addHistory
+        - effectRef: writeHistory
+    winConditions:
+      - rule: condition
+        condition: player.property.won == true
+    children:
+      - kind: loop
+        id: plies
+        label: Moves
+        endCondition: game.property.over == true
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: ply
+            label: Move
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: choice
+              options:
+                - kind: action
+                  ref: movePiece
+                - kind: action
+                  ref: resign
+gamepieceTypes:
+  types:
+    - id: piece
+      category: token
+      description: A chess piece. Its square is held in the file and rank properties (1-8; file 1 = a, rank 1 = white's back rank).
+      properties:
+        - id: kind
+          type:
+            kind: string
+          mutable: true
+          visibility: always
+          description: P, N, B, R, Q or K. Changes when a pawn promotes.
+        - id: side
+          type:
+            kind: number
+            min: 1
+            max: 2
+          mutable: false
+          visibility: always
+          description: 1 = white, 2 = black.
+        - id: file
+          type:
+            kind: number
+            min: 1
+            max: 8
+          mutable: true
+          visibility: always
+        - id: rank
+          type:
+            kind: number
+            min: 1
+            max: 8
+          mutable: true
+          visibility: always
+        - id: moved
+          type:
+            kind: number
+            min: 0
+            max: 1
+          mutable: true
+          default: 0
+          visibility: always
+          description: 1 once the piece has moved; governs castling and the pawn double step.
+        - id: hv
+          type:
+            kind: number
+            min: 1
+            max: 12
+          mutable: true
+          visibility: always
+          description: Numeric piece code (side and kind) used only in the position fingerprint.
+    - id: histmark
+      category: token
+      description: One recorded position for repetition counting.
+      properties:
+        - id: hash
+          type:
+            kind: number
+            min: 0
+          mutable: true
+          default: 0
+          visibility: always
+          description: Fingerprint of the recorded position; 0 means not yet written.
+inventories:
+  types:
+    - id: board
+      label: Board
+      scope:
+        kind: game
+      accepts:
+        - piece
+      visibility: always
+      description: Pieces in play. A piece's square is its file and rank properties.
+    - id: captured
+      label: Captured
+      scope:
+        kind: game
+      accepts:
+        - piece
+      visibility: always
+      description: Captured pieces.
+    - id: history
+      label: Position history
+      scope:
+        kind: game
+      accepts:
+        - histmark
+      visibility: always
+      description: One token per position since the last capture or pawn move.
+metadata:
+  name: Chess
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: turnSide
+        type:
+          kind: number
+          min: 1
+          max: 2
+        default: 1
+        description: 'Side to move: 1 = white (player 1), 2 = black (player 2). Toggled after every move.'
+      - id: epFile
+        type:
+          kind: number
+          min: 0
+          max: 8
+        default: 0
+        description: File of the en passant target square, 0 when none. Set only by a pawn double step.
+      - id: epRank
+        type:
+          kind: number
+          min: 0
+          max: 8
+        default: 0
+        description: Rank of the en passant target square, 0 when none.
+      - id: halfmove
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Plies since the last capture or pawn move; 100 ends the game as a draw.
+      - id: curHash
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Position fingerprint (piece placement, moved flags, en passant file, side to move) used for repetition counting.
+      - id: over
+        type:
+          kind: boolean
+        default: false
+        description: True once the game is decided or drawn; ends the move loop.
+  player:
+    properties:
+      - id: won
+        type:
+          kind: boolean
+        default: false
+        description: True for the winner. If the game ends with nobody having won, it is a draw.

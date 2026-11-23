@@ -1,0 +1,150 @@
+# ---------------------------------------------------------------------------
+# Nim. Authored by an AI from a plain-language brief.
+#
+# Two players, normal play. Three public piles of 3, 4 and 5 stones. Player 1
+# moves first. On a turn pick one pile and remove one or more stones from it
+# only. The player who takes the last stone wins.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - Piles are numeric game state, not pieces.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: takeFromPile1
+      label: Take from pile 1
+      description: Remove one or more stones from pile 1.
+      preconditions: game.property.pile1 > 0
+      steps:
+        - input: count
+          label: How many stones to remove from pile 1?
+          type:
+            kind: number
+            min: 1
+            max: 3
+            integer: true
+          validation: input.count >= 1 and input.count <= game.property.pile1
+          validationMessage: Take at least one stone and no more than the pile holds.
+        - effect: set-state
+          path: game.property.pile1
+          value:
+            delta:
+              expr: 0 - input.count
+        - effectRef: markLastTaker
+    - id: takeFromPile2
+      label: Take from pile 2
+      description: Remove one or more stones from pile 2.
+      preconditions: game.property.pile2 > 0
+      steps:
+        - input: count
+          label: How many stones to remove from pile 2?
+          type:
+            kind: number
+            min: 1
+            max: 4
+            integer: true
+          validation: input.count >= 1 and input.count <= game.property.pile2
+          validationMessage: Take at least one stone and no more than the pile holds.
+        - effect: set-state
+          path: game.property.pile2
+          value:
+            delta:
+              expr: 0 - input.count
+        - effectRef: markLastTaker
+    - id: takeFromPile3
+      label: Take from pile 3
+      description: Remove one or more stones from pile 3.
+      preconditions: game.property.pile3 > 0
+      steps:
+        - input: count
+          label: How many stones to remove from pile 3?
+          type:
+            kind: number
+            min: 1
+            max: 5
+            integer: true
+          validation: input.count >= 1 and input.count <= game.property.pile3
+          validationMessage: Take at least one stone and no more than the pile holds.
+        - effect: set-state
+          path: game.property.pile3
+          value:
+            delta:
+              expr: 0 - input.count
+        - effectRef: markLastTaker
+effects:
+  effects:
+    - id: markLastTaker
+      effect: set-state
+      path: player.property.tookLast
+      value:
+        expr: if(game.property.pile1 + game.property.pile2 + game.property.pile3 == 0, 1, 0)
+flow:
+  root:
+    kind: game
+    label: Nim
+    winConditions:
+      - rule: condition
+        condition: player.property.tookLast == 1
+    children:
+      - kind: loop
+        id: rounds
+        label: Turns
+        endCondition: game.property.pile1 + game.property.pile2 + game.property.pile3 == 0
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: takeTurn
+            label: Remove stones from one pile
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: choice
+              options:
+                - kind: action
+                  ref: takeFromPile1
+                - kind: action
+                  ref: takeFromPile2
+                - kind: action
+                  ref: takeFromPile3
+metadata:
+  name: Nim
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: pile1
+        type:
+          kind: number
+          min: 0
+          max: 3
+        default: 3
+        description: Stones in pile 1 (starts at 3). Public.
+      - id: pile2
+        type:
+          kind: number
+          min: 0
+          max: 4
+        default: 4
+        description: Stones in pile 2 (starts at 4). Public.
+      - id: pile3
+        type:
+          kind: number
+          min: 0
+          max: 5
+        default: 5
+        description: Stones in pile 3 (starts at 5). Public.
+  player:
+    properties:
+      - id: tookLast
+        type:
+          kind: number
+          min: 0
+          max: 1
+        default: 0
+        description: 1 if this player took the last stone (normal play win), else 0.

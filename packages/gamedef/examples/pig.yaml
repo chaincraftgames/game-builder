@@ -1,0 +1,122 @@
+# ---------------------------------------------------------------------------
+# Pig. Authored by an AI from a plain-language brief.
+#
+# Two players and one six-sided die. On your turn you build a turn total
+# starting at 0 and must roll at least once. Rolling a 1 loses the turn total
+# and ends your turn. Rolling 2 to 6 adds it to the turn total, and you then
+# choose to roll again or hold. Holding banks the turn total into your score
+# and ends your turn. The first player to bank 100 or more wins immediately.
+# Player 1 goes first.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The die is modelled as a random state value rather than a die piece.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: roll
+      label: Roll the die
+      description: Roll the die. On a 1 the turn total is lost and the turn ends; on 2 to 6 the roll is added to the turn total.
+      steps:
+        - effectRef: rollDie
+        - effectRef: applyRoll
+        - effectRef: announceRoll
+    - id: hold
+      label: Hold
+      description: Add the turn total to your banked score and end your turn.
+      preconditions: actor.property.turnTotal > 0
+      steps:
+        - effectRef: bankTurnTotal
+        - effectRef: clearTurnTotal
+effects:
+  effects:
+    - id: rollDie
+      effect: set-state
+      path: game.property.lastRoll
+      value:
+        random:
+          min: 1
+          max: 6
+    - id: applyRoll
+      effect: set-state
+      path: player.property.turnTotal
+      value:
+        expr: if(game.property.lastRoll == 1, 0, actor.property.turnTotal + game.property.lastRoll)
+    - id: announceRoll
+      effect: message
+      to: all
+      template: The die shows {{state.game.property.lastRoll}}. (A 1 loses the turn total.)
+    - id: bankTurnTotal
+      effect: set-state
+      path: player.property.score
+      value:
+        expr: actor.property.score + actor.property.turnTotal
+    - id: clearTurnTotal
+      effect: set-state
+      path: player.property.turnTotal
+      value: 0
+flow:
+  root:
+    kind: game
+    label: Pig
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+        tiebreak: no-winner
+    children:
+      - kind: loop
+        id: rounds
+        label: Turns
+        checkAfter: turn
+        endCondition: any(players, player.property.score >= 100)
+        children:
+          - kind: turn
+            id: playerTurn
+            label: Roll or hold
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: repeat
+              count:
+                until: actor.property.turnTotal == 0
+              body:
+                kind: choice
+                options:
+                  - kind: action
+                    ref: roll
+                  - kind: action
+                    ref: hold
+metadata:
+  name: Pig
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: lastRoll
+        type:
+          kind: number
+          min: 0
+          max: 6
+        default: 0
+        description: The face the die most recently showed (0 before the first roll).
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Banked score. Reaching 100 or more wins immediately.
+      - id: turnTotal
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Points accumulated this turn and not yet banked. 0 means the turn has not started (or has just ended), which also forces a roll first.

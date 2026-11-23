@@ -1,0 +1,373 @@
+# ---------------------------------------------------------------------------
+# Dots and Boxes (3x3 boxes). Authored by an AI from a plain-language brief.
+#
+# Two players on a 3x3 grid of boxes (4x4 dots, 24 edges). Players alternate
+# drawing one undrawn edge. Completing the fourth side of a box, or of two
+# boxes at once, captures it for the player who drew the edge and gives that
+# player another turn; otherwise the turn passes. The game ends when all 24
+# edges are drawn and the player with more boxes wins (9 boxes, so no ties).
+# Player 1 goes first.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - Capture detection uses a side counter on each box rather than geometry.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: drawEdge
+      label: Draw an edge
+      description: Draw one undrawn edge. Each box it borders gains a side; boxes that now have four sides are captured by the actor, who then moves again.
+      steps:
+        - input: edge
+          label: Choose an edge to draw
+          type:
+            kind: gamepiece-select
+            inventory: undrawn
+            ofType: edge
+        - effect: move
+          from:
+            inventory: undrawn
+            select:
+              id:
+                param: edge
+          to:
+            inventory: drawn
+        - effect: update
+          pieces:
+            inventory: boxes
+            select: all
+            filter: piece.property.index == input.edge.property.boxA or piece.property.index == input.edge.property.boxB
+          property: sides
+          value:
+            delta: 1
+        - effect: set-state
+          path: game.property.capturedNow
+          value:
+            expr: count(game.inventory.boxes, piece.property.sides == 4 and piece.property.owner == "")
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta:
+              var: game.property.capturedNow
+        - effect: update
+          pieces:
+            inventory: boxes
+            select: all
+            filter: piece.property.sides == 4 and piece.property.owner == ""
+          property: owner
+          value:
+            actor: true
+catalog:
+  entries:
+    - id: edgeH00
+      typeId: edge
+      properties:
+        boxA: 0
+        boxB: 1
+    - id: edgeH01
+      typeId: edge
+      properties:
+        boxA: 0
+        boxB: 2
+    - id: edgeH02
+      typeId: edge
+      properties:
+        boxA: 0
+        boxB: 3
+    - id: edgeH10
+      typeId: edge
+      properties:
+        boxA: 1
+        boxB: 4
+    - id: edgeH11
+      typeId: edge
+      properties:
+        boxA: 2
+        boxB: 5
+    - id: edgeH12
+      typeId: edge
+      properties:
+        boxA: 3
+        boxB: 6
+    - id: edgeH20
+      typeId: edge
+      properties:
+        boxA: 4
+        boxB: 7
+    - id: edgeH21
+      typeId: edge
+      properties:
+        boxA: 5
+        boxB: 8
+    - id: edgeH22
+      typeId: edge
+      properties:
+        boxA: 6
+        boxB: 9
+    - id: edgeH30
+      typeId: edge
+      properties:
+        boxA: 7
+        boxB: 0
+    - id: edgeH31
+      typeId: edge
+      properties:
+        boxA: 8
+        boxB: 0
+    - id: edgeH32
+      typeId: edge
+      properties:
+        boxA: 9
+        boxB: 0
+    - id: edgeV00
+      typeId: edge
+      properties:
+        boxA: 0
+        boxB: 1
+    - id: edgeV01
+      typeId: edge
+      properties:
+        boxA: 1
+        boxB: 2
+    - id: edgeV02
+      typeId: edge
+      properties:
+        boxA: 2
+        boxB: 3
+    - id: edgeV03
+      typeId: edge
+      properties:
+        boxA: 3
+        boxB: 0
+    - id: edgeV10
+      typeId: edge
+      properties:
+        boxA: 0
+        boxB: 4
+    - id: edgeV11
+      typeId: edge
+      properties:
+        boxA: 4
+        boxB: 5
+    - id: edgeV12
+      typeId: edge
+      properties:
+        boxA: 5
+        boxB: 6
+    - id: edgeV13
+      typeId: edge
+      properties:
+        boxA: 6
+        boxB: 0
+    - id: edgeV20
+      typeId: edge
+      properties:
+        boxA: 0
+        boxB: 7
+    - id: edgeV21
+      typeId: edge
+      properties:
+        boxA: 7
+        boxB: 8
+    - id: edgeV22
+      typeId: edge
+      properties:
+        boxA: 8
+        boxB: 9
+    - id: edgeV23
+      typeId: edge
+      properties:
+        boxA: 9
+        boxB: 0
+    - id: box1
+      typeId: box
+      properties:
+        index: 1
+    - id: box2
+      typeId: box
+      properties:
+        index: 2
+    - id: box3
+      typeId: box
+      properties:
+        index: 3
+    - id: box4
+      typeId: box
+      properties:
+        index: 4
+    - id: box5
+      typeId: box
+      properties:
+        index: 5
+    - id: box6
+      typeId: box
+      properties:
+        index: 6
+    - id: box7
+      typeId: box
+      properties:
+        index: 7
+    - id: box8
+      typeId: box
+      properties:
+        index: 8
+    - id: box9
+      typeId: box
+      properties:
+        index: 9
+effects:
+  effects:
+    - id: placeEdges
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: edge
+      to:
+        inventory: undrawn
+    - id: placeBoxes
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: box
+      to:
+        inventory: boxes
+flow:
+  root:
+    kind: game
+    label: Dots and Boxes
+    hooks:
+      onEnter:
+        - effectRef: placeEdges
+        - effectRef: placeBoxes
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        id: rounds
+        label: Turns
+        endCondition: count(game.inventory.undrawn) == 0
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: playerTurn
+            label: Draw edges
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: repeat
+              count:
+                until: game.property.capturedNow == 0 or count(game.inventory.undrawn) == 0
+              body:
+                kind: action
+                ref: drawEdge
+gamepieceTypes:
+  types:
+    - id: edge
+      category: token
+      description: One of the 24 line segments between neighbouring dots.
+      properties:
+        - id: boxA
+          label: Box A
+          type:
+            kind: number
+            min: 0
+            max: 9
+          mutable: false
+          visibility: always
+          description: Index (1-9, row-major) of one box this edge borders; 0 if none.
+        - id: boxB
+          label: Box B
+          type:
+            kind: number
+            min: 0
+            max: 9
+          mutable: false
+          visibility: always
+          description: Index (1-9, row-major) of the other box this edge borders; 0 if none.
+    - id: box
+      category: token
+      description: One of the 9 boxes of the 3x3 grid.
+      properties:
+        - id: index
+          label: Index
+          type:
+            kind: number
+            min: 1
+            max: 9
+          mutable: false
+          visibility: always
+          description: Box number 1-9, row-major from the top-left.
+        - id: sides
+          label: Sides drawn
+          type:
+            kind: number
+            min: 0
+            max: 4
+          mutable: true
+          source: runtime
+          default: 0
+          visibility: always
+        - id: owner
+          label: Captured by
+          type:
+            kind: string
+          mutable: true
+          source: runtime
+          default: ''
+          visibility: always
+          description: Id of the player who captured the box; empty while uncaptured.
+inventories:
+  types:
+    - id: undrawn
+      label: Undrawn edges
+      scope:
+        kind: game
+      accepts:
+        - edge
+      visibility: always
+    - id: drawn
+      label: Drawn edges
+      scope:
+        kind: game
+      accepts:
+        - edge
+      visibility: always
+    - id: boxes
+      label: Boxes
+      scope:
+        kind: game
+      accepts:
+        - box
+      visibility: always
+metadata:
+  name: Dots and Boxes
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: capturedNow
+        type:
+          kind: number
+          min: 0
+          max: 2
+        default: 0
+        description: Boxes completed by the edge just drawn (0, 1 or 2). Written by drawEdge, read by the turn's repeat to decide whether the same player draws again, and added to the actor's score.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 9
+        default: 0
+        description: Number of boxes this player has captured.

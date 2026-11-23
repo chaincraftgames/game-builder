@@ -1,0 +1,549 @@
+# ---------------------------------------------------------------------------
+# Go Fish. Authored by an AI from a plain-language brief.
+#
+# Two players, one standard 52-card deck. Deal 7 cards each; the rest is the
+# draw pile. On your turn ask the other player for a rank you hold. If they
+# hold any, they give you all cards of that rank and you ask again. If not,
+# you go fish and draw one card; if it is the rank you asked for you go
+# again, otherwise the turn passes.
+#
+# Four cards of one rank form a book and are set aside face up (books in the
+# opening hand are set aside before play). A player with an empty hand draws
+# a card before asking. The game ends when all 13 books are made and the
+# player with the most books wins.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The rank to ask for is chosen by picking a card in your own hand, which
+#    enforces that you hold it.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: layStartingBooks
+      label: Set aside books
+      description: Set aside any book dealt in the opening hand.
+      steps:
+        - effectRef: layBooks
+        - effectRef: countBooks
+    - id: drawWhenEmpty
+      label: Draw a card
+      description: With an empty hand you draw one card from the pile before asking.
+      preconditions: count(actor.inventory.hand) == 0 and count(game.inventory.deck) > 0
+      steps:
+        - effectRef: drawOne
+        - effectRef: layBooks
+        - effectRef: countBooks
+    - id: ask
+      label: Ask for a rank
+      description: Pick a card in your hand to name its rank and ask the other player for every card of that rank.
+      steps:
+        - input: card
+          label: Choose a card whose rank to ask for
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            fromPlayer: actor
+        - effect: set-state
+          path: game.property.askedRank
+          value:
+            expr: input.card.property.rank
+        - effect: set-state
+          path: game.property.handBefore
+          value:
+            expr: count(actor.inventory.hand)
+        - effect: move
+          from:
+            player: all-other
+            inventory: hand
+            select: all
+            filter: piece.property.rank == input.card.property.rank
+          to:
+            inventory: hand
+        - effect: set-state
+          path: game.property.extraTurn
+          value:
+            expr: count(actor.inventory.hand) > game.property.handBefore
+        - effectRef: layBooks
+        - effectRef: countBooks
+    - id: goFish
+      label: Go fish
+      description: The other player had none, so draw one card; if it is the rank you asked for you go again.
+      preconditions: game.property.extraTurn == false and count(game.inventory.deck) > 0
+      steps:
+        - effect: set-state
+          path: game.property.askedCountBefore
+          value:
+            expr: count(actor.inventory.hand, piece.property.rank == game.property.askedRank)
+        - effectRef: drawOne
+        - effect: set-state
+          path: game.property.extraTurn
+          value:
+            expr: count(actor.inventory.hand, piece.property.rank == game.property.askedRank) > game.property.askedCountBefore
+        - effectRef: layBooks
+        - effectRef: countBooks
+catalog:
+  entries:
+    - id: clubs1
+      typeId: card
+      properties:
+        rank: 1
+        suit: clubs
+    - id: clubs2
+      typeId: card
+      properties:
+        rank: 2
+        suit: clubs
+    - id: clubs3
+      typeId: card
+      properties:
+        rank: 3
+        suit: clubs
+    - id: clubs4
+      typeId: card
+      properties:
+        rank: 4
+        suit: clubs
+    - id: clubs5
+      typeId: card
+      properties:
+        rank: 5
+        suit: clubs
+    - id: clubs6
+      typeId: card
+      properties:
+        rank: 6
+        suit: clubs
+    - id: clubs7
+      typeId: card
+      properties:
+        rank: 7
+        suit: clubs
+    - id: clubs8
+      typeId: card
+      properties:
+        rank: 8
+        suit: clubs
+    - id: clubs9
+      typeId: card
+      properties:
+        rank: 9
+        suit: clubs
+    - id: clubs10
+      typeId: card
+      properties:
+        rank: 10
+        suit: clubs
+    - id: clubs11
+      typeId: card
+      properties:
+        rank: 11
+        suit: clubs
+    - id: clubs12
+      typeId: card
+      properties:
+        rank: 12
+        suit: clubs
+    - id: clubs13
+      typeId: card
+      properties:
+        rank: 13
+        suit: clubs
+    - id: diamonds1
+      typeId: card
+      properties:
+        rank: 1
+        suit: diamonds
+    - id: diamonds2
+      typeId: card
+      properties:
+        rank: 2
+        suit: diamonds
+    - id: diamonds3
+      typeId: card
+      properties:
+        rank: 3
+        suit: diamonds
+    - id: diamonds4
+      typeId: card
+      properties:
+        rank: 4
+        suit: diamonds
+    - id: diamonds5
+      typeId: card
+      properties:
+        rank: 5
+        suit: diamonds
+    - id: diamonds6
+      typeId: card
+      properties:
+        rank: 6
+        suit: diamonds
+    - id: diamonds7
+      typeId: card
+      properties:
+        rank: 7
+        suit: diamonds
+    - id: diamonds8
+      typeId: card
+      properties:
+        rank: 8
+        suit: diamonds
+    - id: diamonds9
+      typeId: card
+      properties:
+        rank: 9
+        suit: diamonds
+    - id: diamonds10
+      typeId: card
+      properties:
+        rank: 10
+        suit: diamonds
+    - id: diamonds11
+      typeId: card
+      properties:
+        rank: 11
+        suit: diamonds
+    - id: diamonds12
+      typeId: card
+      properties:
+        rank: 12
+        suit: diamonds
+    - id: diamonds13
+      typeId: card
+      properties:
+        rank: 13
+        suit: diamonds
+    - id: hearts1
+      typeId: card
+      properties:
+        rank: 1
+        suit: hearts
+    - id: hearts2
+      typeId: card
+      properties:
+        rank: 2
+        suit: hearts
+    - id: hearts3
+      typeId: card
+      properties:
+        rank: 3
+        suit: hearts
+    - id: hearts4
+      typeId: card
+      properties:
+        rank: 4
+        suit: hearts
+    - id: hearts5
+      typeId: card
+      properties:
+        rank: 5
+        suit: hearts
+    - id: hearts6
+      typeId: card
+      properties:
+        rank: 6
+        suit: hearts
+    - id: hearts7
+      typeId: card
+      properties:
+        rank: 7
+        suit: hearts
+    - id: hearts8
+      typeId: card
+      properties:
+        rank: 8
+        suit: hearts
+    - id: hearts9
+      typeId: card
+      properties:
+        rank: 9
+        suit: hearts
+    - id: hearts10
+      typeId: card
+      properties:
+        rank: 10
+        suit: hearts
+    - id: hearts11
+      typeId: card
+      properties:
+        rank: 11
+        suit: hearts
+    - id: hearts12
+      typeId: card
+      properties:
+        rank: 12
+        suit: hearts
+    - id: hearts13
+      typeId: card
+      properties:
+        rank: 13
+        suit: hearts
+    - id: spades1
+      typeId: card
+      properties:
+        rank: 1
+        suit: spades
+    - id: spades2
+      typeId: card
+      properties:
+        rank: 2
+        suit: spades
+    - id: spades3
+      typeId: card
+      properties:
+        rank: 3
+        suit: spades
+    - id: spades4
+      typeId: card
+      properties:
+        rank: 4
+        suit: spades
+    - id: spades5
+      typeId: card
+      properties:
+        rank: 5
+        suit: spades
+    - id: spades6
+      typeId: card
+      properties:
+        rank: 6
+        suit: spades
+    - id: spades7
+      typeId: card
+      properties:
+        rank: 7
+        suit: spades
+    - id: spades8
+      typeId: card
+      properties:
+        rank: 8
+        suit: spades
+    - id: spades9
+      typeId: card
+      properties:
+        rank: 9
+        suit: spades
+    - id: spades10
+      typeId: card
+      properties:
+        rank: 10
+        suit: spades
+    - id: spades11
+      typeId: card
+      properties:
+        rank: 11
+        suit: spades
+    - id: spades12
+      typeId: card
+      properties:
+        rank: 12
+        suit: spades
+    - id: spades13
+      typeId: card
+      properties:
+        rank: 13
+        suit: spades
+effects:
+  effects:
+    - id: fillDeck
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: card
+      to:
+        inventory: deck
+    - id: shuffleDeck
+      effect: shuffle
+      inventory: deck
+    - id: dealCards
+      effect: distribute
+      from:
+        inventory: deck
+        select: top
+      to:
+        inventory: hand
+      count: 7
+    - id: resetExtraTurn
+      effect: set-state
+      path: game.property.extraTurn
+      value: false
+    - id: layBooks
+      effect: move
+      from:
+        inventory: hand
+        select: all
+        filter: count(actor.inventory.hand, piece.property.rank == target.property.rank) == 4
+      to:
+        inventory: bookPile
+    - id: countBooks
+      effect: set-state
+      path: player.property.books
+      value:
+        expr: count(actor.inventory.bookPile) / 4
+    - id: drawOne
+      effect: move
+      from:
+        inventory: deck
+        select: top
+        count: 1
+      to:
+        inventory: hand
+flow:
+  root:
+    kind: game
+    label: Go Fish
+    hooks:
+      onEnter:
+        - effectRef: fillDeck
+        - effectRef: shuffleDeck
+        - effectRef: dealCards
+    winConditions:
+      - rule: ranking
+        property: player.property.books
+        order: highest
+    children:
+      - kind: turn
+        id: openingBooks
+        label: Set aside dealt books
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: layStartingBooks
+      - kind: loop
+        id: rounds
+        label: Rounds
+        endCondition: sum(players, player.property.books) == 13
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: playerTurn
+            label: Turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            hooks:
+              onEnter:
+                - effectRef: resetExtraTurn
+            grammar:
+              kind: repeat
+              count:
+                until: game.property.extraTurn == false or sum(players, player.property.books) == 13
+                max: 60
+              body:
+                kind: sequence
+                steps:
+                  - kind: action
+                    ref: drawWhenEmpty
+                    optional: true
+                  - kind: action
+                    ref: ask
+                  - kind: action
+                    ref: goFish
+                    optional: true
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A standard playing card.
+      properties:
+        - id: rank
+          label: Rank
+          type:
+            kind: number
+            min: 1
+            max: 13
+          mutable: false
+          visibility: always
+        - id: suit
+          label: Suit
+          type:
+            kind: enum
+            values:
+              - clubs
+              - diamonds
+              - hearts
+              - spades
+          mutable: false
+          visibility: always
+inventories:
+  types:
+    - id: deck
+      label: Draw pile
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      countVisibility: always
+      structure: stack
+      displayHint: pile
+      description: Face-down draw pile (the fish pond).
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: owner
+      countVisibility: always
+      displayHint: fan
+      description: Each player's hidden hand; its size is public.
+    - id: bookPile
+      label: Books
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: always
+      description: Completed books (four of a rank) set aside face up.
+metadata:
+  name: Go Fish
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: extraTurn
+        type:
+          kind: boolean
+        default: false
+        description: True when the acting player earned another ask this turn (got cards, or fished the asked rank). The turn repeats until it is false.
+      - id: askedRank
+        type:
+          kind: number
+          min: 0
+          max: 13
+        default: 0
+        description: Rank asked for in the current ask.
+      - id: handBefore
+        type:
+          kind: number
+          min: 0
+          max: 52
+        default: 0
+        description: Size of the asker's hand just before the ask resolves, used to detect whether any cards were received.
+      - id: askedCountBefore
+        type:
+          kind: number
+          min: 0
+          max: 4
+        default: 0
+        description: Cards of the asked rank the actor held just before fishing, used to detect whether the fished card matches.
+  player:
+    properties:
+      - id: books
+        type:
+          kind: number
+          min: 0
+          max: 13
+        default: 0
+        description: Number of books (four of a rank) this player has set aside.

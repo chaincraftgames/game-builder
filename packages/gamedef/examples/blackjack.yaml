@@ -1,0 +1,628 @@
+# ---------------------------------------------------------------------------
+# Blackjack (5 rounds). Authored by an AI from a plain-language brief.
+#
+# One to four players against an automated dealer, one standard 52-card deck,
+# five rounds. Each round all cards are gathered and reshuffled, each player
+# gets two cards and the dealer gets one up and one hole card. Players take
+# turns to hit or stand until they stand or go over 21. Then the dealer
+# reveals the hole card and draws until reaching 17 or more (the dealer
+# stands on any 17, soft 17 included).
+#
+# A player wins the round if they have 21 or less and the dealer busts or the
+# player's total is higher. Aces count 1 or 11. The player with the most
+# round wins after five rounds wins and ties share the win.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The dealer is not a player; it is driven by a proxy turn.
+#  - No natural-blackjack bonus, doubling, splitting or betting.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: hit
+      label: Hit
+      description: Take another card from the deck.
+      preconditions: not actor.property.standing and (actor.property.hardTotal + if(actor.property.aceCount > 0 and actor.property.hardTotal <= 11, 10, 0)) < 21
+      steps:
+        - effect: move
+          from:
+            inventory: deck
+            select: top
+            count: 1
+          to:
+            inventory: hand
+    - id: stand
+      label: Stand
+      description: Keep your hand as it is for the rest of the round.
+      steps:
+        - effect: set-state
+          path: player.property.standing
+          value: true
+    - id: dealerHit
+      label: Dealer draws
+      description: The dealer takes a card only while the hand totals under 17. The filter selects nothing once the dealer has 17 or more, so the action is then a no-op.
+      steps:
+        - effect: move
+          from:
+            inventory: deck
+            select: top
+            count: 1
+            filter: (game.property.dealerHardTotal + if(game.property.dealerAceCount > 0 and game.property.dealerHardTotal <= 11, 10, 0)) < 17
+          to:
+            inventory: dealerHand
+    - id: scoreRound
+      label: Score round
+      description: Runs automatically for each player. A player who did not bust beats the dealer when the dealer busts or the player's total is higher. Ties score nothing.
+      steps:
+        - effect: set-state
+          path: player.property.wins
+          value:
+            expr: actor.property.wins + if((actor.property.hardTotal + if(actor.property.aceCount > 0 and actor.property.hardTotal <= 11, 10, 0)) <= 21 and ((game.property.dealerHardTotal + if(game.property.dealerAceCount > 0 and game.property.dealerHardTotal <= 11, 10, 0)) > 21 or (actor.property.hardTotal + if(actor.property.aceCount > 0 and actor.property.hardTotal <= 11, 10, 0)) > (game.property.dealerHardTotal + if(game.property.dealerAceCount > 0 and game.property.dealerHardTotal <= 11, 10, 0))), 1, 0)
+catalog:
+  entries:
+    - typeId: ace
+      properties:
+        rank: A
+        suit: hearts
+        value: 1
+    - typeId: card
+      properties:
+        rank: '2'
+        suit: hearts
+        value: 2
+    - typeId: card
+      properties:
+        rank: '3'
+        suit: hearts
+        value: 3
+    - typeId: card
+      properties:
+        rank: '4'
+        suit: hearts
+        value: 4
+    - typeId: card
+      properties:
+        rank: '5'
+        suit: hearts
+        value: 5
+    - typeId: card
+      properties:
+        rank: '6'
+        suit: hearts
+        value: 6
+    - typeId: card
+      properties:
+        rank: '7'
+        suit: hearts
+        value: 7
+    - typeId: card
+      properties:
+        rank: '8'
+        suit: hearts
+        value: 8
+    - typeId: card
+      properties:
+        rank: '9'
+        suit: hearts
+        value: 9
+    - typeId: card
+      properties:
+        rank: '10'
+        suit: hearts
+        value: 10
+    - typeId: card
+      properties:
+        rank: J
+        suit: hearts
+        value: 10
+    - typeId: card
+      properties:
+        rank: Q
+        suit: hearts
+        value: 10
+    - typeId: card
+      properties:
+        rank: K
+        suit: hearts
+        value: 10
+    - typeId: ace
+      properties:
+        rank: A
+        suit: diamonds
+        value: 1
+    - typeId: card
+      properties:
+        rank: '2'
+        suit: diamonds
+        value: 2
+    - typeId: card
+      properties:
+        rank: '3'
+        suit: diamonds
+        value: 3
+    - typeId: card
+      properties:
+        rank: '4'
+        suit: diamonds
+        value: 4
+    - typeId: card
+      properties:
+        rank: '5'
+        suit: diamonds
+        value: 5
+    - typeId: card
+      properties:
+        rank: '6'
+        suit: diamonds
+        value: 6
+    - typeId: card
+      properties:
+        rank: '7'
+        suit: diamonds
+        value: 7
+    - typeId: card
+      properties:
+        rank: '8'
+        suit: diamonds
+        value: 8
+    - typeId: card
+      properties:
+        rank: '9'
+        suit: diamonds
+        value: 9
+    - typeId: card
+      properties:
+        rank: '10'
+        suit: diamonds
+        value: 10
+    - typeId: card
+      properties:
+        rank: J
+        suit: diamonds
+        value: 10
+    - typeId: card
+      properties:
+        rank: Q
+        suit: diamonds
+        value: 10
+    - typeId: card
+      properties:
+        rank: K
+        suit: diamonds
+        value: 10
+    - typeId: ace
+      properties:
+        rank: A
+        suit: clubs
+        value: 1
+    - typeId: card
+      properties:
+        rank: '2'
+        suit: clubs
+        value: 2
+    - typeId: card
+      properties:
+        rank: '3'
+        suit: clubs
+        value: 3
+    - typeId: card
+      properties:
+        rank: '4'
+        suit: clubs
+        value: 4
+    - typeId: card
+      properties:
+        rank: '5'
+        suit: clubs
+        value: 5
+    - typeId: card
+      properties:
+        rank: '6'
+        suit: clubs
+        value: 6
+    - typeId: card
+      properties:
+        rank: '7'
+        suit: clubs
+        value: 7
+    - typeId: card
+      properties:
+        rank: '8'
+        suit: clubs
+        value: 8
+    - typeId: card
+      properties:
+        rank: '9'
+        suit: clubs
+        value: 9
+    - typeId: card
+      properties:
+        rank: '10'
+        suit: clubs
+        value: 10
+    - typeId: card
+      properties:
+        rank: J
+        suit: clubs
+        value: 10
+    - typeId: card
+      properties:
+        rank: Q
+        suit: clubs
+        value: 10
+    - typeId: card
+      properties:
+        rank: K
+        suit: clubs
+        value: 10
+    - typeId: ace
+      properties:
+        rank: A
+        suit: spades
+        value: 1
+    - typeId: card
+      properties:
+        rank: '2'
+        suit: spades
+        value: 2
+    - typeId: card
+      properties:
+        rank: '3'
+        suit: spades
+        value: 3
+    - typeId: card
+      properties:
+        rank: '4'
+        suit: spades
+        value: 4
+    - typeId: card
+      properties:
+        rank: '5'
+        suit: spades
+        value: 5
+    - typeId: card
+      properties:
+        rank: '6'
+        suit: spades
+        value: 6
+    - typeId: card
+      properties:
+        rank: '7'
+        suit: spades
+        value: 7
+    - typeId: card
+      properties:
+        rank: '8'
+        suit: spades
+        value: 8
+    - typeId: card
+      properties:
+        rank: '9'
+        suit: spades
+        value: 9
+    - typeId: card
+      properties:
+        rank: '10'
+        suit: spades
+        value: 10
+    - typeId: card
+      properties:
+        rank: J
+        suit: spades
+        value: 10
+    - typeId: card
+      properties:
+        rank: Q
+        suit: spades
+        value: 10
+    - typeId: card
+      properties:
+        rank: K
+        suit: spades
+        value: 10
+effects:
+  effects:
+    - id: fillDeck
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+      to:
+        inventory: deck
+    - id: gatherHands
+      effect: move
+      from:
+        player: all
+        inventory: hand
+        select: all
+      to:
+        inventory: deck
+    - id: gatherDealerHand
+      effect: move
+      from:
+        inventory: dealerHand
+        select: all
+      to:
+        inventory: deck
+    - id: gatherDealerHole
+      effect: move
+      from:
+        inventory: dealerHole
+        select: all
+      to:
+        inventory: deck
+    - id: shuffleDeck
+      effect: shuffle
+      inventory: deck
+    - id: dealPlayers
+      effect: distribute
+      from:
+        inventory: deck
+        select: top
+      to:
+        inventory: hand
+      count: 2
+    - id: dealDealerUp
+      effect: move
+      from:
+        inventory: deck
+        select: top
+        count: 1
+      to:
+        inventory: dealerHand
+    - id: dealDealerHole
+      effect: move
+      from:
+        inventory: deck
+        select: top
+        count: 1
+      to:
+        inventory: dealerHole
+    - id: resetStanding
+      effect: set-state
+      path: player.property.standing
+      value: false
+      target: all
+    - id: revealHole
+      effect: move
+      from:
+        inventory: dealerHole
+        select: all
+      to:
+        inventory: dealerHand
+    - id: announceDealt
+      effect: message
+      to: all
+      template: Cards dealt. The dealer shows one card face up; the other is face down.
+    - id: announceDealerPlay
+      effect: message
+      to: all
+      template: Dealer reveals the hole card and draws to 17 or more.
+flow:
+  root:
+    kind: game
+    label: Blackjack
+    winConditions:
+      - rule: ranking
+        property: player.property.wins
+        order: highest
+        tiebreak: all-win
+    children:
+      - kind: loop
+        id: rounds
+        label: Rounds
+        count: 5
+        children:
+          - kind: turn
+            id: playerTurns
+            label: Players hit or stand
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            hooks:
+              onEnter:
+                - effectRef: fillDeck
+                - effectRef: gatherHands
+                - effectRef: gatherDealerHand
+                - effectRef: gatherDealerHole
+                - effectRef: shuffleDeck
+                - effectRef: dealPlayers
+                - effectRef: dealDealerUp
+                - effectRef: dealDealerHole
+                - effectRef: resetStanding
+                - effectRef: announceDealt
+            grammar:
+              kind: repeat
+              count:
+                until: actor.property.standing == true or (actor.property.hardTotal + if(actor.property.aceCount > 0 and actor.property.hardTotal <= 11, 10, 0)) > 21
+                max: 12
+              body:
+                kind: choice
+                options:
+                  - kind: action
+                    ref: hit
+                  - kind: action
+                    ref: stand
+          - kind: turn
+            id: dealerTurn
+            label: Dealer plays
+            actor:
+              player:
+                stateRef: game.property.dealerSeat
+            hooks:
+              onEnter:
+                - effectRef: revealHole
+                - effectRef: announceDealerPlay
+            grammar:
+              kind: repeat
+              count:
+                until: (game.property.dealerHardTotal + if(game.property.dealerAceCount > 0 and game.property.dealerHardTotal <= 11, 10, 0)) >= 17
+                max: 12
+              body:
+                kind: action
+                ref: dealerHit
+          - kind: turn
+            id: scoring
+            label: Score the round
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: scoreRound
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A non-Ace playing card. Number cards are worth their number, face cards 10.
+      properties:
+        - id: rank
+          label: Rank
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+        - id: suit
+          label: Suit
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+        - id: value
+          label: Value
+          type:
+            kind: number
+            min: 1
+            max: 10
+          mutable: false
+          visibility: always
+          description: Hard value; Aces are 1 here and promoted to 11 by the total formula.
+    - id: ace
+      category: card
+      description: An Ace. A separate type so hands can count Aces. Worth 1 as a hard value; a hand counts one Ace as 11 when that does not exceed 21.
+      properties:
+        - id: rank
+          label: Rank
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+        - id: suit
+          label: Suit
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+        - id: value
+          label: Value
+          type:
+            kind: number
+            min: 1
+            max: 10
+          mutable: false
+          visibility: always
+          description: Hard value; Aces are 1 here and promoted to 11 by the total formula.
+inventories:
+  types:
+    - id: deck
+      label: Deck
+      scope:
+        kind: game
+      accepts:
+        - card
+        - ace
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: The shuffled 52-card draw deck.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+        - ace
+      visibility: always
+      description: A player's face-up cards.
+    - id: dealerHand
+      label: Dealer hand
+      scope:
+        kind: game
+      accepts:
+        - card
+        - ace
+      visibility: always
+      description: The dealer's face-up cards (includes the hole card once revealed).
+    - id: dealerHole
+      label: Dealer hole card
+      scope:
+        kind: game
+      accepts:
+        - card
+        - ace
+      visibility: never
+      countVisibility: always
+      description: The dealer's face-down card until the dealer's turn.
+metadata:
+  name: Blackjack
+  playerCount:
+    min: 1
+    max: 4
+state:
+  game:
+    properties:
+      - id: dealerSeat
+        type:
+          kind: string
+        default: ''
+        description: Always empty. Used as the stateRef for the dealer turn, which falls back to seat 1 as the proxy actor that runs the dealer's automatic draws.
+      - id: dealerHardTotal
+        type:
+          kind: number
+        computed:
+          inventory: dealerHand
+          property: value
+          aggregate: sum
+        description: Dealer's face-up hand total with every Ace counted as 1.
+      - id: dealerAceCount
+        type:
+          kind: number
+        computed:
+          inventory: dealerHand
+          ofType: ace
+          aggregate: count
+        description: Number of Aces in the dealer's face-up hand.
+  player:
+    properties:
+      - id: wins
+        type:
+          kind: number
+          min: 0
+          max: 5
+        default: 0
+        description: Number of rounds this player has beaten the dealer.
+      - id: standing
+        type:
+          kind: boolean
+        default: false
+        description: True once the player has chosen to stand this round. Reset each round.
+      - id: hardTotal
+        type:
+          kind: number
+        computed:
+          inventory: hand
+          property: value
+          aggregate: sum
+        description: Hand total with every Ace counted as 1.
+      - id: aceCount
+        type:
+          kind: number
+        computed:
+          inventory: hand
+          ofType: ace
+          aggregate: count
+        description: Number of Aces in the player's hand.

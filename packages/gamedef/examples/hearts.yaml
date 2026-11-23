@@ -1,0 +1,674 @@
+# ---------------------------------------------------------------------------
+# Hearts. Authored by an AI from a plain-language brief.
+#
+# Four players, one standard 52-card deck, 13 cards each, no passing phase. A
+# single hand of 13 tricks is the whole game. Each heart is worth 1 point and
+# the queen of spades is worth 13 (26 points in total). The lowest score wins
+# and players tied for the lowest share the win.
+#
+# The holder of the 2 of clubs leads the first trick. A player must follow
+# the led suit if able. On the first trick no hearts or queen of spades may
+# be played unless the hand holds nothing else. Hearts cannot be led until a
+# heart has been played, unless the leader holds only hearts. The highest
+# card of the led suit takes the trick, scores its points and leads next.
+#
+# Shooting the moon: if one player takes all 26 points, that player scores 0
+# and every other player scores 26.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - Single hand only, no card passing.
+#  - The shoot-the-moon path validates and compiles but was not seen running
+#    in a random playtest.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: findLeader
+      label: Find the 2 of clubs
+      description: Runs once per player before play; the holder of the 2 of clubs becomes the first leader.
+      steps:
+        - effect: set-state
+          path: game.property.leader
+          value:
+            expr: if(count(actor.inventory.hand, piece.property.suit == "clubs" and piece.property.rank == 2) > 0, actor.id, game.property.leader)
+    - id: playCard
+      label: Play a card
+      description: Play one legal card from your hand to the trick.
+      steps:
+        - input: card
+          label: Choose a card to play
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            fromPlayer: actor
+            filter: |-
+              (game.property.ledSuit == "" and game.property.tricksPlayed == 0
+                and piece.property.suit == "clubs" and piece.property.rank == 2)
+              or (game.property.ledSuit == "" and game.property.tricksPlayed > 0
+                and (game.property.heartsBroken
+                  or piece.property.suit != "hearts"
+                  or all(actor.inventory.hand, piece.property.suit == "hearts")))
+              or (game.property.ledSuit != ""
+                and (piece.property.suit == game.property.ledSuit
+                  or (count(actor.inventory.hand, piece.property.suit == game.property.ledSuit) == 0
+                    and (game.property.tricksPlayed > 0
+                      or piece.property.points == 0
+                      or all(actor.inventory.hand, piece.property.points > 0)))))
+        - effect: set-state
+          path: game.property.ledSuit
+          value:
+            expr: if(game.property.ledSuit == "", input.card.property.suit, game.property.ledSuit)
+        - effect: set-state
+          path: game.property.heartsBroken
+          value:
+            expr: if(input.card.property.suit == "hearts", true, game.property.heartsBroken)
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: table
+    - id: settleMoon
+      label: Settle shooting the moon
+      description: Runs once per player after the last trick. If one player took all 26 points they score 0 and everyone else scores 26; otherwise scores are unchanged.
+      steps:
+        - effect: set-state
+          path: player.property.points
+          value:
+            expr: if(game.property.moonShot, if(actor.property.points == 26, 0, 26), actor.property.points)
+catalog:
+  entries:
+    - id: clubs2
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 2
+        points: 0
+    - id: clubs3
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 3
+        points: 0
+    - id: clubs4
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 4
+        points: 0
+    - id: clubs5
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 5
+        points: 0
+    - id: clubs6
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 6
+        points: 0
+    - id: clubs7
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 7
+        points: 0
+    - id: clubs8
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 8
+        points: 0
+    - id: clubs9
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 9
+        points: 0
+    - id: clubs10
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 10
+        points: 0
+    - id: clubs11
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 11
+        points: 0
+    - id: clubs12
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 12
+        points: 0
+    - id: clubs13
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 13
+        points: 0
+    - id: clubs14
+      typeId: card
+      properties:
+        suit: clubs
+        rank: 14
+        points: 0
+    - id: diamonds2
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 2
+        points: 0
+    - id: diamonds3
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 3
+        points: 0
+    - id: diamonds4
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 4
+        points: 0
+    - id: diamonds5
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 5
+        points: 0
+    - id: diamonds6
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 6
+        points: 0
+    - id: diamonds7
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 7
+        points: 0
+    - id: diamonds8
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 8
+        points: 0
+    - id: diamonds9
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 9
+        points: 0
+    - id: diamonds10
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 10
+        points: 0
+    - id: diamonds11
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 11
+        points: 0
+    - id: diamonds12
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 12
+        points: 0
+    - id: diamonds13
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 13
+        points: 0
+    - id: diamonds14
+      typeId: card
+      properties:
+        suit: diamonds
+        rank: 14
+        points: 0
+    - id: spades2
+      typeId: card
+      properties:
+        suit: spades
+        rank: 2
+        points: 0
+    - id: spades3
+      typeId: card
+      properties:
+        suit: spades
+        rank: 3
+        points: 0
+    - id: spades4
+      typeId: card
+      properties:
+        suit: spades
+        rank: 4
+        points: 0
+    - id: spades5
+      typeId: card
+      properties:
+        suit: spades
+        rank: 5
+        points: 0
+    - id: spades6
+      typeId: card
+      properties:
+        suit: spades
+        rank: 6
+        points: 0
+    - id: spades7
+      typeId: card
+      properties:
+        suit: spades
+        rank: 7
+        points: 0
+    - id: spades8
+      typeId: card
+      properties:
+        suit: spades
+        rank: 8
+        points: 0
+    - id: spades9
+      typeId: card
+      properties:
+        suit: spades
+        rank: 9
+        points: 0
+    - id: spades10
+      typeId: card
+      properties:
+        suit: spades
+        rank: 10
+        points: 0
+    - id: spades11
+      typeId: card
+      properties:
+        suit: spades
+        rank: 11
+        points: 0
+    - id: spades12
+      typeId: card
+      properties:
+        suit: spades
+        rank: 12
+        points: 13
+    - id: spades13
+      typeId: card
+      properties:
+        suit: spades
+        rank: 13
+        points: 0
+    - id: spades14
+      typeId: card
+      properties:
+        suit: spades
+        rank: 14
+        points: 0
+    - id: hearts2
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 2
+        points: 1
+    - id: hearts3
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 3
+        points: 1
+    - id: hearts4
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 4
+        points: 1
+    - id: hearts5
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 5
+        points: 1
+    - id: hearts6
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 6
+        points: 1
+    - id: hearts7
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 7
+        points: 1
+    - id: hearts8
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 8
+        points: 1
+    - id: hearts9
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 9
+        points: 1
+    - id: hearts10
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 10
+        points: 1
+    - id: hearts11
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 11
+        points: 1
+    - id: hearts12
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 12
+        points: 1
+    - id: hearts13
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 13
+        points: 1
+    - id: hearts14
+      typeId: card
+      properties:
+        suit: hearts
+        rank: 14
+        points: 1
+effects:
+  effects:
+    - id: fillDeck
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: card
+      to:
+        inventory: deck
+    - id: shuffleDeck
+      effect: shuffle
+      inventory: deck
+    - id: dealCards
+      effect: distribute
+      from:
+        inventory: deck
+        select: top
+      to:
+        inventory: hand
+      count: 13
+    - id: markTrickRanks
+      effect: update
+      pieces:
+        inventory: table
+        select: all
+        ofType: card
+      property: trickRank
+      value:
+        expr: if(target.property.suit == game.property.ledSuit, target.property.rank, 0)
+    - id: computeTrickPoints
+      effect: set-state
+      path: game.property.trickPoints
+      value:
+        expr: sum(game.inventory.table, piece.property.points)
+    - id: awardTrick
+      effect: set-state
+      path: player.property.points
+      value:
+        delta:
+          var: game.property.trickPoints
+      target:
+        stateRef: game.property.trickWinner
+    - id: setLeaderToWinner
+      effect: set-state
+      path: game.property.leader
+      value:
+        var: game.property.trickWinner
+    - id: clearTable
+      effect: move
+      from:
+        inventory: table
+        select: all
+        ofType: card
+      to:
+        inventory: discard
+    - id: resetLedSuit
+      effect: set-state
+      path: game.property.ledSuit
+      value: ''
+    - id: countTrick
+      effect: set-state
+      path: game.property.tricksPlayed
+      value:
+        delta: 1
+    - id: computeMoon
+      effect: set-state
+      path: game.property.moonShot
+      value:
+        expr: any(players, player.property.points == 26)
+flow:
+  root:
+    kind: game
+    label: Hearts
+    hooks:
+      onEnter:
+        - effectRef: fillDeck
+        - effectRef: shuffleDeck
+        - effectRef: dealCards
+    winConditions:
+      - rule: ranking
+        property: player.property.points
+        order: lowest
+    children:
+      - kind: turn
+        id: findLeader
+        label: Find the 2 of clubs
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: findLeader
+      - kind: loop
+        id: tricks
+        label: Tricks
+        count: 13
+        hooks:
+          onComplete:
+            - effectRef: computeMoon
+        children:
+          - kind: turn
+            id: playTrick
+            label: Play a card
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+              startingPlayer:
+                stateRef: game.property.leader
+            grammar:
+              kind: action
+              ref: playCard
+            hooks:
+              onComplete:
+                - effectRef: markTrickRanks
+                - effectRef: chaincraft:dominant-gamepiece:resolve
+                - effectRef: computeTrickPoints
+                - effectRef: awardTrick
+                - effectRef: setLeaderToWinner
+                - effectRef: clearTable
+                - effectRef: resetLedSuit
+                - effectRef: countTrick
+      - kind: turn
+        id: settleMoon
+        label: Settle shooting the moon
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: settleMoon
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A standard playing card. Aces are high (rank 14).
+      properties:
+        - id: suit
+          label: Suit
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+        - id: rank
+          label: Rank
+          type:
+            kind: number
+            min: 2
+            max: 14
+          mutable: false
+          visibility: always
+        - id: points
+          label: Points
+          type:
+            kind: number
+            min: 0
+            max: 13
+          mutable: false
+          visibility: always
+          description: Penalty points when taken - 1 for hearts, 13 for the queen of spades, otherwise 0.
+        - id: trickRank
+          label: Trick rank
+          type:
+            kind: number
+            min: 0
+            max: 14
+          mutable: true
+          source: runtime
+          default: 0
+          visibility: always
+          description: Set when a trick is resolved - the card's rank if it follows the led suit, else 0. The highest trick rank on the table wins the trick.
+inventories:
+  types:
+    - id: deck
+      label: Deck
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: The shuffled deck, dealt out at the start.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: owner
+      displayHint: fan
+      description: Each player's hidden hand.
+    - id: table
+      label: Trick
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      description: Cards played to the current trick.
+    - id: discard
+      label: Taken tricks
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      displayHint: pile
+      description: Cards from completed tricks.
+mechanics:
+  - kind: chaincraft:dominant-gamepiece
+    label: Trick Resolution
+    evaluationInventory: table
+    winnerToState: game.property.trickWinner
+    rules:
+      - kind: comparison
+        property: trickRank
+        direction: highest
+metadata:
+  name: Hearts
+  playerCount:
+    min: 4
+    max: 4
+state:
+  game:
+    properties:
+      - id: leader
+        type:
+          kind: string
+        default: ''
+        description: Player id who leads the current trick. Set before trick 1 to the holder of the 2 of clubs, then to each trick's winner. Read as the turn order's starting player.
+      - id: ledSuit
+        type:
+          kind: string
+        default: ''
+        description: Suit of the first card of the current trick; empty while no card has been led.
+      - id: heartsBroken
+        type:
+          kind: boolean
+        default: false
+        description: True once a heart has been played in any trick.
+      - id: tricksPlayed
+        type:
+          kind: number
+          min: 0
+          max: 13
+        default: 0
+        description: Number of completed tricks. Zero means the first trick is in progress.
+      - id: trickWinner
+        type:
+          kind: string
+        default: ''
+        description: Player id of the winner of the trick just played. Written by the trick-resolution mechanic.
+      - id: trickPoints
+        type:
+          kind: number
+          min: 0
+          max: 26
+        default: 0
+        description: Points on the table in the trick just played (hearts 1 each, queen of spades 13).
+      - id: moonShot
+        type:
+          kind: boolean
+        default: false
+        description: True when one player took all 26 points in the hand.
+  player:
+    properties:
+      - id: points
+        type:
+          kind: number
+          min: 0
+          max: 26
+        default: 0
+        description: Points taken this hand. Lower is better.

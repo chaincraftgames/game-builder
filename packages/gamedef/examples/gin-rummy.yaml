@@ -1,0 +1,1074 @@
+# ---------------------------------------------------------------------------
+# Gin Rummy (one hand). Authored by an AI from a plain-language brief.
+#
+# Two players, one standard 52-card deck (ace low, king high, no wrap). Deal
+# 10 cards each and turn one card up as the discard pile. Player 1 deals and
+# player 2 acts first. In the opening offer the non-dealer may take the
+# upcard or pass, then the dealer may; if both pass the non-dealer draws from
+# the stock.
+#
+# On a turn draw from the stock or the discard pile, declare melds (sets of 3
+# or 4 of a rank, runs of 3 or more in a suit), then discard or knock. A card
+# just taken from the discard pile cannot be discarded. Knock by discarding
+# so that unmatched cards (deadwood) total 10 or less; zero deadwood is gin.
+# The opponent then declares their own melds and, unless it was gin, lays off
+# cards on the knocker's melds.
+#
+# Scoring: gin scores the opponent's deadwood plus 25. Otherwise if the
+# knocker's deadwood is lower the knocker scores the difference, else the
+# opponent scores the difference plus 25 (an undercut). If the stock falls to
+# two cards after a discard the hand is drawn and nobody scores. The higher
+# score wins.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - Players declare their own melds; the engine cannot search for the best
+#    arrangement.
+#  - Discarding out of a four-card meld when knocking (big gin) is not
+#    supported.
+#  - The knock, lay-off and scoring actions validate and compile but were not
+#    reached by a random playtest.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: seat
+      label: Take seat
+      description: Records who is dealer (seat 1) and non-dealer (seat 2). Runs once per player at setup.
+      steps:
+        - effect: set-state
+          path: game.property.dealer
+          value:
+            expr: if(game.property.dealer == "", actor.id, game.property.dealer)
+        - effect: set-state
+          path: game.property.nonDealer
+          value:
+            expr: if(actor.id != game.property.dealer, actor.id, game.property.nonDealer)
+    - id: drawStock
+      label: Draw from stock
+      preconditions: count(actor.inventory.hand) == 10 and (game.property.stage == 2 or game.property.stage == 3)
+      steps:
+        - effect: move
+          from:
+            inventory: stock
+            select: top
+            count: 1
+          to:
+            inventory: hand
+        - effect: set-state
+          path: game.property.stage
+          value: 3
+        - effect: set-state
+          path: game.property.turnDone
+          value: false
+    - id: drawDiscard
+      label: Take top of discard pile
+      preconditions: count(actor.inventory.hand) == 10 and game.property.stage == 3
+      steps:
+        - effect: update
+          pieces:
+            inventory: discard
+            select: top
+            count: 1
+          property: fromDiscard
+          value: true
+        - effect: move
+          from:
+            inventory: discard
+            select: top
+            count: 1
+          to:
+            inventory: hand
+        - effect: set-state
+          path: game.property.turnDone
+          value: false
+    - id: takeUpcard
+      label: Take the upcard
+      description: Opening offer. Take the turned-up card, then discard or knock as usual.
+      preconditions: count(actor.inventory.hand) == 10 and game.property.stage <= 1
+      steps:
+        - effect: update
+          pieces:
+            inventory: discard
+            select: top
+            count: 1
+          property: fromDiscard
+          value: true
+        - effect: move
+          from:
+            inventory: discard
+            select: top
+            count: 1
+          to:
+            inventory: hand
+        - effect: set-state
+          path: game.property.stage
+          value: 3
+        - effect: set-state
+          path: game.property.turnDone
+          value: false
+    - id: passUpcard
+      label: Pass on the upcard
+      description: Opening offer. Decline the turned-up card; the turn ends.
+      preconditions: count(actor.inventory.hand) == 10 and game.property.stage <= 1
+      steps:
+        - effect: set-state
+          path: game.property.stage
+          value:
+            delta: 1
+        - effect: set-state
+          path: game.property.turnDone
+          value: true
+    - id: meldSet
+      label: Declare a set
+      description: Declare three cards of the same rank as a set.
+      preconditions: (count(actor.inventory.hand) == 11 and game.property.defending == false) or game.property.defending == true
+      steps:
+        - input: a
+          label: First card
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0
+        - input: b
+          label: Second card of the same rank
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and piece.property.rank == input.a.property.rank and piece.id != input.a
+        - input: c
+          label: Third card of the same rank
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and piece.property.rank == input.a.property.rank and piece.id != input.a and piece.id != input.b
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: a
+          property: meld
+          value: 1
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: b
+          property: meld
+          value: 1
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: c
+          property: meld
+          value: 1
+    - id: meldRun
+      label: Declare a run
+      description: Declare three consecutive cards of one suit as a run. Pick the lowest card first.
+      preconditions: (count(actor.inventory.hand) == 11 and game.property.defending == false) or game.property.defending == true
+      steps:
+        - input: a
+          label: Lowest card
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0
+        - input: b
+          label: Next card up, same suit
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and piece.property.suit == input.a.property.suit and piece.property.rank == input.a.property.rank + 1
+        - input: c
+          label: Next card up, same suit
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and piece.property.suit == input.a.property.suit and piece.property.rank == input.a.property.rank + 2
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: a
+          property: meld
+          value: 2
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: b
+          property: meld
+          value: 2
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: c
+          property: meld
+          value: 2
+    - id: extendSet
+      label: Add a card to a declared set
+      preconditions: (count(actor.inventory.hand) == 11 and game.property.defending == false) or game.property.defending == true
+      steps:
+        - input: card
+          label: Card of the same rank as a declared set
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and any(actor.inventory.hand, piece.property.meld == 1 and piece.property.rank == target.property.rank)
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: card
+          property: meld
+          value: 1
+    - id: extendRun
+      label: Add a card to a declared run
+      preconditions: (count(actor.inventory.hand) == 11 and game.property.defending == false) or game.property.defending == true
+      steps:
+        - input: card
+          label: Card that extends a declared run at either end
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and any(actor.inventory.hand, piece.property.meld == 2 and piece.property.suit == target.property.suit and (piece.property.rank == target.property.rank + 1 or piece.property.rank == target.property.rank - 1))
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: card
+          property: meld
+          value: 2
+    - id: clearMelds
+      label: Undo declared melds
+      preconditions: any(actor.inventory.hand, piece.property.meld != 0) and ((count(actor.inventory.hand) == 11 and game.property.defending == false) or game.property.defending == true)
+      steps:
+        - effect: update
+          pieces:
+            inventory: hand
+            select: all
+          property: meld
+          value: 0
+    - id: discardCard
+      label: Discard
+      description: Discard one card to end your turn. You may not discard the card you just took from the discard pile.
+      preconditions: count(actor.inventory.hand) == 11 and game.property.defending == false
+      steps:
+        - input: card
+          label: Card to discard
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.fromDiscard == false
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: discard
+        - effect: update
+          pieces:
+            inventory: hand
+            select: all
+          property: meld
+          value: 0
+        - effect: update
+          pieces:
+            inventory: hand
+            select: all
+          property: fromDiscard
+          value: false
+        - effect: set-state
+          path: game.property.handOver
+          value:
+            expr: if(count(game.inventory.stock) <= 2, true, false)
+        - effect: set-state
+          path: game.property.turnDone
+          value: true
+    - id: knock
+      label: Knock
+      description: Discard an unmatched card (not the card just taken from the discard pile) leaving at most 10 deadwood. All 10 cards matched is gin.
+      preconditions: count(actor.inventory.hand) == 11 and game.property.defending == false
+      steps:
+        - input: card
+          label: Unmatched card to discard
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and piece.property.fromDiscard == false and sum(actor.inventory.hand, piece.property.value, piece.property.meld == 0) - target.property.value <= 10
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: discard
+        - effect: set-state
+          path: game.property.knockerDW
+          value:
+            expr: sum(actor.inventory.hand, piece.property.value, piece.property.meld == 0)
+        - effect: set-state
+          path: game.property.knocker
+          value:
+            actor: true
+        - effect: set-state
+          path: game.property.defender
+          value:
+            expr: if(actor.id == game.property.dealer, game.property.nonDealer, game.property.dealer)
+        - effect: move
+          from:
+            inventory: hand
+            select: all
+            filter: piece.property.meld != 0
+          to:
+            inventory: melds
+        - effect: set-state
+          path: game.property.defending
+          value: true
+        - effect: set-state
+          path: game.property.handOver
+          value: true
+        - effect: set-state
+          path: game.property.turnDone
+          value: true
+    - id: layoffSet
+      label: Lay off on a set
+      description: Add an unmatched card to one of the knocker's sets.
+      preconditions: game.property.defending == true and game.property.knockerDW > 0
+      steps:
+        - input: card
+          label: Card of the same rank as a set
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and any(game.inventory.melds, piece.property.meld == 1 and piece.property.rank == target.property.rank)
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: card
+          property: meld
+          value: 1
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: melds
+    - id: layoffRun
+      label: Lay off on a run
+      description: Add an unmatched card to either end of one of the knocker's runs.
+      preconditions: game.property.defending == true and game.property.knockerDW > 0
+      steps:
+        - input: card
+          label: Card that extends a run at either end
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            ofType: card
+            filter: piece.property.meld == 0 and any(game.inventory.melds, piece.property.meld == 2 and piece.property.suit == target.property.suit and (piece.property.rank == target.property.rank + 1 or piece.property.rank == target.property.rank - 1))
+        - effect: update
+          pieces:
+            inventory: hand
+            select:
+              id:
+                param: card
+          property: meld
+          value: 2
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: melds
+    - id: concludeHand
+      label: Finish and score
+      description: Ends the hand after a knock or gin and awards points.
+      preconditions: game.property.handOver == true and game.property.defending == true
+      steps:
+        - effect: set-state
+          path: game.property.defenderDW
+          value:
+            expr: sum(actor.inventory.hand, piece.property.value, piece.property.meld == 0)
+        - effect: set-state
+          path: game.property.knockerPts
+          value:
+            expr: if(game.property.knockerDW == 0, game.property.defenderDW + 25, if(game.property.knockerDW < game.property.defenderDW, game.property.defenderDW - game.property.knockerDW, 0))
+        - effect: set-state
+          path: game.property.defenderPts
+          value:
+            expr: if(game.property.knockerDW == 0, 0, if(game.property.knockerDW < game.property.defenderDW, 0, game.property.knockerDW - game.property.defenderDW + 25))
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta:
+              var: game.property.knockerPts
+          target:
+            stateRef: game.property.knocker
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta:
+              var: game.property.defenderPts
+          target:
+            stateRef: game.property.defender
+        - effect: set-state
+          path: game.property.defenseDone
+          value: true
+    - id: concludeDraw
+      label: Finish drawn hand
+      description: The stock ran down to two cards with no knock; the hand is drawn and nobody scores.
+      preconditions: game.property.handOver == true and game.property.defending == false
+      steps:
+        - effect: set-state
+          path: game.property.defenseDone
+          value: true
+catalog:
+  entries:
+    - id: s1
+      typeId: card
+      properties:
+        rank: 1
+        suit: S
+        value: 1
+    - id: s2
+      typeId: card
+      properties:
+        rank: 2
+        suit: S
+        value: 2
+    - id: s3
+      typeId: card
+      properties:
+        rank: 3
+        suit: S
+        value: 3
+    - id: s4
+      typeId: card
+      properties:
+        rank: 4
+        suit: S
+        value: 4
+    - id: s5
+      typeId: card
+      properties:
+        rank: 5
+        suit: S
+        value: 5
+    - id: s6
+      typeId: card
+      properties:
+        rank: 6
+        suit: S
+        value: 6
+    - id: s7
+      typeId: card
+      properties:
+        rank: 7
+        suit: S
+        value: 7
+    - id: s8
+      typeId: card
+      properties:
+        rank: 8
+        suit: S
+        value: 8
+    - id: s9
+      typeId: card
+      properties:
+        rank: 9
+        suit: S
+        value: 9
+    - id: s10
+      typeId: card
+      properties:
+        rank: 10
+        suit: S
+        value: 10
+    - id: s11
+      typeId: card
+      properties:
+        rank: 11
+        suit: S
+        value: 10
+    - id: s12
+      typeId: card
+      properties:
+        rank: 12
+        suit: S
+        value: 10
+    - id: s13
+      typeId: card
+      properties:
+        rank: 13
+        suit: S
+        value: 10
+    - id: h1
+      typeId: card
+      properties:
+        rank: 1
+        suit: H
+        value: 1
+    - id: h2
+      typeId: card
+      properties:
+        rank: 2
+        suit: H
+        value: 2
+    - id: h3
+      typeId: card
+      properties:
+        rank: 3
+        suit: H
+        value: 3
+    - id: h4
+      typeId: card
+      properties:
+        rank: 4
+        suit: H
+        value: 4
+    - id: h5
+      typeId: card
+      properties:
+        rank: 5
+        suit: H
+        value: 5
+    - id: h6
+      typeId: card
+      properties:
+        rank: 6
+        suit: H
+        value: 6
+    - id: h7
+      typeId: card
+      properties:
+        rank: 7
+        suit: H
+        value: 7
+    - id: h8
+      typeId: card
+      properties:
+        rank: 8
+        suit: H
+        value: 8
+    - id: h9
+      typeId: card
+      properties:
+        rank: 9
+        suit: H
+        value: 9
+    - id: h10
+      typeId: card
+      properties:
+        rank: 10
+        suit: H
+        value: 10
+    - id: h11
+      typeId: card
+      properties:
+        rank: 11
+        suit: H
+        value: 10
+    - id: h12
+      typeId: card
+      properties:
+        rank: 12
+        suit: H
+        value: 10
+    - id: h13
+      typeId: card
+      properties:
+        rank: 13
+        suit: H
+        value: 10
+    - id: d1
+      typeId: card
+      properties:
+        rank: 1
+        suit: D
+        value: 1
+    - id: d2
+      typeId: card
+      properties:
+        rank: 2
+        suit: D
+        value: 2
+    - id: d3
+      typeId: card
+      properties:
+        rank: 3
+        suit: D
+        value: 3
+    - id: d4
+      typeId: card
+      properties:
+        rank: 4
+        suit: D
+        value: 4
+    - id: d5
+      typeId: card
+      properties:
+        rank: 5
+        suit: D
+        value: 5
+    - id: d6
+      typeId: card
+      properties:
+        rank: 6
+        suit: D
+        value: 6
+    - id: d7
+      typeId: card
+      properties:
+        rank: 7
+        suit: D
+        value: 7
+    - id: d8
+      typeId: card
+      properties:
+        rank: 8
+        suit: D
+        value: 8
+    - id: d9
+      typeId: card
+      properties:
+        rank: 9
+        suit: D
+        value: 9
+    - id: d10
+      typeId: card
+      properties:
+        rank: 10
+        suit: D
+        value: 10
+    - id: d11
+      typeId: card
+      properties:
+        rank: 11
+        suit: D
+        value: 10
+    - id: d12
+      typeId: card
+      properties:
+        rank: 12
+        suit: D
+        value: 10
+    - id: d13
+      typeId: card
+      properties:
+        rank: 13
+        suit: D
+        value: 10
+    - id: c1
+      typeId: card
+      properties:
+        rank: 1
+        suit: C
+        value: 1
+    - id: c2
+      typeId: card
+      properties:
+        rank: 2
+        suit: C
+        value: 2
+    - id: c3
+      typeId: card
+      properties:
+        rank: 3
+        suit: C
+        value: 3
+    - id: c4
+      typeId: card
+      properties:
+        rank: 4
+        suit: C
+        value: 4
+    - id: c5
+      typeId: card
+      properties:
+        rank: 5
+        suit: C
+        value: 5
+    - id: c6
+      typeId: card
+      properties:
+        rank: 6
+        suit: C
+        value: 6
+    - id: c7
+      typeId: card
+      properties:
+        rank: 7
+        suit: C
+        value: 7
+    - id: c8
+      typeId: card
+      properties:
+        rank: 8
+        suit: C
+        value: 8
+    - id: c9
+      typeId: card
+      properties:
+        rank: 9
+        suit: C
+        value: 9
+    - id: c10
+      typeId: card
+      properties:
+        rank: 10
+        suit: C
+        value: 10
+    - id: c11
+      typeId: card
+      properties:
+        rank: 11
+        suit: C
+        value: 10
+    - id: c12
+      typeId: card
+      properties:
+        rank: 12
+        suit: C
+        value: 10
+    - id: c13
+      typeId: card
+      properties:
+        rank: 13
+        suit: C
+        value: 10
+effects:
+  effects:
+    - id: fillStock
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: card
+      to:
+        inventory: stock
+    - id: shuffleStock
+      effect: shuffle
+      inventory: stock
+    - id: dealHands
+      effect: distribute
+      from:
+        inventory: stock
+        select: top
+      to:
+        inventory: hand
+      count: 10
+    - id: turnUpcard
+      effect: move
+      from:
+        inventory: stock
+        select: top
+        count: 1
+      to:
+        inventory: discard
+flow:
+  root:
+    kind: game
+    label: Gin Rummy
+    hooks:
+      onEnter:
+        - effectRef: fillStock
+        - effectRef: shuffleStock
+        - effectRef: dealHands
+        - effectRef: turnUpcard
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+        tiebreak: no-winner
+    children:
+      - kind: turn
+        id: seating
+        label: Seating
+        actor: all
+        turnOrder:
+          kind: seat
+          direction: clockwise
+        grammar:
+          kind: action
+          ref: seat
+      - kind: loop
+        id: play
+        label: Play the hand
+        endCondition: game.property.handOver == true
+        checkAfter: turn
+        children:
+          - kind: turn
+            id: playerTurn
+            label: Turn
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+              startingPlayer:
+                stateRef: game.property.nonDealer
+            grammar:
+              kind: repeat
+              count:
+                until: game.property.turnDone == true
+              body:
+                kind: choice
+                options:
+                  - kind: action
+                    ref: drawStock
+                  - kind: action
+                    ref: drawDiscard
+                  - kind: action
+                    ref: takeUpcard
+                  - kind: action
+                    ref: passUpcard
+                  - kind: action
+                    ref: meldSet
+                  - kind: action
+                    ref: meldRun
+                  - kind: action
+                    ref: extendSet
+                  - kind: action
+                    ref: extendRun
+                  - kind: action
+                    ref: clearMelds
+                  - kind: action
+                    ref: discardCard
+                  - kind: action
+                    ref: knock
+      - kind: turn
+        id: showdown
+        label: Opponent lays off and the hand is scored
+        actor:
+          player:
+            stateRef: game.property.defender
+        grammar:
+          kind: repeat
+          count:
+            until: game.property.defenseDone == true
+          body:
+            kind: choice
+            options:
+              - kind: action
+                ref: meldSet
+              - kind: action
+                ref: meldRun
+              - kind: action
+                ref: extendSet
+              - kind: action
+                ref: extendRun
+              - kind: action
+                ref: clearMelds
+              - kind: action
+                ref: layoffSet
+              - kind: action
+                ref: layoffRun
+              - kind: action
+                ref: concludeHand
+              - kind: action
+                ref: concludeDraw
+gamepieceTypes:
+  types:
+    - id: card
+      category: card
+      description: A playing card.
+      properties:
+        - id: rank
+          label: Rank
+          type:
+            kind: number
+            min: 1
+            max: 13
+          mutable: false
+          visibility: always
+          description: Ace 1 (low) to King 13. Used for sets and runs.
+        - id: suit
+          label: Suit
+          type:
+            kind: string
+          mutable: false
+          visibility: always
+          description: S, H, D or C.
+        - id: value
+          label: Deadwood value
+          type:
+            kind: number
+            min: 1
+            max: 10
+          mutable: false
+          visibility: always
+          description: Ace 1, 2-10 face, J/Q/K 10.
+        - id: meld
+          label: Meld
+          type:
+            kind: number
+            min: 0
+            max: 2
+          mutable: true
+          default: 0
+          visibility: always
+          description: 0 = unmatched (deadwood), 1 = in a declared set, 2 = in a declared run. Declared by the player each turn.
+        - id: fromDiscard
+          label: Taken from discard
+          type:
+            kind: boolean
+          mutable: true
+          default: false
+          visibility: always
+          description: True for the card just taken from the discard pile this turn; it may not be discarded.
+inventories:
+  types:
+    - id: stock
+      label: Stock
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: never
+      countVisibility: always
+      structure: stack
+      displayHint: pile
+      description: Face-down draw pile.
+    - id: discard
+      label: Discard pile
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: top-revealed
+      countVisibility: always
+      structure: stack
+      displayHint: pile
+      description: Face-up discard pile; the top card may be drawn.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - card
+      visibility: owner
+      structure: none
+      displayHint: fan
+      description: A player's hidden hand.
+    - id: melds
+      label: Knocker's melds
+      scope:
+        kind: game
+      accepts:
+        - card
+      visibility: always
+      structure: none
+      description: The knocker's declared melds, laid face up when knocking, plus cards laid off onto them.
+metadata:
+  name: Gin Rummy
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: dealer
+        type:
+          kind: string
+        default: ''
+        description: Player id of the dealer (seat 1). Recorded in the seating turn.
+      - id: nonDealer
+        type:
+          kind: string
+        default: ''
+        description: Player id of the non-dealer (seat 2); acts first.
+      - id: knocker
+        type:
+          kind: string
+        default: ''
+        description: Player id of the player who knocked; empty if nobody has.
+      - id: defender
+        type:
+          kind: string
+        default: ''
+        description: Player id of the opponent of the knocker; empty if nobody knocked.
+      - id: stage
+        type:
+          kind: number
+          min: 0
+          max: 3
+        default: 0
+        description: Opening offer stage. 0 non-dealer may take upcard, 1 dealer may take it, 2 both passed so non-dealer must draw from stock, 3 normal play.
+      - id: turnDone
+        type:
+          kind: boolean
+        default: false
+        description: True when the current turn has ended; cleared when the next turn draws.
+      - id: handOver
+        type:
+          kind: boolean
+        default: false
+        description: True once a knock/gin happens or the stock runs down to two cards.
+      - id: defending
+        type:
+          kind: boolean
+        default: false
+        description: True once a knock happened, i.e. the opponent is melding and laying off.
+      - id: defenseDone
+        type:
+          kind: boolean
+        default: false
+        description: True when the hand has been scored.
+      - id: knockerDW
+        type:
+          kind: number
+        default: 0
+        description: Knocker's deadwood after discarding.
+      - id: defenderDW
+        type:
+          kind: number
+        default: 0
+        description: Opponent's deadwood after melding and laying off.
+      - id: knockerPts
+        type:
+          kind: number
+        default: 0
+        description: Points scored by the knocker this hand.
+      - id: defenderPts
+        type:
+          kind: number
+        default: 0
+        description: Points scored by the opponent this hand.
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+        default: 0
+        description: Points scored in the hand.

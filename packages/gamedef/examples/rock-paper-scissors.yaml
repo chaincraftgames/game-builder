@@ -1,0 +1,359 @@
+# ---------------------------------------------------------------------------
+# Rock Paper Scissors. Authored by an AI from a plain-language brief.
+#
+# Two players. Each round both secretly choose rock, paper or scissors, then
+# both are revealed. Rock beats scissors, scissors beats paper, paper beats
+# rock; the round winner scores 1 point. A tie scores nothing and the round
+# is replayed. The first player to 3 points wins.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - Choices are collected one after another because the simultaneous node is
+#    not supported by the compiler; secrecy comes from a hidden table
+#    inventory.
+#  - Each throw is stored as a piece, since a hidden choice cannot be kept in
+#    state.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: chooseThrow
+      label: Choose your throw
+      description: Secretly play rock, paper or scissors face down.
+      steps:
+        - input: card
+          label: Choose rock, paper or scissors
+          type:
+            kind: gamepiece-select
+            inventory: hand
+            fromPlayer: actor
+        - effect: move
+          from:
+            inventory: hand
+            select:
+              id:
+                param: card
+          to:
+            inventory: table
+        - effect: update
+          pieces:
+            inventory: table
+            select:
+              id:
+                param: card
+          property: owner
+          value:
+            actor: true
+    - id: scoreRound
+      label: Score the round
+      description: Runs once per player with no input. The player scores 1 if their throw beats the other; ties score nothing.
+      steps:
+        - effect: set-state
+          path: player.property.score
+          value:
+            delta:
+              expr: if(2 * sum(game.inventory.table, piece.property.value, piece.property.owner == actor.id) - sum(game.inventory.table, piece.property.value) == 1 or 2 * sum(game.inventory.table, piece.property.value, piece.property.owner == actor.id) - sum(game.inventory.table, piece.property.value) == -2, 1, 0)
+    - id: takeBack
+      label: Take back your throw
+      description: Runs once per player with no input; returns that player's played throw to their hand.
+      steps:
+        - effect: move
+          from:
+            inventory: table
+            select: all
+            filter: piece.property.owner == actor.id
+          to:
+            inventory: hand
+catalog:
+  entries:
+    - id: rockA
+      typeId: rock
+      properties:
+        value: 0
+        owner: ''
+    - id: paperA
+      typeId: paper
+      properties:
+        value: 1
+        owner: ''
+    - id: scissorsA
+      typeId: scissors
+      properties:
+        value: 2
+        owner: ''
+    - id: rockB
+      typeId: rock
+      properties:
+        value: 0
+        owner: ''
+    - id: paperB
+      typeId: paper
+      properties:
+        value: 1
+        owner: ''
+    - id: scissorsB
+      typeId: scissors
+      properties:
+        value: 2
+        owner: ''
+effects:
+  effects:
+    - id: fillDeckRock
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: rock
+      to:
+        inventory: deckRock
+    - id: fillDeckPaper
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: paper
+      to:
+        inventory: deckPaper
+    - id: fillDeckScissors
+      effect: move
+      from:
+        inventory: game:unassigned
+        select: all
+        ofType: scissors
+      to:
+        inventory: deckScissors
+    - id: dealRock
+      effect: distribute
+      from:
+        inventory: deckRock
+        select: top
+      to:
+        inventory: hand
+      count: 1
+    - id: dealPaper
+      effect: distribute
+      from:
+        inventory: deckPaper
+        select: top
+      to:
+        inventory: hand
+      count: 1
+    - id: dealScissors
+      effect: distribute
+      from:
+        inventory: deckScissors
+        select: top
+      to:
+        inventory: hand
+      count: 1
+    - id: announceStart
+      effect: message
+      to: all
+      template: Choose rock, paper or scissors in secret. First to win 3 rounds wins!
+    - id: revealTable
+      effect: reveal
+      pieces:
+        inventory: table
+        select: all
+      to: all
+    - id: hideTable
+      effect: hide
+      pieces:
+        inventory: table
+        select: all
+    - id: announceReveal
+      effect: message
+      to: all
+      template: Both throws are revealed.
+flow:
+  root:
+    kind: game
+    label: Rock Paper Scissors
+    hooks:
+      onEnter:
+        - effectRef: fillDeckRock
+        - effectRef: fillDeckPaper
+        - effectRef: fillDeckScissors
+        - effectRef: dealRock
+        - effectRef: dealPaper
+        - effectRef: dealScissors
+        - effectRef: announceStart
+    winConditions:
+      - rule: ranking
+        property: player.property.score
+        order: highest
+    children:
+      - kind: loop
+        id: rounds
+        label: Rounds
+        endCondition: any(players, player.property.score >= 3)
+        checkAfter: iteration
+        children:
+          - kind: turn
+            id: choose
+            label: Choose a throw
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: chooseThrow
+            hooks:
+              onComplete:
+                - effectRef: revealTable
+                - effectRef: announceReveal
+          - kind: turn
+            id: score
+            label: Score the round
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: scoreRound
+          - kind: turn
+            id: cleanup
+            label: Return throws
+            actor: all
+            turnOrder:
+              kind: seat
+              direction: clockwise
+            grammar:
+              kind: action
+              ref: takeBack
+            hooks:
+              onComplete:
+                - effectRef: hideTable
+gamepieceTypes:
+  types:
+    - id: rock
+      category: card
+      description: A rock throw. Each player holds one of each throw.
+      properties:
+        - id: value
+          label: Value
+          type:
+            kind: number
+            min: 0
+            max: 2
+          mutable: false
+          visibility: always
+          description: Rock 0, paper 1, scissors 2. Player A beats B when (A - B) mod 3 is 1 (or -2).
+        - id: owner
+          label: Owner
+          type:
+            kind: string
+          mutable: true
+          visibility: always
+          description: Id of the player who played this piece this round; set when played.
+    - id: paper
+      category: card
+      description: A paper throw. Each player holds one of each throw.
+      properties:
+        - id: value
+          label: Value
+          type:
+            kind: number
+            min: 0
+            max: 2
+          mutable: false
+          visibility: always
+          description: Rock 0, paper 1, scissors 2. Player A beats B when (A - B) mod 3 is 1 (or -2).
+        - id: owner
+          label: Owner
+          type:
+            kind: string
+          mutable: true
+          visibility: always
+          description: Id of the player who played this piece this round; set when played.
+    - id: scissors
+      category: card
+      description: A scissors throw. Each player holds one of each throw.
+      properties:
+        - id: value
+          label: Value
+          type:
+            kind: number
+            min: 0
+            max: 2
+          mutable: false
+          visibility: always
+          description: Rock 0, paper 1, scissors 2. Player A beats B when (A - B) mod 3 is 1 (or -2).
+        - id: owner
+          label: Owner
+          type:
+            kind: string
+          mutable: true
+          visibility: always
+          description: Id of the player who played this piece this round; set when played.
+inventories:
+  types:
+    - id: deckRock
+      label: Rock deck
+      scope:
+        kind: game
+      accepts:
+        - rock
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: Setup stack holding the two rock pieces, dealt once so each player gets one.
+    - id: deckPaper
+      label: Paper deck
+      scope:
+        kind: game
+      accepts:
+        - paper
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: Setup stack holding the two paper pieces, dealt once so each player gets one.
+    - id: deckScissors
+      label: Scissors deck
+      scope:
+        kind: game
+      accepts:
+        - scissors
+      visibility: never
+      countVisibility: always
+      structure: stack
+      description: Setup stack holding the two scissors pieces, dealt once so each player gets one.
+    - id: hand
+      label: Hand
+      scope:
+        kind: player
+      accepts:
+        - rock
+        - paper
+        - scissors
+      visibility: owner
+      description: A player's unplayed throws.
+    - id: table
+      label: Table
+      scope:
+        kind: game
+      accepts:
+        - rock
+        - paper
+        - scissors
+      visibility: never
+      countVisibility: always
+      description: The throws played this round. Hidden from everyone until both players have chosen, then revealed to all.
+metadata:
+  name: Rock Paper Scissors
+  playerCount:
+    min: 2
+    max: 2
+state:
+  player:
+    properties:
+      - id: score
+        type:
+          kind: number
+          min: 0
+          max: 3
+        default: 0
+        description: Rounds this player has won. First to 3 wins the game.

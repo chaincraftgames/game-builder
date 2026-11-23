@@ -1,0 +1,265 @@
+# ---------------------------------------------------------------------------
+# Liar's Dice (authored variant). Authored by an AI from a plain-language
+# brief.
+#
+# Two players, each starting with five six-sided dice rolled in secret.
+# Players alternate: raise the bid or call liar. A bid names a quantity and a
+# face, meaning at least that many dice show that face across all dice on the
+# table. A raise must be a higher quantity, or the same quantity with a
+# higher face. The quantity cannot exceed the dice in play. Ones are not
+# wild.
+#
+# Calling liar reveals all dice. If the count of the bid face is at least the
+# bid, the caller loses a die, otherwise the bidder loses one. All remaining
+# dice are re-rolled and the loser bids first next round. A player with no
+# dice left loses.
+#
+# The spec below is the authored spec unchanged; only this header was added.
+#
+# Known limits:
+#  - The die a loser forfeits is chosen at random, which has no effect on
+#    play because dice are identical.
+# ---------------------------------------------------------------------------
+
+actions:
+  actions:
+    - id: bid
+      label: Raise the bid
+      description: Bid a quantity and face; must beat the current bid and not exceed the dice on the table.
+      steps:
+        - input: quantity
+          label: Quantity
+          type:
+            kind: number
+            min: 1
+            max: 10
+            integer: true
+          validation: input.quantity <= sum(players, player.property.diceLeft) and (input.quantity > game.property.bidQty or (input.quantity == game.property.bidQty and game.property.bidFace < 6))
+          validationMessage: Quantity must be at least the current bid and no more than the dice on the table.
+        - input: face
+          label: Face value
+          type:
+            kind: number
+            min: 1
+            max: 6
+            integer: true
+          validation: input.quantity > game.property.bidQty or input.face > game.property.bidFace
+          validationMessage: Raise the quantity, or keep the quantity and raise the face.
+        - effect: set-state
+          path: game.property.bidQty
+          value:
+            param: quantity
+        - effect: set-state
+          path: game.property.bidFace
+          value:
+            param: face
+        - effect: set-state
+          path: game.property.bidder
+          value:
+            actor: true
+    - id: callLiar
+      label: Call liar
+      description: Challenge the current bid. All dice are revealed and counted.
+      preconditions: game.property.bidQty > 0
+      steps:
+        - effect: reveal
+          pieces:
+            player: all
+            inventory: hand
+            select: all
+          to: all
+        - effect: set-state
+          path: game.property.faceCount
+          value:
+            expr: sum(players, count(player.inventory.hand, piece.faceValue == game.property.bidFace))
+        - effect: set-state
+          path: game.property.loser
+          value:
+            expr: if(game.property.faceCount >= game.property.bidQty, actor.id, game.property.bidder)
+        - effect: message
+          to: all
+          template: 'Liar called on {{state.game.property.bidQty}} x {{state.game.property.bidFace}}. Dice showing that face: {{state.game.property.faceCount}}. Player {{state.game.property.loser}} loses a die.'
+        - effect: move
+          from:
+            player:
+              stateRef: game.property.loser
+            inventory: hand
+            select: random
+            count: 1
+          to:
+            inventory: out
+        - effect: set-state
+          path: player.property.diceLeft
+          value:
+            delta: -1
+          target:
+            stateRef: game.property.loser
+        - effect: hide
+          pieces:
+            player: all
+            inventory: hand
+            select: all
+        - effect: roll
+          pieces:
+            player: all
+            inventory: hand
+            select: all
+        - effect: set-state
+          path: game.property.firstBidder
+          value:
+            var: game.property.loser
+        - effect: set-state
+          path: game.property.bidQty
+          value: 0
+        - effect: set-state
+          path: game.property.bidFace
+          value: 0
+        - effect: set-state
+          path: game.property.bidder
+          value: ''
+        - effect: set-state
+          path: game.property.roundOver
+          value: true
+catalog:
+  entries:
+    - typeId: die
+      quantity: 10
+flow:
+  root:
+    kind: game
+    label: Liar's Dice
+    hooks:
+      onEnter:
+        - effect: distribute
+          from:
+            inventory: game:unassigned
+            select: top
+            ofType: die
+          to:
+            inventory: hand
+          count: 5
+        - effect: roll
+          pieces:
+            player: all
+            inventory: hand
+            select: all
+    winConditions:
+      - rule: condition
+        condition: player.property.diceLeft > 0
+    children:
+      - kind: loop
+        id: rounds
+        label: Rounds
+        endCondition: any(players, player.property.diceLeft == 0)
+        checkAfter: iteration
+        children:
+          - kind: loop
+            id: bidding
+            label: Bidding
+            endCondition: game.property.roundOver == true
+            checkAfter: turn
+            hooks:
+              onComplete:
+                - effect: set-state
+                  path: game.property.roundOver
+                  value: false
+            children:
+              - kind: turn
+                id: bidTurn
+                label: Bid or call liar
+                actor: all
+                turnOrder:
+                  kind: seat
+                  direction: clockwise
+                  startingPlayer:
+                    stateRef: game.property.firstBidder
+                grammar:
+                  kind: choice
+                  options:
+                    - kind: action
+                      ref: bid
+                    - kind: action
+                      ref: callLiar
+gamepieceTypes:
+  types:
+    - id: die
+      category: dice
+      faceCount: 6
+      description: A six-sided die. Ones are not wild.
+inventories:
+  types:
+    - id: hand
+      label: Dice cup
+      scope:
+        kind: player
+      accepts:
+        - die
+      visibility: owner
+      countVisibility: always
+      description: A player's remaining dice; only the owner sees the faces until liar is called.
+    - id: out
+      label: Lost dice
+      scope:
+        kind: game
+      accepts:
+        - die
+      visibility: always
+      description: Dice removed from play after a lost challenge.
+metadata:
+  name: Liar's Dice
+  playerCount:
+    min: 2
+    max: 2
+state:
+  game:
+    properties:
+      - id: bidQty
+        type:
+          kind: number
+          min: 0
+          max: 10
+        default: 0
+        description: Quantity of the current bid; 0 means no bid has been made yet this round.
+      - id: bidFace
+        type:
+          kind: number
+          min: 0
+          max: 6
+        default: 0
+        description: Face value of the current bid; 0 when no bid has been made this round.
+      - id: bidder
+        type:
+          kind: string
+        default: ''
+        description: Player ID of whoever made the current bid.
+      - id: firstBidder
+        type:
+          kind: string
+        default: ''
+        description: Player ID who bids first this round (the previous round's loser). Empty means seat 1.
+      - id: loser
+        type:
+          kind: string
+        default: ''
+        description: Player ID who lost a die in the most recent call.
+      - id: faceCount
+        type:
+          kind: number
+          min: 0
+          max: 10
+        default: 0
+        description: Number of dice showing the bid face when liar was last called.
+      - id: roundOver
+        type:
+          kind: boolean
+        default: false
+        description: True once liar has been called; ends the bidding loop.
+  player:
+    properties:
+      - id: diceLeft
+        type:
+          kind: number
+          min: 0
+          max: 5
+        default: 5
+        description: Number of dice this player still has.
